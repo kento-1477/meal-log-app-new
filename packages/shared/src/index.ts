@@ -46,6 +46,9 @@ export const GeminiNutritionResponseSchema = z.object({
 
 export type GeminiNutritionResponse = z.infer<typeof GeminiNutritionResponseSchema>;
 
+export const MealPeriodSchema = z.enum(['breakfast', 'lunch', 'dinner', 'snack']);
+export type MealPeriod = z.infer<typeof MealPeriodSchema>;
+
 export const RegisterRequestSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
@@ -65,12 +68,24 @@ export const MealLogSummarySchema = z.object({
   fat_g: z.number(),
   carbs_g: z.number(),
   calories: z.number(),
-  meal_tag: z.string().nullable(),
+  meal_period: MealPeriodSchema.nullable(),
   image_url: z.string().url().nullable(),
+  thumbnail_url: z.string().url().nullable(),
   ai_raw: GeminiNutritionResponseSchema.optional(),
 });
 
 export type MealLogSummary = z.infer<typeof MealLogSummarySchema>;
+
+export const MealLogEditEntrySchema = z.object({
+  id: z.number(),
+  created_at: z.string(),
+  user_id: z.number(),
+  user_email: z.string().email().nullable(),
+  user_name: z.string().nullable(),
+  changes: z.record(z.any()),
+});
+
+export type MealLogEditEntry = z.infer<typeof MealLogEditEntrySchema>;
 
 export const MealLogDetailSchema = z.object({
   id: z.string(),
@@ -79,7 +94,11 @@ export const MealLogDetailSchema = z.object({
   fat_g: z.number(),
   carbs_g: z.number(),
   calories: z.number(),
+  meal_period: MealPeriodSchema.nullable(),
+  created_at: z.string(),
+  image_url: z.string().url().nullable(),
   ai_raw: GeminiNutritionResponseSchema.nullable(),
+  history: z.array(MealLogEditEntrySchema),
 });
 
 export type MealLogDetail = z.infer<typeof MealLogDetailSchema>;
@@ -112,3 +131,18 @@ export const SlotSelectionRequestSchema = z.object({
 });
 
 export type SlotSelectionRequest = z.infer<typeof SlotSelectionRequestSchema>;
+
+export const UpdateMealLogRequestSchema = z
+  .object({
+    food_item: z.string().min(1).optional(),
+    calories: z.coerce.number().nonnegative().optional(),
+    protein_g: z.coerce.number().nonnegative().optional(),
+    fat_g: z.coerce.number().nonnegative().optional(),
+    carbs_g: z.coerce.number().nonnegative().optional(),
+    meal_period: MealPeriodSchema.optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'At least one field must be provided for update',
+  });
+
+export type UpdateMealLogRequest = z.infer<typeof UpdateMealLogRequestSchema>;

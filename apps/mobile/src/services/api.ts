@@ -2,6 +2,11 @@ import { Platform } from 'react-native';
 import { API_BASE_URL } from './config';
 import { clearSessionCookie, getSessionCookie, saveSessionCookie } from './sessionStorage';
 import type { NutritionCardPayload } from '@/types/chat';
+import type {
+  MealLogDetail,
+  MealLogSummary,
+  UpdateMealLogRequest,
+} from '@meal-log/shared';
 
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
@@ -32,7 +37,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     try {
       const data = await response.json();
       message = data?.error ?? data?.message ?? message;
-    } catch (error) {
+    } catch (_error) {
       // ignore json parse errors
     }
     throw new Error(message || 'Unknown error');
@@ -71,7 +76,7 @@ export async function getSession() {
       '/api/session',
       { method: 'GET' },
     );
-  } catch (error) {
+  } catch (_error) {
     return { authenticated: false };
   }
 }
@@ -86,6 +91,8 @@ export interface MealLogResponse {
   items: NutritionCardPayload['items'];
   breakdown: { warnings: string[]; items: NutritionCardPayload['items'] };
   meta: Record<string, unknown>;
+  meal_period?: string | null;
+  image_url?: string | null;
 }
 
 export async function postMealLog(params: { message: string; imageUri?: string | null }) {
@@ -111,7 +118,7 @@ export async function postMealLog(params: { message: string; imageUri?: string |
 }
 
 export async function getRecentLogs() {
-  return apiFetch<{ ok: boolean; items: any[] }>('/api/logs', { method: 'GET' });
+  return apiFetch<{ ok: boolean; items: MealLogSummary[] }>('/api/logs', { method: 'GET' });
 }
 
 export async function getDailySummary(days = 7) {
@@ -120,6 +127,17 @@ export async function getDailySummary(days = 7) {
 
 export async function searchFoods(query: string) {
   return apiFetch<{ q: string; candidates: any[] }>(`/api/foods/search?q=${encodeURIComponent(query)}`);
+}
+
+export async function getMealLogDetail(logId: string) {
+  return apiFetch<{ ok: boolean; item: MealLogDetail }>(`/api/log/${logId}`, { method: 'GET' });
+}
+
+export async function updateMealLog(logId: string, input: UpdateMealLogRequest) {
+  return apiFetch<{ ok: boolean; item: MealLogDetail }>(`/api/log/${logId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
 }
 
 function extractCookie(raw: string) {

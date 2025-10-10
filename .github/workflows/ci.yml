@@ -1,0 +1,62 @@
+name: ci-test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: meal_log_test
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meal_log_test
+      SESSION_SECRET: test-session-secret
+      PORT: 4000
+      NODE_ENV: test
+      # CI does not provide GEMINI_API_KEY; server falls back to mock responses.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Python (for tooling parity with original workflow)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Reset database schema
+        run: npm run migrate:reset
+
+      - name: Run ESLint
+        run: npx eslint . --max-warnings=0
+
+      - name: Run unit tests if present
+        run: npm test --if-present
+
+      - name: Run golem regression tests
+        run: npm run test:golem

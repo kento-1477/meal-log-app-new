@@ -19,6 +19,7 @@ export default function RootLayout() {
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="login" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="log/[id]" options={{ headerShown: true, title: '食事ログの編集' }} />
           </Stack>
         </QueryClientProvider>
       </SafeAreaProvider>

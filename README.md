@@ -56,6 +56,17 @@ npx prisma db seed
 
 > Development-only reset: `prisma migrate reset` wipes data; avoid on shared databases.
 
+### Reset schema (matches CI pipeline)
+
+CI uses a disposable Postgres container reachable at `postgresql://postgres:postgres@localhost:5432/meal_log_test`. To mirror the same settings locally, run:
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/meal_log_dev?schema=public \
+  npm run migrate:reset
+```
+
+The script wraps `prisma migrate reset --force --skip-generate --skip-seed`, so keep `DATABASE_URL` pointed at a throwaway database. Add a `DATABASE_URL` with the same credentials to `.env.test` if you want local `npm test` to touch a clean database during integration runs.
+
 For JSONB query performance, add a GIN index after migration:
 
 ```sql
@@ -104,8 +115,10 @@ Ensure the Expo app is pointed at the same host as the server (`EXPO_PUBLIC_API_
 
 ## Testing & linting
 
-- Server: `npm run lint --workspaces` from root or `npm run lint` within each app.
-- Mobile: `npm run test --workspace apps/mobile` (Jest configuration scaffolded, add suites as features grow).
+- Lint (all workspaces): `npm run lint`
+- Server unit tests: `npm test` (runs `node --test` in `apps/server/tests`)
+- Dual-write regression: `npm run test:golem`
+- Mobile: `npm run test --workspace apps/mobile` (Jest configuration scaffolded, add suites as features grow)
 
 ## Next steps
 
@@ -113,3 +126,12 @@ Ensure the Expo app is pointed at the same host as the server (`EXPO_PUBLIC_API_
 2. Replace mock analytics chart with Victory/Skia-based line charts once requirements settle.
 3. Extend guardrails with Prometheus metrics (`/metrics`) and alerting on AI failure rate.
 4. Add push notification reminders using Expo Notifications and scheduled jobs.
+
+## Contribution workflow
+
+1. Create a feature branch: `git switch -c feat/<topic>`
+2. Build the change and keep commits following [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
+3. Run quality gates locally: `npm run lint && npm test && npm run test:golem`
+4. Push the branch: `git push -u origin feat/<topic>`
+5. Open a PR, confirm the `ci-test` and `diff-gate` checks pass, and request a review from the CODEOWNERS assignee
+6. Address feedback, then complete the PR using **Squash & merge** to keep history linear

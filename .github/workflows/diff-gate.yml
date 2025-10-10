@@ -1,0 +1,33 @@
+name: diff-gate
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  diff-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate dual write fixtures
+        run: npm run ci:simulate-dual-write
+
+      - name: Build (optional)
+        run: npm run build --if-present
+        shell: bash
+        # Build not required for this project today; keep step for parity.
+
+      - name: Check regressions
+        run: npm run ci:check-diffs

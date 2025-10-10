@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { GlassCard } from '@/components/GlassCard';
 import { colors } from '@/theme/colors';
@@ -18,6 +18,7 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const summaryQuery = useQuery({ queryKey: ['dailySummary'], queryFn: () => getDailySummary(7) });
   const logsQuery = useQuery({ queryKey: ['recentLogs'], queryFn: getRecentLogs });
+  const recentLogs = logsQuery.data?.items ?? [];
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -34,6 +35,13 @@ export default function DashboardScreen() {
     setStatus('unauthenticated');
     router.replace('/login');
   }, [router, setStatus, setUser]);
+
+  const handleOpenLog = useCallback(
+    (id: string) => {
+      router.push({ pathname: '/log/[id]', params: { id } });
+    },
+    [router],
+  );
 
   return (
     <ScrollView
@@ -86,17 +94,31 @@ export default function DashboardScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>最近の食事</Text>
-        {logsQuery.data?.items?.map((item) => (
-          <GlassCard key={item.id} style={styles.mealCard}>
-            <Text style={styles.mealTitle}>{item.dish}</Text>
-            <Text style={styles.mealTimestamp}>{formatTimestamp(item.created_at)}</Text>
-            <View style={styles.mealMacros}>
-              <MacroChip label="P" value={item.protein_g} accent="#ff9f0a" />
-              <MacroChip label="F" value={item.fat_g} accent="#ff453a" />
-              <MacroChip label="C" value={item.carbs_g} accent="#bf5af2" />
-            </View>
-          </GlassCard>
-        )) ?? <Text style={styles.placeholder}>食事ログがまだありません。</Text>}
+        {recentLogs.length === 0 ? (
+          <Text style={styles.placeholder}>食事ログがまだありません。</Text>
+        ) : (
+          recentLogs.map((item) => (
+            <TouchableOpacity key={item.id} activeOpacity={0.85} onPress={() => handleOpenLog(item.id)}>
+              <GlassCard style={styles.mealCard}>
+                <View style={styles.mealCardHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.mealTitle}>{item.dish}</Text>
+                    <Text style={styles.mealTimestamp}>{formatTimestamp(item.created_at)}</Text>
+                    <Text style={styles.mealTag}>{formatMealPeriod(item.meal_period)}</Text>
+                  </View>
+                  {item.thumbnail_url ? (
+                    <Image source={{ uri: item.thumbnail_url }} style={styles.mealThumbnail} />
+                  ) : null}
+                </View>
+                <View style={styles.mealMacros}>
+                  <MacroChip label="P" value={item.protein_g} accent="#ff9f0a" />
+                  <MacroChip label="F" value={item.fat_g} accent="#ff453a" />
+                  <MacroChip label="C" value={item.carbs_g} accent="#bf5af2" />
+                </View>
+              </GlassCard>
+            </TouchableOpacity>
+          ))
+        )}
       </View>
     </ScrollView>
   );
@@ -132,6 +154,24 @@ function formatTimestamp(iso: string) {
     .getMinutes()
     .toString()
     .padStart(2, '0')}`;
+}
+
+function formatMealPeriod(period: string | null | undefined) {
+  switch (period) {
+    case 'breakfast':
+      return '朝食';
+    case 'lunch':
+      return '昼食';
+    case 'dinner':
+      return '夕食';
+    case 'snack':
+      return '間食';
+    case null:
+    case undefined:
+      return 'タグ未設定';
+    default:
+      return period;
+  }
 }
 
 const styles = StyleSheet.create({
@@ -228,18 +268,35 @@ const styles = StyleSheet.create({
   },
   mealCard: {
     marginBottom: spacing.md,
+    gap: spacing.md,
+  },
+  mealCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
   },
   mealTitle: {
-    ...textStyles.titleMedium,
-    marginBottom: spacing.sm,
+    ...textStyles.titleSmall,
   },
   mealTimestamp: {
     ...textStyles.caption,
-    marginBottom: spacing.sm,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  mealTag: {
+    ...textStyles.caption,
+    color: colors.accent,
+    marginTop: 4,
   },
   mealMacros: {
     flexDirection: 'row',
     gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  mealThumbnail: {
+    width: 72,
+    height: 72,
+    borderRadius: 12,
   },
   macroChip: {
     paddingVertical: 8,

@@ -1,0 +1,65 @@
+{
+  "baseline": [
+    {
+      "id": "log-1",
+      "userId": 1,
+      "foodItem": "Grilled chicken salad",
+      "calories": 520,
+      "proteinG": 35,
+      "fatG": 18,
+      "carbsG": 70
+    },
+    {
+      "id": "log-2",
+      "userId": 2,
+      "foodItem": "Salmon rice bowl",
+      "calories": 630,
+      "proteinG": 45,
+      "fatG": 25,
+      "carbsG": 80
+    },
+    {
+      "id": "log-3",
+      "userId": 1,
+      "foodItem": "Overnight oats",
+      "calories": 410,
+      "proteinG": 32,
+      "fatG": 12,
+      "carbsG": 50
+    }
+  ],
+  "candidate": [
+    {
+      "id": "log-1",
+      "userId": 1,
+      "foodItem": "Grilled chicken salad",
+      "calories": 522,
+      "proteinG": 35,
+      "fatG": 19,
+      "carbsG": 68
+    },
+    {
+      "id": "log-2",
+      "userId": 2,
+      "foodItem": "Salmon rice bowl",
+      "calories": 640,
+      "proteinG": 46,
+      "fatG": 26,
+      "carbsG": 81
+    },
+    {
+      "id": "log-3",
+      "userId": 1,
+      "foodItem": "Overnight oats",
+      "calories": 409,
+      "proteinG": 32,
+      "fatG": 12,
+      "carbsG": 51
+    }
+  ],
+  "thresholds": {
+    "maxAggregateCalories": 25,
+    "maxPerLogCalories": 15,
+    "maxMacroDiff": 5
+  }
+}
