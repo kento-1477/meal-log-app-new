@@ -2,10 +2,10 @@ import type { Express } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { createHash } from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
-import type { GeminiNutritionResponse } from '@meal-log/shared';
+import type { GeminiNutritionResponse, SlotSelectionRequest } from '@meal-log/shared';
+import { MealPeriod, Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma.js';
 import { analyzeMealWithGemini } from './gemini-service.js';
-import type { SlotSelectionRequest } from '@meal-log/shared';
 
 interface ProcessMealLogParams {
   userId: number;
@@ -30,6 +30,20 @@ interface ProcessMealLogResult {
   };
   meta: Record<string, unknown>;
 }
+
+const inferMealPeriod = (date: Date): MealPeriod => {
+  const hour = date.getHours();
+  if (hour >= 5 && hour < 10) {
+    return MealPeriod.BREAKFAST;
+  }
+  if (hour >= 10 && hour < 15) {
+    return MealPeriod.LUNCH;
+  }
+  if (hour >= 15 && hour < 21) {
+    return MealPeriod.DINNER;
+  }
+  return MealPeriod.SNACK;
+};
 
 export async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMealLogResult> {
   const requestKey = params.idempotencyKey ?? buildRequestKey(params);
@@ -66,6 +80,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
       meta: {
         ...(aiRaw?.meta ?? {}),
         reused: true,
+        mealPeriod: log.mealPeriod,
       },
     };
   }
@@ -114,6 +129,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
   if (zeroFloored) {
     warnings.push('zeroFloored: AI returned one or more zero totals');
   }
+  const mealPeriod = inferMealPeriod(new Date());
 
   const log = await prisma.mealLog.create({
     data: {
@@ -127,6 +143,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
       zeroFloored,
       guardrailNotes: zeroFloored ? 'zeroFloored' : null,
       landingType: enrichedResponse.landing_type ?? null,
+      mealPeriod,
     },
   });
 
@@ -156,6 +173,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
     ...(enrichedResponse.meta ?? {}),
     imageUrl,
     fallback_model_used: analysis.meta.model === 'models/gemini-2.5-pro',
+    mealPeriod,
   } satisfies Record<string, unknown>;
 
   return {
@@ -174,6 +192,103 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
     },
     meta,
   };
+}
+
+interface UpdateMealLogParams {
+  logId: string;
+  userId: number;
+  updates: {
+    foodItem?: string;
+    calories?: number;
+    proteinG?: number;
+    fatG?: number;
+    carbsG?: number;
+    mealPeriod?: MealPeriod;
+  };
+}
+
+export async function updateMealLog({ logId, userId, updates }: UpdateMealLogParams) {
+  const log = await prisma.mealLog.findFirst({
+    where: { id: logId, userId },
+  });
+
+  if (!log) {
+    const error = new Error('Log not found');
+    Object.assign(error, { statusCode: StatusCodes.NOT_FOUND, expose: true });
+    throw error;
+  }
+
+  const changes: Record<string, { before: unknown; after: unknown }> = {};
+  const updateData: Prisma.MealLogUpdateInput = {
+    version: { increment: 1 },
+  };
+
+  if (typeof updates.foodItem === 'string' && updates.foodItem !== log.foodItem) {
+    changes.foodItem = { before: log.foodItem, after: updates.foodItem };
+    updateData.foodItem = updates.foodItem;
+  }
+  if (typeof updates.calories === 'number' && updates.calories !== log.calories) {
+    changes.calories = { before: log.calories, after: updates.calories };
+    updateData.calories = updates.calories;
+  }
+  if (typeof updates.proteinG === 'number' && updates.proteinG !== log.proteinG) {
+    changes.proteinG = { before: log.proteinG, after: updates.proteinG };
+    updateData.proteinG = updates.proteinG;
+  }
+  if (typeof updates.fatG === 'number' && updates.fatG !== log.fatG) {
+    changes.fatG = { before: log.fatG, after: updates.fatG };
+    updateData.fatG = updates.fatG;
+  }
+  if (typeof updates.carbsG === 'number' && updates.carbsG !== log.carbsG) {
+    changes.carbsG = { before: log.carbsG, after: updates.carbsG };
+    updateData.carbsG = updates.carbsG;
+  }
+  if (typeof updates.mealPeriod !== 'undefined' && updates.mealPeriod !== log.mealPeriod) {
+    changes.mealPeriod = { before: log.mealPeriod, after: updates.mealPeriod };
+    updateData.mealPeriod = updates.mealPeriod;
+  }
+
+  if (Object.keys(changes).length === 0) {
+    return log;
+  }
+
+  const aiRaw = (log.aiRaw ?? null) as GeminiNutritionResponse | null;
+  let updatedAiRaw: GeminiNutritionResponse | null = aiRaw;
+  if (aiRaw) {
+    updatedAiRaw = {
+      ...aiRaw,
+      dish: typeof updates.foodItem === 'string' ? updates.foodItem : aiRaw.dish,
+      totals: {
+        ...aiRaw.totals,
+        ...(typeof updates.calories === 'number' ? { kcal: updates.calories } : {}),
+        ...(typeof updates.proteinG === 'number' ? { protein_g: updates.proteinG } : {}),
+        ...(typeof updates.fatG === 'number' ? { fat_g: updates.fatG } : {}),
+        ...(typeof updates.carbsG === 'number' ? { carbs_g: updates.carbsG } : {}),
+      },
+    };
+  }
+
+  const updatedLog = await prisma.$transaction(async (tx) => {
+    const saved = await tx.mealLog.update({
+      where: { id: log.id },
+      data: {
+        ...updateData,
+        aiRaw: updatedAiRaw ? { ...updatedAiRaw } : log.aiRaw,
+      },
+    });
+
+    await tx.mealLogEdit.create({
+      data: {
+        mealLogId: log.id,
+        userId,
+        changes,
+      },
+    });
+
+    return saved;
+  });
+
+  return updatedLog;
 }
 
 export async function chooseSlot(request: SlotSelectionRequest, userId: number) {

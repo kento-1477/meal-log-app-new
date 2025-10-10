@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "description": "Reference dual-write diff snapshot for meal log macros",
+    "source": "scripts/fixtures/dual_write_input.json"
+  },
+  "aggregateDiff": {
+    "calories": 11,
+    "proteinG": 1,
+    "fatG": 2,
+    "carbsG": 0
+  },
+  "perLogDiff": [
+    {
+      "id": "log-1",
+      "calories": 2,
+      "proteinG": 0,
+      "fatG": 1,
+      "carbsG": -2
+    },
+    {
+      "id": "log-2",
+      "calories": 10,
+      "proteinG": 1,
+      "fatG": 1,
+      "carbsG": 1
+    },
+    {
+      "id": "log-3",
+      "calories": -1,
+      "proteinG": 0,
+      "fatG": 0,
+      "carbsG": 1
+    }
+  ]
+}

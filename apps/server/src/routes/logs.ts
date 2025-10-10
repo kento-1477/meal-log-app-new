@@ -1,9 +1,69 @@
 import { Router } from 'express';
 import { StatusCodes } from 'http-status-codes';
+import { MealPeriod } from '@prisma/client';
+import { UpdateMealLogRequestSchema } from '@meal-log/shared';
 import { prisma } from '../db/prisma.js';
 import { requireAuth } from '../middleware/require-auth.js';
+import { updateMealLog } from '../services/log-service.js';
 
 export const logsRouter = Router();
+
+const mealPeriodLookup: Record<string, MealPeriod> = {
+  breakfast: MealPeriod.BREAKFAST,
+  lunch: MealPeriod.LUNCH,
+  dinner: MealPeriod.DINNER,
+  snack: MealPeriod.SNACK,
+};
+
+const toMealPeriodLabel = (period: MealPeriod | null | undefined) =>
+  period ? period.toLowerCase() : null;
+
+const fetchMealLogDetail = async (logId: string, userId: number) => {
+  const item = await prisma.mealLog.findFirst({
+    where: { id: logId, userId },
+    include: {
+      edits: {
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!item) {
+    return null;
+  }
+
+  const history = item.edits.map((edit) => ({
+    id: edit.id,
+    created_at: edit.createdAt.toISOString(),
+    user_id: edit.userId,
+    user_email: edit.user?.email ?? null,
+    user_name: edit.user?.username ?? null,
+    changes: edit.changes ?? {},
+  }));
+
+  return {
+    id: item.id,
+    food_item: item.foodItem,
+    protein_g: item.proteinG,
+    fat_g: item.fatG,
+    carbs_g: item.carbsG,
+    calories: item.calories,
+    meal_period: toMealPeriodLabel(item.mealPeriod) ?? item.landingType ?? null,
+    created_at: item.createdAt.toISOString(),
+    image_url: item.imageUrl,
+    ai_raw: item.aiRaw,
+    history,
+  };
+};
 
 logsRouter.get('/logs', requireAuth, async (req, res, next) => {
   try {
@@ -25,8 +85,9 @@ logsRouter.get('/logs', requireAuth, async (req, res, next) => {
       fat_g: item.fatG,
       carbs_g: item.carbsG,
       calories: item.calories,
-      meal_tag: item.landingType,
+      meal_period: toMealPeriodLabel(item.mealPeriod) ?? item.landingType ?? null,
       image_url: item.imageUrl,
+      thumbnail_url: item.imageUrl,
       ai_raw: item.aiRaw,
     }));
 
@@ -77,24 +138,51 @@ logsRouter.get('/logs/summary', requireAuth, async (req, res, next) => {
 });
 logsRouter.get('/log/:id', requireAuth, async (req, res, next) => {
   try {
-    const item = await prisma.mealLog.findFirst({
-      where: { id: req.params.id, userId: req.session.userId! },
-    });
-    if (!item) {
+    const detail = await fetchMealLogDetail(req.params.id, req.session.userId!);
+    if (!detail) {
       return res.status(StatusCodes.NOT_FOUND).json({ ok: false, message: 'not found' });
     }
     res.status(StatusCodes.OK).json({
       ok: true,
-      item: {
-        id: item.id,
-        food_item: item.foodItem,
-        protein_g: item.proteinG,
-        fat_g: item.fatG,
-        carbs_g: item.carbsG,
-        calories: item.calories,
-        ai_raw: item.aiRaw,
+      item: detail,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+logsRouter.patch('/log/:id', requireAuth, async (req, res, next) => {
+  try {
+    const parsed = UpdateMealLogRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(StatusCodes.BAD_REQUEST).json({ ok: false, error: parsed.error.flatten().formErrors.join(', ') });
+    }
+
+    const payload = parsed.data;
+    const mealPeriod = payload.meal_period ? mealPeriodLookup[payload.meal_period] : undefined;
+    if (payload.meal_period && !mealPeriod) {
+      return res.status(StatusCodes.BAD_REQUEST).json({ ok: false, error: 'Invalid meal period' });
+    }
+
+    await updateMealLog({
+      logId: req.params.id,
+      userId: req.session.userId!,
+      updates: {
+        foodItem: payload.food_item,
+        calories: payload.calories,
+        proteinG: payload.protein_g,
+        fatG: payload.fat_g,
+        carbsG: payload.carbs_g,
+        mealPeriod,
       },
     });
+
+    const detail = await fetchMealLogDetail(req.params.id, req.session.userId!);
+    if (!detail) {
+      return res.status(StatusCodes.NOT_FOUND).json({ ok: false, message: 'not found' });
+    }
+
+    res.status(StatusCodes.OK).json({ ok: true, item: detail });
   } catch (error) {
     next(error);
   }

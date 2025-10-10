@@ -7,7 +7,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc --project tsconfig.build.json",
     "start": "node dist/index.js",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "migrate:reset": "prisma migrate reset --force --skip-generate --skip-seed",
+    "test": "node --test \"tests/**/*.test.js\""
   },
   "dependencies": {
     "@meal-log/shared": "*",

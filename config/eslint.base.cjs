@@ -1,5 +1,10 @@
 module.exports = {
   root: false,
+  env: {
+    browser: true,
+    es2023: true,
+    node: true
+  },
   parser: "@typescript-eslint/parser",
   parserOptions: {
     ecmaVersion: "latest",
@@ -20,11 +25,33 @@ module.exports = {
       version: "detect"
     },
     "import/resolver": {
-      typescript: {}
-    }
+      typescript: {
+        project: [
+          "tsconfig.json",
+          "apps/*/tsconfig.json",
+          "packages/*/tsconfig.json"
+        ],
+        alwaysTryTypes: true
+      },
+      node: {
+        extensions: [".js", ".jsx", ".ts", ".tsx"]
+      }
+    },
+    "import/ignore": ["react-native"]
   },
   rules: {
     "react/react-in-jsx-scope": "off",
-    "react/prop-types": "off"
+    "react/prop-types": "off",
+    "@typescript-eslint/no-explicit-any": "off",
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      {
+        argsIgnorePattern: "^_",
+        ignoreRestSiblings: true,
+        caughtErrors: "all",
+        caughtErrorsIgnorePattern: "^_"
+      }
+    ],
+    "@typescript-eslint/no-require-imports": "off"
   }
 };

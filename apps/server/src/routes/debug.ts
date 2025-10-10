@@ -6,7 +6,7 @@ import { env } from '../env.js';
 
 export const debugRouter = Router();
 
-debugRouter.get('/ai', requireAuth, async (_req, res, next) => {
+debugRouter.get('/ai', requireAuth, async (_req, res, _next) => {
   if (!env.GEMINI_API_KEY) {
     return res.status(StatusCodes.OK).json({
       ok: false,
@@ -40,7 +40,7 @@ debugRouter.get('/ai', requireAuth, async (_req, res, next) => {
   }
 });
 
-debugRouter.get('/ai/analyze', requireAuth, async (req, res, next) => {
+debugRouter.get('/ai/analyze', requireAuth, async (req, res, _next) => {
   try {
     const text = String(req.query.text ?? 'カレーライス');
     const result = await analyzeMealWithGemini({ message: text });

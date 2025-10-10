@@ -86,7 +86,7 @@ export default function ChatScreen() {
       setMessageText(assistantPlaceholder.id, summaryText);
       setInput('');
       setComposingImage(null);
-    } catch (err) {
+    } catch (_error) {
       updateMessageStatus(userMessage.id, 'error');
       updateMessageStatus(assistantPlaceholder.id, 'error');
       setError('エラーが発生しました。もう一度お試しください。');
