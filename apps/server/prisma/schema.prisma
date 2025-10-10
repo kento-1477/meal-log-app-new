@@ -1,0 +1,64 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id             Int             @id @default(autoincrement())
+  email          String          @unique
+  username       String?
+  passwordHash   String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  mealLogs       MealLog[]
+  ingestRequests IngestRequest[]
+}
+
+model MealLog {
+  id             String          @id @default(cuid())
+  user           User            @relation(fields: [userId], references: [id])
+  userId         Int
+  foodItem       String
+  calories       Float
+  proteinG       Float
+  fatG           Float
+  carbsG         Float
+  aiRaw          Json?
+  zeroFloored    Boolean         @default(false)
+  landingType    String?
+  imageUrl       String?
+  guardrailNotes String?
+  version        Int             @default(1)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  mediaAssets    MediaAsset[]
+  ingestRequests IngestRequest[]
+
+  @@index([userId, createdAt])
+}
+
+model IngestRequest {
+  id         Int      @id @default(autoincrement())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     Int
+  requestKey String
+  log        MealLog? @relation(fields: [logId], references: [id])
+  logId      String?
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, requestKey])
+}
+
+model MediaAsset {
+  id        Int      @id @default(autoincrement())
+  mealLog   MealLog  @relation(fields: [mealLogId], references: [id])
+  mealLogId String
+  url       String
+  mimeType  String
+  sizeBytes Int
+  createdAt DateTime @default(now())
+}
