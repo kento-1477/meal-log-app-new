@@ -1,0 +1,18 @@
+{
+  "extends": "../../config/tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-native",
+    "allowJs": true,
+    "strict": true,
+    "baseUrl": "./src",
+    "paths": {
+      "@/components/*": ["components/*"],
+      "@/screens/*": ["screens/*"],
+      "@/hooks/*": ["hooks/*"],
+      "@/services/*": ["services/*"],
+      "@/store/*": ["store/*"],
+      "@/theme/*": ["theme/*"]
+    }
+  },
+  "include": ["src", "App.tsx", "app.d.ts"]
+}

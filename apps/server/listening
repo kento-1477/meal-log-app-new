@@ -1,0 +1,6 @@
+
+> @meal-log/server@0.1.0 dev
+> tsx watch src/index.ts # - on 4000
+
+{"level":30,"time":1759546893514,"pid":55049,"hostname":"r.local","port":4000,"msg":"Meal Log App server listening"}
+12:10:10 [tsx] Previous process hasn't exited yet. Force killing...
