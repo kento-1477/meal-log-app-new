@@ -1,36 +1,28 @@
-import { Platform } from 'react-native';
 import { API_BASE_URL } from './config';
-import { clearSessionCookie, getSessionCookie, saveSessionCookie } from './sessionStorage';
 import type { NutritionCardPayload } from '@/types/chat';
 import type {
+  DashboardSummary,
+  DashboardTargets,
+  DashboardPeriod,
   MealLogDetail,
   MealLogSummary,
   UpdateMealLogRequest,
 } from '@meal-log/shared';
+import { DashboardSummarySchema, DashboardTargetsSchema } from '@meal-log/shared';
 
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
   const headers = new Headers(options.headers ?? {});
-  const cookie = await getSessionCookie();
 
   if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
-  if (cookie) {
-    headers.set('Cookie', cookie);
-  }
-
   const response = await fetch(url, {
     ...options,
     headers,
-    credentials: Platform.OS === 'web' ? 'include' : undefined,
+    credentials: 'include',
   });
-
-  const setCookie = response.headers.get('set-cookie');
-  if (setCookie) {
-    await saveSessionCookie(extractCookie(setCookie));
-  }
 
   if (!response.ok) {
     let message = response.statusText;
@@ -67,7 +59,6 @@ export async function login(input: { email: string; password: string }) {
 
 export async function logout() {
   await apiFetch<{ message: string }>('/api/logout', { method: 'POST' });
-  await clearSessionCookie();
 }
 
 export async function getSession() {
@@ -140,6 +131,23 @@ export async function updateMealLog(logId: string, input: UpdateMealLogRequest) 
   });
 }
 
-function extractCookie(raw: string) {
-  return raw.split(',')[0].split(';')[0];
+export async function getDashboardSummary(period: DashboardPeriod, range?: { from: string; to: string }) {
+  const params = new URLSearchParams({ period });
+  if (period === 'custom' && range) {
+    params.set('from', range.from);
+    params.set('to', range.to);
+  }
+
+  const response = await apiFetch<{ ok: boolean; summary: unknown }>(`/api/dashboard/summary?${params.toString()}`, {
+    method: 'GET',
+  });
+
+  const parsed = DashboardSummarySchema.parse(response.summary);
+  return parsed as DashboardSummary;
+}
+
+export async function getDashboardTargets() {
+  const response = await apiFetch<{ ok: boolean; targets: unknown }>(`/api/dashboard/targets`, { method: 'GET' });
+  const parsed = DashboardTargetsSchema.parse(response.targets);
+  return parsed as DashboardTargets;
 }

@@ -11,7 +11,10 @@
       "@/hooks/*": ["hooks/*"],
       "@/services/*": ["services/*"],
       "@/store/*": ["store/*"],
-      "@/theme/*": ["theme/*"]
+      "@/theme/*": ["theme/*"],
+      "@/features/*": ["features/*"],
+      "@/i18n": ["i18n"],
+      "@/i18n/*": ["i18n/*"]
     }
   },
   "include": ["src", "App.tsx", "app.d.ts"]

@@ -1,314 +1,223 @@
-import React, { useCallback, useState } from 'react';
-import { Image, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
-import { GlassCard } from '@/components/GlassCard';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import type { DashboardPeriod } from '@meal-log/shared';
+import { useDashboardSummary } from '@/features/dashboard/useDashboardSummary';
+import { PeriodSelector } from '@/features/dashboard/components/PeriodSelector';
+import { TabBar, type TabKey } from '@/features/dashboard/components/TabBar';
+import { SummaryHeader } from '@/features/dashboard/components/SummaryHeader';
+import { CalorieLineChart } from '@/features/dashboard/components/CalorieLineChart';
+import { MealPeriodBreakdown } from '@/features/dashboard/components/MealPeriodBreakdown';
+import { MacroProgressList } from '@/features/dashboard/components/MacroProgressList';
+import { NutrientTable } from '@/features/dashboard/components/NutrientTable';
+import { EmptyStateCard } from '@/features/dashboard/components/EmptyStateCard';
+import { PeriodComparisonCard } from '@/features/dashboard/components/PeriodComparisonCard';
+import { PFCDonutChart } from '@/features/dashboard/components/PFCDonutChart';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
-import { getDailySummary, getRecentLogs, logout } from '@/services/api';
-
-import { useRouter } from 'expo-router';
 import { useSessionStore } from '@/store/session';
+import { logout } from '@/services/api';
+import { useTranslation } from '@/i18n';
+
+const DEFAULT_PERIOD: DashboardPeriod = 'thisWeek';
 
 export default function DashboardScreen() {
-  const router = useRouter();
+  const [period, setPeriod] = useState<DashboardPeriod>(DEFAULT_PERIOD);
+  const [activeTab, setActiveTab] = useState<TabKey>('calories');
+  const status = useSessionStore((state) => state.status);
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
-  const user = useSessionStore((state) => state.user);
-  const [refreshing, setRefreshing] = useState(false);
-  const summaryQuery = useQuery({ queryKey: ['dailySummary'], queryFn: () => getDailySummary(7) });
-  const logsQuery = useQuery({ queryKey: ['recentLogs'], queryFn: getRecentLogs });
-  const recentLogs = logsQuery.data?.items ?? [];
+  const isAuthenticated = status === 'authenticated';
+  const { t } = useTranslation();
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await Promise.all([summaryQuery.refetch(), logsQuery.refetch()]);
-    setRefreshing(false);
-  }, [summaryQuery, logsQuery]);
+  const { data, isLoading, isFetching, error, refetch, isStaleFromCache } = useDashboardSummary(period, {
+    enabled: isAuthenticated,
+  });
 
-  const todayTotals = summaryQuery.data?.today ?? { calories: 0, protein_g: 0, fat_g: 0, carbs_g: 0 };
-  const pastWeek = summaryQuery.data?.daily ?? [];
+  const showEmpty = data ? !data.calories.hasData : false;
+  const emptyMessage = period === 'thisWeek' ? t('dashboard.empty.week') : t('dashboard.empty.generic');
 
-  const handleLogout = useCallback(async () => {
-    await logout();
-    setUser(null);
-    setStatus('unauthenticated');
-    router.replace('/login');
-  }, [router, setStatus, setUser]);
-
-  const handleOpenLog = useCallback(
-    (id: string) => {
-      router.push({ pathname: '/log/[id]', params: { id } });
-    },
-    [router],
-  );
+  const handleLogout = async () => {
+    try {
+      setStatus('loading');
+      await logout();
+      setUser(null);
+      setStatus('unauthenticated');
+    } catch (err) {
+      console.warn('Failed to logout', err);
+      setStatus('error');
+    }
+  };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-    >
-      <View style={styles.topRow}>
-        <View>
-          <Text style={styles.greeting}>こんにちは、{user?.username ?? user?.email ?? 'ゲスト'}さん</Text>
-          <Text style={styles.greetingCaption}>召し上がったものを振り返りましょう</Text>
-        </View>
-        <TouchableOpacity onPress={handleLogout}>
-          <Text style={styles.logout}>ログアウト</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>今日のサマリー</Text>
-        <GlassCard>
-          <View style={styles.totalsRow}>
-            <MacroStat label="Calories" value={todayTotals.calories} unit="kcal" accent={colors.accent} />
-            <MacroStat label="Protein" value={todayTotals.protein_g} unit="g" accent="#ff9f0a" />
-            <MacroStat label="Fat" value={todayTotals.fat_g} unit="g" accent="#ff453a" />
-            <MacroStat label="Carbs" value={todayTotals.carbs_g} unit="g" accent="#bf5af2" />
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => refetch()} tintColor={colors.accent} />}
+      >
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.title}>{t('dashboard.title')}</Text>
+            <Text style={styles.subtitle}>{periodLabel(period, t)}</Text>
           </View>
-        </GlassCard>
-      </View>
+          <View style={styles.headerActions}>
+            <PeriodSelector period={period} onChange={setPeriod} />
+            {isAuthenticated ? (
+              <Text style={styles.logoutLink} onPress={handleLogout}>
+                {t('dashboard.logout')}
+              </Text>
+            ) : null}
+          </View>
+        </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>7日間トレンド</Text>
-        <GlassCard>
-          {pastWeek.length === 0 ? (
-            <Text style={styles.placeholder}>まだデータがありません。</Text>
-          ) : (
-            <View style={styles.trendList}>
-              {pastWeek.map((day) => (
-                <View key={day.date} style={styles.trendRow}>
-                  <Text style={styles.trendDate}>{formatDayLabel(day.date)}</Text>
-                  <View style={styles.trendBarContainer}>
-                    <View style={[styles.trendBar, { width: Math.min(day.calories / 3, 220) }]} />
-                  </View>
-                  <Text style={styles.trendValue}>{Math.round(day.calories)} kcal</Text>
+        {!isAuthenticated ? (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{t('dashboard.requiresLogin')}</Text>
+            <Text style={styles.errorHint}>{t('dashboard.loginHint')}</Text>
+          </View>
+        ) : isLoading && !data ? (
+          <ActivityIndicator size="large" color={colors.accent} />
+        ) : error && !data ? (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{t('dashboard.loadError')}</Text>
+            <Text style={styles.errorHint}>{t('dashboard.reloadHint')}</Text>
+          </View>
+        ) : data ? (
+          <View style={styles.dashboardBody}>
+            {isStaleFromCache && (
+              <Text style={styles.cacheBanner}>{t('dashboard.cacheNotice')}</Text>
+            )}
+
+            <SummaryHeader remaining={data.header.remaining} totals={data.header.totals} />
+
+            {data.comparison ? <PeriodComparisonCard comparison={data.comparison} /> : null}
+
+            <TabBar active={activeTab} onChange={setActiveTab} />
+
+            {activeTab === 'calories' && (
+              <View style={styles.section}>
+                <View style={styles.card}>
+                  <CalorieLineChart points={data.calories.points} target={data.calories.targetLine} />
                 </View>
-              ))}
-            </View>
-          )}
-        </GlassCard>
-      </View>
+                <MealPeriodBreakdown entries={data.calories.mealPeriodBreakdown} comparison={data.comparison?.mealPeriods ?? null} />
+                {showEmpty && <EmptyStateCard message={emptyMessage} />}
+              </View>
+            )}
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>最近の食事</Text>
-        {recentLogs.length === 0 ? (
-          <Text style={styles.placeholder}>食事ログがまだありません。</Text>
+            {activeTab === 'macros' && (
+              <View style={[styles.card, styles.section]}>
+                <PFCDonutChart macros={data.macros} />
+                <MacroProgressList macros={data.macros} comparison={data.comparison?.macros ?? null} />
+              </View>
+            )}
+
+            {activeTab === 'nutrients' && (
+              <View style={styles.section}>
+                <NutrientTable data={data.nutrients} />
+              </View>
+            )}
+          </View>
         ) : (
-          recentLogs.map((item) => (
-            <TouchableOpacity key={item.id} activeOpacity={0.85} onPress={() => handleOpenLog(item.id)}>
-              <GlassCard style={styles.mealCard}>
-                <View style={styles.mealCardHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.mealTitle}>{item.dish}</Text>
-                    <Text style={styles.mealTimestamp}>{formatTimestamp(item.created_at)}</Text>
-                    <Text style={styles.mealTag}>{formatMealPeriod(item.meal_period)}</Text>
-                  </View>
-                  {item.thumbnail_url ? (
-                    <Image source={{ uri: item.thumbnail_url }} style={styles.mealThumbnail} />
-                  ) : null}
-                </View>
-                <View style={styles.mealMacros}>
-                  <MacroChip label="P" value={item.protein_g} accent="#ff9f0a" />
-                  <MacroChip label="F" value={item.fat_g} accent="#ff453a" />
-                  <MacroChip label="C" value={item.carbs_g} accent="#bf5af2" />
-                </View>
-              </GlassCard>
-            </TouchableOpacity>
-          ))
+          <EmptyStateCard message={emptyMessage} />
         )}
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-function MacroStat({ label, value, unit, accent }: { label: string; value: number; unit: string; accent: string }) {
-  return (
-    <View style={[styles.macroStat, { borderColor: accent }]}>
-      <Text style={[styles.macroLabel, { color: accent }]}>{label}</Text>
-      <Text style={styles.macroValue}>{Math.round(value)}</Text>
-      <Text style={styles.macroUnit}>{unit}</Text>
-    </View>
-  );
-}
-
-function MacroChip({ label, value, accent }: { label: string; value: number; accent: string }) {
-  return (
-    <View style={[styles.macroChip, { backgroundColor: `${accent}22` }]}>
-      <Text style={[styles.macroChipLabel, { color: accent }]}>{label}</Text>
-      <Text style={[styles.macroChipValue, { color: accent }]}>{Math.round(value)}g</Text>
-    </View>
-  );
-}
-
-function formatDayLabel(date: string) {
-  const day = new Date(date);
-  return `${day.getMonth() + 1}/${day.getDate()}`;
-}
-
-function formatTimestamp(iso: string) {
-  const date = new Date(iso);
-  return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours().toString().padStart(2, '0')}:${date
-    .getMinutes()
-    .toString()
-    .padStart(2, '0')}`;
-}
-
-function formatMealPeriod(period: string | null | undefined) {
+function periodLabel(period: DashboardPeriod, t: (key: string, params?: Record<string, string | number>) => string) {
   switch (period) {
-    case 'breakfast':
-      return '朝食';
-    case 'lunch':
-      return '昼食';
-    case 'dinner':
-      return '夕食';
-    case 'snack':
-      return '間食';
-    case null:
-    case undefined:
-      return 'タグ未設定';
+    case 'today':
+      return t('period.today');
+    case 'yesterday':
+      return t('period.yesterday');
+    case 'thisWeek':
+      return t('period.thisWeek');
+    case 'lastWeek':
+      return t('period.lastWeek');
+    case 'custom':
+      return t('period.custom');
     default:
-      return period;
+      return '';
   }
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,
   },
   content: {
     padding: spacing.lg,
-    paddingBottom: 120,
+    gap: spacing.lg,
+    paddingBottom: 160,
   },
-  topRow: {
+  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.xl,
   },
-  greeting: {
-    ...textStyles.titleMedium,
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
-  greetingCaption: {
+  logoutLink: {
     ...textStyles.caption,
-    marginTop: 4,
+    color: colors.textSecondary,
+    textDecorationLine: 'underline',
   },
-  logout: {
-    color: colors.accent,
-    fontWeight: '600',
+  title: {
+    ...textStyles.titleMedium,
+    color: colors.textPrimary,
+  },
+  subtitle: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  dashboardBody: {
+    gap: spacing.lg,
+  },
+  cacheBanner: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   section: {
-    marginBottom: spacing.xxl,
-  },
-  sectionTitle: {
-    ...textStyles.titleMedium,
-    marginBottom: spacing.md,
-  },
-  totalsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     gap: spacing.md,
   },
-  macroStat: {
-    flex: 1,
+  card: {
+    backgroundColor: colors.surface,
     borderRadius: 16,
-    borderWidth: 1,
     padding: spacing.md,
+    gap: spacing.md,
+  },
+  errorContainer: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.lg,
     alignItems: 'center',
   },
-  macroLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  macroValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginTop: 6,
-  },
-  macroUnit: {
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-  placeholder: {
-    color: colors.textSecondary,
+  errorText: {
     ...textStyles.body,
+    color: colors.error,
+    marginBottom: spacing.xs,
   },
-  trendList: {
-    gap: spacing.sm,
-  },
-  trendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  trendDate: {
-    width: 60,
+  errorHint: {
     ...textStyles.caption,
     color: colors.textSecondary,
-  },
-  trendBarContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(10, 132, 255, 0.08)',
-    borderRadius: 12,
-    overflow: 'hidden',
-    height: 12,
-  },
-  trendBar: {
-    height: 12,
-    backgroundColor: colors.accent,
-    borderRadius: 12,
-  },
-  trendValue: {
-    width: 80,
-    textAlign: 'right',
-    ...textStyles.caption,
-  },
-  mealCard: {
-    marginBottom: spacing.md,
-    gap: spacing.md,
-  },
-  mealCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  mealTitle: {
-    ...textStyles.titleSmall,
-  },
-  mealTimestamp: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
-  mealTag: {
-    ...textStyles.caption,
-    color: colors.accent,
-    marginTop: 4,
-  },
-  mealMacros: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  mealThumbnail: {
-    width: 72,
-    height: 72,
-    borderRadius: 12,
-  },
-  macroChip: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-  },
-  macroChipLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  macroChipValue: {
-    fontSize: 14,
-    fontWeight: '600',
   },
 });
