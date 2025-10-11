@@ -6,6 +6,7 @@ import type { GeminiNutritionResponse, SlotSelectionRequest } from '@meal-log/sh
 import { MealPeriod, Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma.js';
 import { analyzeMealWithGemini } from './gemini-service.js';
+import { invalidateDashboardCacheForUser } from './dashboard-service.js';
 
 interface ProcessMealLogParams {
   userId: number;
@@ -169,6 +170,8 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
     data: { logId: zeroFloored ? null : log.id },
   });
 
+  invalidateDashboardCacheForUser(params.userId);
+
   const meta = {
     ...(enrichedResponse.meta ?? {}),
     imageUrl,
@@ -287,6 +290,8 @@ export async function updateMealLog({ logId, userId, updates }: UpdateMealLogPar
 
     return saved;
   });
+
+  invalidateDashboardCacheForUser(userId);
 
   return updatedLog;
 }

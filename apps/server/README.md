@@ -30,6 +30,17 @@ See project root `.env.example` for required keys. Timeouts can be tuned per env
 - `services/log-service.ts` – orchestrates idempotency, persistence, and nutrition card enrichment.
 - `routes/log.ts` – multer-powered ingestion endpoint returning UI-friendly payloads.
 - `routes/debug.ts` – latency probes and manual analysis helpers.
+- `routes/dashboard.ts` – summary and target endpoints for the redesigned dashboard.
+
+## Dashboard API
+
+| Endpoint | Notes |
+| --- | --- |
+| `GET /api/dashboard/summary?period=today|yesterday|thisWeek|lastWeek|custom&from=YYYY-MM-DD&to=YYYY-MM-DD` | Authenticated users only. Returns range metadata, daily calorie totals (with meal-period buckets), macro totals/targets/delta, micronutrient deltas, and `remainingToday`. `from`/`to` are required when `period=custom` and the range is capped at 31 days. |
+| `GET /api/dashboard/targets` | Returns the current fixed macro targets. Cached client-side for offline use. |
+| `PUT /api/dashboard/targets` | Placeholder that currently responds `501 Not Implemented`. Reserved for user-configurable targets. |
+
+Responses share the `{ ok: boolean }` envelope used across the API. Summary requests are cached per user (`dashboard:{userId}:{from}:{to}`) with a one hour TTL; cache invalidation happens on meal log mutations.
 
 Logs are emitted via Pino; adjust `LOG_LEVEL` or remove `pino-pretty` in production.
 

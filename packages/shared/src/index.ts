@@ -146,3 +146,61 @@ export const UpdateMealLogRequestSchema = z
   });
 
 export type UpdateMealLogRequest = z.infer<typeof UpdateMealLogRequestSchema>;
+
+export const MealPeriodFilterSchema = z.enum(['today', 'yesterday', 'thisWeek', 'lastWeek', 'custom']);
+export type DashboardPeriod = z.infer<typeof MealPeriodFilterSchema>;
+
+const MealPeriodCaloriesSchema = z.object({
+  date: z.string(),
+  total: z.number(),
+  perMealPeriod: z.object({
+    breakfast: z.number(),
+    lunch: z.number(),
+    dinner: z.number(),
+    snack: z.number(),
+    unknown: z.number(),
+  }),
+});
+
+const MacroTotalsSchema = z.object({
+  calories: z.number(),
+  protein_g: z.number(),
+  fat_g: z.number(),
+  carbs_g: z.number(),
+});
+
+export const DashboardSummarySchema = z.object({
+  period: MealPeriodFilterSchema,
+  range: z.object({
+    from: z.string(),
+    to: z.string(),
+    timezone: z.string(),
+  }),
+  calories: z.object({
+    daily: z.array(MealPeriodCaloriesSchema),
+    remainingToday: MacroTotalsSchema,
+  }),
+  macros: z.object({
+    total: MacroTotalsSchema,
+    targets: MacroTotalsSchema,
+    delta: MacroTotalsSchema,
+  }),
+  micros: z.array(
+    z.object({
+      key: z.string(),
+      label: z.string(),
+      unit: z.string(),
+      total: z.number(),
+      target: z.number(),
+      delta: z.number(),
+    }),
+  ),
+  metadata: z.object({
+    generatedAt: z.string(),
+  }),
+});
+
+export type DashboardSummary = z.infer<typeof DashboardSummarySchema>;
+
+export const DashboardTargetsSchema = MacroTotalsSchema;
+export type DashboardTargets = z.infer<typeof DashboardTargetsSchema>;
