@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -9,25 +9,38 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { DashboardPeriod } from '@meal-log/shared';
-import { useDashboardSummary } from '@/features/dashboard/useDashboardSummary';
+import { useQuery } from '@tanstack/react-query';
+import { useDashboardSummary, type MacroComparison } from '@/features/dashboard/useDashboardSummary';
 import { PeriodSelector } from '@/features/dashboard/components/PeriodSelector';
 import { TabBar, type TabKey } from '@/features/dashboard/components/TabBar';
 import { SummaryHeader } from '@/features/dashboard/components/SummaryHeader';
 import { CalorieLineChart } from '@/features/dashboard/components/CalorieLineChart';
 import { MealPeriodBreakdown } from '@/features/dashboard/components/MealPeriodBreakdown';
-import { MacroProgressList } from '@/features/dashboard/components/MacroProgressList';
 import { NutrientTable } from '@/features/dashboard/components/NutrientTable';
 import { EmptyStateCard } from '@/features/dashboard/components/EmptyStateCard';
 import { PeriodComparisonCard } from '@/features/dashboard/components/PeriodComparisonCard';
-import { PFCDonutChart } from '@/features/dashboard/components/PFCDonutChart';
+import { RemainingRings, type MacroRingProps, type RingColorToken } from '@/features/dashboard/components/RemainingRings';
+import { RecentLogsList } from '@/features/dashboard/components/RecentLogsList';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import { useSessionStore } from '@/store/session';
-import { logout } from '@/services/api';
+import { logout, getRecentLogs } from '@/services/api';
 import { useTranslation } from '@/i18n';
 
 const DEFAULT_PERIOD: DashboardPeriod = 'thisWeek';
+
+const MACRO_ORDER: Array<MacroComparison['key']> = ['protein_g', 'carbs_g', 'fat_g'];
+const MACRO_LABEL_KEY: Record<MacroComparison['key'], string> = {
+  protein_g: 'macro.protein',
+  carbs_g: 'macro.carbs',
+  fat_g: 'macro.fat',
+};
+const MACRO_COLOR_TOKEN: Record<MacroComparison['key'], RingColorToken> = {
+  protein_g: 'ringProtein',
+  carbs_g: 'ringCarb',
+  fat_g: 'ringFat',
+};
 
 export default function DashboardScreen() {
   const [period, setPeriod] = useState<DashboardPeriod>(DEFAULT_PERIOD);
@@ -44,6 +57,48 @@ export default function DashboardScreen() {
 
   const showEmpty = data ? !data.calories.hasData : false;
   const emptyMessage = period === 'thisWeek' ? t('dashboard.empty.week') : t('dashboard.empty.generic');
+
+  const recentLogsQuery = useQuery({
+    queryKey: ['recentLogs'],
+    queryFn: async () => {
+      const result = await getRecentLogs();
+      return result.items ?? [];
+    },
+    enabled: isAuthenticated,
+  });
+
+  const recentLogs = useMemo(() => (recentLogsQuery.data ?? []).slice(0, 5), [recentLogsQuery.data]);
+
+  const ringData = useMemo(() => {
+    if (!data?.comparison) {
+      return null;
+    }
+    const macros = MACRO_ORDER.flatMap((key) => {
+      const macro = data.comparison.macros.find((entry) => entry.key === key);
+      if (!macro) {
+        return [];
+      }
+      const config: MacroRingProps = {
+        label: t(MACRO_LABEL_KEY[key]),
+        current: macro.current,
+        target: macro.target,
+        unit: 'g',
+        colorToken: MACRO_COLOR_TOKEN[key],
+      };
+      return [config];
+    });
+
+    return {
+      total: {
+        label: t('tab.calories'),
+        current: data.comparison.totals.current,
+        target: data.comparison.totals.target,
+        unit: 'kcal',
+        colorToken: 'ringKcal',
+      },
+      macros,
+    };
+  }, [data?.comparison, t]);
 
   const handleLogout = async () => {
     try {
@@ -108,23 +163,26 @@ export default function DashboardScreen() {
                 <View style={styles.card}>
                   <CalorieLineChart points={data.calories.points} target={data.calories.targetLine} />
                 </View>
-                <MealPeriodBreakdown entries={data.calories.mealPeriodBreakdown} comparison={data.comparison?.mealPeriods ?? null} />
+                <MealPeriodBreakdown entries={data.calories.mealPeriodBreakdown} />
                 {showEmpty && <EmptyStateCard message={emptyMessage} />}
               </View>
             )}
 
-            {activeTab === 'macros' && (
-              <View style={[styles.card, styles.section]}>
-                <PFCDonutChart macros={data.macros} />
-                <MacroProgressList macros={data.macros} comparison={data.comparison?.macros ?? null} />
+            {activeTab === 'macros' && ringData && (
+              <View style={styles.section}>
+                <RemainingRings total={ringData.total} macros={ringData.macros} />
               </View>
             )}
 
-            {activeTab === 'nutrients' && (
-              <View style={styles.section}>
-                <NutrientTable data={data.nutrients} />
-              </View>
-            )}
+            
+
+            <View style={styles.section}>
+              {recentLogsQuery.isLoading ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : (
+                <RecentLogsList logs={recentLogs} />
+              )}
+            </View>
           </View>
         ) : (
           <EmptyStateCard message={emptyMessage} />

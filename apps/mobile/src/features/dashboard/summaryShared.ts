@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon';
-import type { DashboardSummary, DashboardTargets, DashboardPeriod } from '@meal-log/shared';
+import type { DashboardSummary, DashboardTargets } from '@meal-log/shared';
 
 export interface ChartPoint {
   label: string;
@@ -42,28 +42,20 @@ export interface NutrientRow {
 export interface MacroComparison {
   key: MacroStat['key'];
   current: number;
-  previous: number;
+  target: number;
   delta: number;
-  deltaPercent: number;
-}
-
-export interface MealPeriodComparison {
-  key: MealPeriodBreakdown['key'];
-  currentPercent: number;
-  previousPercent: number;
-  deltaPercent: number;
+  percentOfTarget: number;
 }
 
 export interface PeriodComparison {
-  previousLabelKey: string;
+  referenceLabelKey: string;
   totals: {
     current: number;
-    previous: number;
+    target: number;
     delta: number;
-    deltaPercent: number;
+    percentOfTarget: number;
   };
   macros: MacroComparison[];
-  mealPeriods: MealPeriodComparison[];
 }
 
 export interface DashboardViewModel {
@@ -83,7 +75,7 @@ export interface DashboardViewModel {
   };
   macros: Array<MacroStat>;
   nutrients: Array<NutrientRow>;
-  comparison?: PeriodComparison | null;
+  comparison: PeriodComparison;
 }
 
 export function buildViewModel(summary: DashboardSummary, targets: DashboardTargets): DashboardViewModel {
@@ -91,9 +83,10 @@ export function buildViewModel(summary: DashboardSummary, targets: DashboardTarg
   const totals = roundMacros(summary.macros.total);
   const delta = roundMacros(summary.macros.delta);
   const targetCalories = targets.calories;
+  const timezone = summary.range.timezone;
 
   const points = summary.calories.daily.map((entry) => ({
-    label: formatDayLabel(entry.date),
+    label: formatDayLabel(entry.date, timezone),
     value: entry.total,
     isoDate: entry.date,
   }));
@@ -126,7 +119,7 @@ export function buildViewModel(summary: DashboardSummary, targets: DashboardTarg
     },
     macros,
     nutrients,
-    comparison: null,
+    comparison: buildTargetComparison(summary, summary.macros.targets),
   };
 }
 
@@ -199,13 +192,6 @@ export function percentage(actual: number, target: number) {
   return Math.round((actual / target) * 100);
 }
 
-export function percentChange(actual: number, previous: number, decimals = 1) {
-  if (previous === 0) {
-    return actual === 0 ? 0 : 100;
-  }
-  return roundNumber(((actual - previous) / previous) * 100, decimals);
-}
-
 export function roundMacros(values: DashboardSummary['macros']['total']): FormattedMacros {
   return {
     calories: roundNumber(values.calories, 0),
@@ -220,120 +206,52 @@ export function roundNumber(value: number, decimals: number) {
   return Math.round(value * factor) / factor;
 }
 
-export function formatDayLabel(isoDate: string) {
-  const date = DateTime.fromISO(isoDate);
+export function formatDayLabel(isoDate: string, timezone: string) {
+  if (!isoDate || typeof isoDate !== 'string' || isoDate.toLowerCase() === 'null') {
+    return '';
+  }
+  const date = DateTime.fromISO(isoDate, { zone: timezone });
+  if (!date.isValid) {
+    const fallback = DateTime.fromISO(isoDate);
+    return fallback.isValid ? fallback.toFormat('MM/dd') : isoDate;
+  }
   const weekday = date.setLocale('ja').toFormat('ccc');
   return `${weekday} ${date.day}`;
 }
 
-interface ComparisonRequest {
-  period: DashboardPeriod;
-  range?: { from: string; to: string };
-  cacheKey: string;
-  labelKey: string;
-}
-
-export function getComparisonRequest(period: DashboardPeriod, summary: DashboardSummary | null): ComparisonRequest | null {
-  switch (period) {
-    case 'today':
-      return { period: 'yesterday', cacheKey: 'yesterday', labelKey: 'period.yesterday' };
-    case 'yesterday':
-      return { period: 'today', cacheKey: 'today', labelKey: 'period.today' };
-    case 'thisWeek':
-      return { period: 'lastWeek', cacheKey: 'lastWeek', labelKey: 'period.lastWeek' };
-    case 'lastWeek':
-      return { period: 'thisWeek', cacheKey: 'thisWeek', labelKey: 'period.thisWeek' };
-    case 'custom': {
-      if (!summary) {
-        return null;
-      }
-      const timezone = summary.range.timezone;
-      const from = DateTime.fromISO(summary.range.from, { zone: timezone }).startOf('day');
-      const to = DateTime.fromISO(summary.range.to, { zone: timezone }).startOf('day');
-      const days = Math.max(Math.round(to.diff(from, 'days').days), 1);
-      const previousTo = from.minus({ days: 1 }).startOf('day');
-      const previousFrom = previousTo.minus({ days: days - 1 }).startOf('day');
-      return {
-        period: 'custom',
-        range: { from: previousFrom.toISODate(), to: previousTo.toISODate() },
-        cacheKey: `custom:${previousFrom.toISODate()}:${previousTo.toISODate()}`,
-        labelKey: 'period.previousRange',
-      };
-    }
-    default:
-      return null;
-  }
-}
-
-export function buildPeriodComparison(
-  current: DashboardViewModel,
-  previous: DashboardSummary,
-  previousLabelKey: string,
-): PeriodComparison {
-  const currentTotals = current.summary.macros.total;
-  const previousTotals = previous.macros.total;
-
-  const totals = {
-    current: roundNumber(currentTotals.calories, 0),
-    previous: roundNumber(previousTotals.calories, 0),
-    delta: roundNumber(currentTotals.calories - previousTotals.calories, 0),
-    deltaPercent: percentChange(currentTotals.calories, previousTotals.calories),
-  };
-
-  const macros: MacroComparison[] = [
-    {
-      key: 'protein_g',
-      current: roundNumber(currentTotals.protein_g, 1),
-      previous: roundNumber(previousTotals.protein_g, 1),
-      delta: roundNumber(currentTotals.protein_g - previousTotals.protein_g, 1),
-      deltaPercent: percentChange(currentTotals.protein_g, previousTotals.protein_g),
-    },
-    {
-      key: 'fat_g',
-      current: roundNumber(currentTotals.fat_g, 1),
-      previous: roundNumber(previousTotals.fat_g, 1),
-      delta: roundNumber(currentTotals.fat_g - previousTotals.fat_g, 1),
-      deltaPercent: percentChange(currentTotals.fat_g, previousTotals.fat_g),
-    },
-    {
-      key: 'carbs_g',
-      current: roundNumber(currentTotals.carbs_g, 1),
-      previous: roundNumber(previousTotals.carbs_g, 1),
-      delta: roundNumber(currentTotals.carbs_g - previousTotals.carbs_g, 1),
-      deltaPercent: percentChange(currentTotals.carbs_g, previousTotals.carbs_g),
-    },
-  ];
-
-  const previousBreakdown = computeMealPeriodBreakdown(previous.calories.daily);
-  const previousLookup = new Map(previousBreakdown.map((entry) => [entry.key, entry]));
-
-  const mealPeriods: MealPeriodComparison[] = current.calories.mealPeriodBreakdown.map((entry) => {
-    const previousEntry = previousLookup.get(entry.key);
-    const previousPercent = previousEntry?.percent ?? 0;
-    return {
-      key: entry.key,
-      currentPercent: entry.percent,
-      previousPercent,
-      deltaPercent: roundNumber(entry.percent - previousPercent, 1),
-    };
-  });
+export function buildTargetComparison(summary: DashboardSummary, targets: DashboardTargets): PeriodComparison {
+  const totals = summary.macros.total;
 
   return {
-    previousLabelKey,
-    totals,
-    macros,
-    mealPeriods,
-  };
-}
-
-export function mergeWithComparison(
-  base: DashboardViewModel,
-  previous: DashboardSummary | null,
-  previousLabelKey: string | null,
-): DashboardViewModel {
-  const comparison = previous && previousLabelKey ? buildPeriodComparison(base, previous, previousLabelKey) : null;
-  return {
-    ...base,
-    comparison,
+    referenceLabelKey: 'comparison.target',
+    totals: {
+      current: roundNumber(totals.calories, 0),
+      target: roundNumber(targets.calories, 0),
+      delta: roundNumber(totals.calories - targets.calories, 0),
+      percentOfTarget: percentage(totals.calories, targets.calories),
+    },
+    macros: [
+      {
+        key: 'protein_g',
+        current: roundNumber(totals.protein_g, 1),
+        target: roundNumber(targets.protein_g, 1),
+        delta: roundNumber(totals.protein_g - targets.protein_g, 1),
+        percentOfTarget: percentage(totals.protein_g, targets.protein_g),
+      },
+      {
+        key: 'fat_g',
+        current: roundNumber(totals.fat_g, 1),
+        target: roundNumber(targets.fat_g, 1),
+        delta: roundNumber(totals.fat_g - targets.fat_g, 1),
+        percentOfTarget: percentage(totals.fat_g, targets.fat_g),
+      },
+      {
+        key: 'carbs_g',
+        current: roundNumber(totals.carbs_g, 1),
+        target: roundNumber(targets.carbs_g, 1),
+        delta: roundNumber(totals.carbs_g - targets.carbs_g, 1),
+        percentOfTarget: percentage(totals.carbs_g, targets.carbs_g),
+      },
+    ],
   };
 }

@@ -2,7 +2,7 @@ import { DateTime } from 'luxon';
 import { prisma } from '../db/prisma.js';
 import { DASHBOARD_CACHE_TTL_MS, DASHBOARD_TIMEZONE } from '../config/dashboard.js';
 import { TTLCache } from '../utils/ttl-cache.js';
-import { buildDashboardSummary as buildSummary, getDefaultTargets } from './dashboard-builder.js';
+import { buildDashboardSummary as buildSummary } from './dashboard-builder.js';
 
 const cache = new TTLCache();
 
@@ -138,10 +138,6 @@ function buildCacheKey(userId, period) {
 function withMetadata(summary, timezone) {
   return {
     ...summary,
-    macros: {
-      ...summary.macros,
-      targets: getDefaultTargets(),
-    },
     metadata: {
       generatedAt: DateTime.now().setZone(timezone).toISO(),
     },

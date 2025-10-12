@@ -21,7 +21,10 @@ export function MacroProgressList({ macros, comparison }: Props) {
             <View style={styles.rowHeader}>
               <Text style={styles.label}>{macroLabel(item.key, t)}</Text>
               <View style={styles.rowHeaderRight}>
-                <Text style={styles.value}>{`${item.actual} / ${item.target} g`}</Text>
+                <Text style={styles.value}>{`${item.actual} g`}</Text>
+                <Text style={styles.targetLabel}>
+                  {t('comparison.targetShort')}: {`${item.target} g`}
+                </Text>
               </View>
             </View>
             <View style={styles.progressTrack}>
@@ -42,16 +45,34 @@ export function MacroProgressList({ macros, comparison }: Props) {
                 {formatDelta(item.delta)}
               </Text>
               {comparisonEntry ? (
-                <Text
-                  style={[
-                    styles.comparison,
-                    comparisonEntry.delta > 0 ? styles.deltaPositive : comparisonEntry.delta < 0 ? styles.deltaNegative : null,
-                  ]}
-                >
-                  {t('comparison.macroDelta', {
-                    delta: formatSigned(comparisonEntry.delta),
-                  })}
-                </Text>
+                <View style={styles.comparisonBlock}>
+                  <Text
+                    style={[
+                      styles.comparison,
+                      comparisonEntry.percentOfTarget > 100
+                        ? styles.deltaPositive
+                        : comparisonEntry.percentOfTarget < 100
+                        ? styles.deltaNegative
+                        : null,
+                    ]}
+                  >
+                    {t('comparison.percentOfTarget', { value: percentString(comparisonEntry.percentOfTarget) })}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.comparison,
+                      comparisonEntry.delta > 0
+                        ? styles.deltaPositive
+                        : comparisonEntry.delta < 0
+                        ? styles.deltaNegative
+                        : null,
+                    ]}
+                  >
+                    {t('comparison.macroDelta', {
+                      delta: formatSigned(comparisonEntry.delta),
+                    })}
+                  </Text>
+                </View>
               ) : null}
             </View>
           </View>
@@ -82,6 +103,10 @@ function formatSigned(value: number) {
   return value > 0 ? `+${value}` : `${value}`;
 }
 
+function percentString(value: number) {
+  return `${Math.round(value)}%`;
+}
+
 const styles = StyleSheet.create({
   container: {
     gap: spacing.md,
@@ -104,6 +129,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   value: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  targetLabel: {
     ...textStyles.caption,
     color: colors.textSecondary,
   },
@@ -137,5 +166,9 @@ const styles = StyleSheet.create({
   comparison: {
     ...textStyles.caption,
     color: colors.textSecondary,
+  },
+  comparisonBlock: {
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
 });
