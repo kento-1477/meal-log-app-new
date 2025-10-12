@@ -40,6 +40,11 @@ test('summary endpoint returns dashboard payload when authenticated', async () =
   assert.equal(response.body.ok, true);
   assert.equal(response.body.summary.period, 'thisWeek');
   assert.equal(response.body.summary.calories.daily.length, 7);
+  assert.ok(
+    response.body.summary.calories.daily.every((entry) => typeof entry.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.date)),
+    'daily entries include ISO date strings',
+  );
+  assert.equal(response.body.summary.range.timezone, 'Asia/Tokyo');
 });
 
 test('summary endpoint respects timezone boundaries around midnight', async () => {

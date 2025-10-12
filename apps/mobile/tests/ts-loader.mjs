@@ -42,13 +42,13 @@ export async function resolve(specifier, context, defaultResolve) {
 }
 
 export async function load(url, context, defaultLoad) {
-  if (url.startsWith('file:') && url.endsWith('.ts')) {
+  if (url.startsWith('file:') && (url.endsWith('.ts') || url.endsWith('.tsx'))) {
     const source = await readFile(new URL(url), 'utf8');
     const transpiled = ts.transpileModule(source, {
       compilerOptions: {
         module: ts.ModuleKind.ESNext,
         target: ts.ScriptTarget.ES2022,
-        jsx: ts.JsxEmit.Preserve,
+        jsx: ts.JsxEmit.ReactJSX,
         esModuleInterop: true,
       },
       fileName: url,

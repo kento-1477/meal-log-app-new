@@ -11,7 +11,7 @@ interface Props {
 
 export function PeriodComparisonCard({ comparison }: Props) {
   const { t } = useTranslation();
-  const heading = t('comparison.heading', { period: t(comparison.previousLabelKey) });
+  const heading = t('comparison.heading', { period: t(comparison.referenceLabelKey) });
 
   return (
     <View style={styles.container}>
@@ -22,8 +22,8 @@ export function PeriodComparisonCard({ comparison }: Props) {
           <Text style={styles.summaryValue}>{formatKcal(comparison.totals.current)}</Text>
         </View>
         <View style={styles.summaryBlock}>
-          <Text style={styles.summaryLabel}>{t('comparison.previous')}</Text>
-          <Text style={styles.summaryValueSecondary}>{formatKcal(comparison.totals.previous)}</Text>
+          <Text style={styles.summaryLabel}>{t('comparison.target')}</Text>
+          <Text style={styles.summaryValueSecondary}>{formatKcal(comparison.totals.target)}</Text>
         </View>
         <View style={styles.deltaBlock}>
           <Text
@@ -32,19 +32,19 @@ export function PeriodComparisonCard({ comparison }: Props) {
               comparison.totals.delta > 0 ? styles.deltaPositive : comparison.totals.delta < 0 ? styles.deltaNegative : null,
             ]}
           >
-            {`${signedValue(comparison.totals.delta)} kcal`}
+            {formatDeltaKcal(comparison.totals.delta)}
           </Text>
           <Text
             style={[
               styles.deltaPercent,
-              comparison.totals.deltaPercent > 0
+              comparison.totals.percentOfTarget > 100
                 ? styles.deltaPositive
-                : comparison.totals.deltaPercent < 0
+                : comparison.totals.percentOfTarget < 100
                 ? styles.deltaNegative
                 : null,
             ]}
           >
-            {t('comparison.percentChange', { value: signedValue(comparison.totals.deltaPercent) })}
+            {t('comparison.percentOfTarget', { value: percentString(comparison.totals.percentOfTarget) })}
           </Text>
         </View>
       </View>
@@ -52,8 +52,8 @@ export function PeriodComparisonCard({ comparison }: Props) {
         {comparison.macros.map((macro) => (
           <View key={macro.key} style={styles.macroCard}>
             <Text style={styles.macroLabel}>{macroLabel(macro.key, t)}</Text>
-            <Text style={styles.macroValue}>{`${macro.current} g`}</Text>
-            <Text style={styles.macroPrevious}>{`${macro.previous} g`}</Text>
+            <Text style={styles.macroValue}>{formatGrams(macro.current)}</Text>
+            <Text style={styles.macroTarget}>{formatTarget(macro.target)}</Text>
             <Text
               style={[
                 styles.macroDelta,
@@ -61,6 +61,18 @@ export function PeriodComparisonCard({ comparison }: Props) {
               ]}
             >
               {t('comparison.macroDelta', { delta: signedValue(macro.delta) })}
+            </Text>
+            <Text
+              style={[
+                styles.macroPercent,
+                macro.percentOfTarget > 100
+                  ? styles.deltaPositive
+                  : macro.percentOfTarget < 100
+                  ? styles.deltaNegative
+                  : null,
+              ]}
+            >
+              {t('comparison.percentOfTarget', { value: percentString(macro.percentOfTarget) })}
             </Text>
           </View>
         ))}
@@ -88,13 +100,17 @@ function signedValue(value: number) {
   return value === 0 ? '0' : value > 0 ? `+${roundValue(value)}` : `${roundValue(value)}`;
 }
 
-function roundValue(value: number) {
-  return Math.round(value * 10) / 10;
-}
+const roundValue = (value: number) => Math.round(value * 10) / 10;
 
-function formatKcal(value: number) {
-  return `${Math.round(value)} kcal`;
-}
+const formatKcal = (value: number) => `${Math.round(value)} kcal`;
+
+const formatDeltaKcal = (value: number) => `${signedValue(value)} kcal`;
+
+const formatGrams = (value: number) => `${roundValue(value)} g`;
+
+const formatTarget = (value: number) => `${roundValue(value)} g`;
+
+const percentString = (value: number) => `${roundValue(value)}%`;
 
 const styles = StyleSheet.create({
   container: {
@@ -169,11 +185,15 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: '600',
   },
-  macroPrevious: {
+  macroTarget: {
     ...textStyles.caption,
     color: colors.textSecondary,
   },
   macroDelta: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  macroPercent: {
     ...textStyles.caption,
     color: colors.textSecondary,
   },

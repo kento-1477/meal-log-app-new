@@ -1,19 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery } from '@tanstack/react-query';
-import type { DashboardSummary, DashboardTargets, DashboardPeriod } from '@meal-log/shared';
+import type { DashboardPeriod } from '@meal-log/shared';
 import { getDashboardSummary, getDashboardTargets } from '@/services/api';
-import {
-  DashboardViewModel,
-  buildViewModel,
-  computeMealPeriodBreakdown,
-  getComparisonRequest,
-  mergeWithComparison,
-  roundNumber,
-  FormattedMacros,
-  MacroStat,
-  NutrientRow,
-} from './summaryShared';
+import { DashboardViewModel, buildViewModel } from './summaryShared';
 
 const CACHE_PREFIX = 'dashboard:summary:';
 
@@ -56,37 +46,17 @@ export function useDashboardSummary(period: DashboardPeriod, options?: { enabled
     enabled,
   });
 
-  const baseSummary = summaryQuery.data?.summary ?? cached?.summary ?? null;
-  const comparisonRequest = useMemo(() => getComparisonRequest(period, baseSummary), [period, baseSummary]);
-
-  const comparisonQuery = useQuery({
-    queryKey: ['dashboardSummary', period, 'comparison', comparisonRequest?.cacheKey ?? 'none'],
-    queryFn: async () => {
-      if (!comparisonRequest) {
-        return null;
-      }
-      return getDashboardSummary(comparisonRequest.period, comparisonRequest.range);
-    },
-    enabled: enabled && Boolean(comparisonRequest),
-  });
-
-  const liveData = useMemo(() => {
-    if (!summaryQuery.data) {
-      return null;
-    }
-    return mergeWithComparison(summaryQuery.data, comparisonQuery.data ?? null, comparisonRequest?.labelKey ?? null);
-  }, [summaryQuery.data, comparisonQuery.data, comparisonRequest?.labelKey]);
+  const liveData = useMemo(() => summaryQuery.data ?? null, [summaryQuery.data]);
 
   useEffect(() => {
     if (!enabled || !summaryQuery.data) {
       return;
     }
-    const merged = mergeWithComparison(summaryQuery.data, comparisonQuery.data ?? null, comparisonRequest?.labelKey ?? null);
-    AsyncStorage.setItem(cacheKey(period), JSON.stringify(merged)).catch((error) => {
+    AsyncStorage.setItem(cacheKey(period), JSON.stringify(summaryQuery.data)).catch((error) => {
       console.warn('Failed to cache dashboard summary', error);
     });
-    setCached(merged);
-  }, [enabled, summaryQuery.data, comparisonQuery.data, comparisonRequest?.labelKey, period]);
+    setCached(summaryQuery.data);
+  }, [enabled, summaryQuery.data, period]);
 
   const data = liveData ?? cached;
 
@@ -101,20 +71,6 @@ export function useDashboardSummary(period: DashboardPeriod, options?: { enabled
   } as const;
 }
 
-function buildViewModel(summary: DashboardSummary, targets: DashboardTargets): DashboardViewModel {
-  const remaining = roundMacros(summary.calories.remainingToday);
-  const totals = roundMacros(summary.macros.total);
-  const delta = roundMacros(summary.macros.delta);
-  const targetCalories = targets.calories;
-
-  const points = summary.calories.daily.map((entry) => ({
-    label: formatDayLabel(entry.date),
-    value: entry.total,
-    isoDate: entry.date,
-  }));
-
-  const breakdown = computeMealPeriodBreakdown(summary.calories.daily);
-  const macros = buildMacroStats(summary.macros.total, summary.macros.targets, summary.macros.delta);
 function cacheKey(period: DashboardPeriod) {
   return `${CACHE_PREFIX}${period}`;
 }
@@ -127,6 +83,5 @@ export type {
   FormattedMacros,
   NutrientRow,
   MacroComparison,
-  MealPeriodComparison,
   PeriodComparison,
 } from './summaryShared';

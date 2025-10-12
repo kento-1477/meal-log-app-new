@@ -10,4 +10,9 @@ export const colors = {
   success: '#34c759',
   border: 'rgba(28,28,30,0.12)',
   shadow: 'rgba(0,0,0,0.12)',
+  ringProtein: '#ff9f0a',
+  ringCarb: '#bf5af2',
+  ringFat: '#ff453a',
+  ringKcal: '#0a84ff',
+  ringInactive: '#d1d1d6',
 };

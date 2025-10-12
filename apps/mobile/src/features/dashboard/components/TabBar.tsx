@@ -4,14 +4,14 @@ import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
 import { useTranslation } from '@/i18n';
 
-type TabKey = 'calories' | 'macros' | 'nutrients';
+type TabKey = 'calories' | 'macros';
 
 interface Props {
   active: TabKey;
   onChange: (key: TabKey) => void;
 }
 
-const TABS: TabKey[] = ['calories', 'macros', 'nutrients'];
+const TABS: TabKey[] = ['calories', 'macros'];
 
 export function TabBar({ active, onChange }: Props) {
   const { t } = useTranslation();
@@ -39,10 +39,8 @@ function tabLabel(key: TabKey, t: (key: string) => string) {
     case 'calories':
       return t('tab.calories');
     case 'macros':
-      return t('tab.macros');
-    case 'nutrients':
     default:
-      return t('tab.nutrients');
+      return t('tab.macros');
   }
 }
 

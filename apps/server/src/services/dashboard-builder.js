@@ -42,7 +42,10 @@ export function buildDashboardSummary({ logs, range, timezone, todayTotals }) {
   }
 
   const roundedTotals = roundMacros(totals);
-  const targets = getDefaultTargets();
+  const dailyTargets = getDefaultTargets();
+  const daysCount = Math.max(days.length, 1);
+  const scaledTargets = scaleTargets(dailyTargets, daysCount);
+  const targets = roundMacros(scaledTargets);
   const delta = roundMacros({
     calories: roundedTotals.calories - targets.calories,
     protein_g: roundedTotals.protein_g - targets.protein_g,
@@ -52,10 +55,10 @@ export function buildDashboardSummary({ logs, range, timezone, todayTotals }) {
 
   const micros = buildMicros(roundedTotals, targets, delta);
   const remainingToday = roundMacros({
-    calories: Math.max(targets.calories - todayTotals.calories, 0),
-    protein_g: Math.max(targets.protein_g - todayTotals.protein_g, 0),
-    fat_g: Math.max(targets.fat_g - todayTotals.fat_g, 0),
-    carbs_g: Math.max(targets.carbs_g - todayTotals.carbs_g, 0),
+    calories: Math.max(dailyTargets.calories - todayTotals.calories, 0),
+    protein_g: Math.max(dailyTargets.protein_g - todayTotals.protein_g, 0),
+    fat_g: Math.max(dailyTargets.fat_g - todayTotals.fat_g, 0),
+    carbs_g: Math.max(dailyTargets.carbs_g - todayTotals.carbs_g, 0),
   });
 
   return {
@@ -84,6 +87,15 @@ export function getDefaultTargets() {
     protein_g: DASHBOARD_TARGETS.protein_g.value,
     fat_g: DASHBOARD_TARGETS.fat_g.value,
     carbs_g: DASHBOARD_TARGETS.carbs_g.value,
+  };
+}
+
+function scaleTargets(base, multiplier) {
+  return {
+    calories: base.calories * multiplier,
+    protein_g: base.protein_g * multiplier,
+    fat_g: base.fat_g * multiplier,
+    carbs_g: base.carbs_g * multiplier,
   };
 }
 

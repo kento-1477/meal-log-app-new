@@ -6,6 +6,8 @@ import type { ChartPoint } from '../useDashboardSummary';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
+import { useTranslation } from '@/i18n';
+import { hasSufficientChartData } from './chartGuards';
 
 interface Props {
   points: ChartPoint[];
@@ -17,9 +19,12 @@ const PADDING = 12;
 
 export function CalorieLineChart({ points, target }: Props) {
   const [width, setWidth] = useState(0);
+  const { t } = useTranslation();
+
+  const canRenderSeries = hasSufficientChartData(points);
 
   const { pathData, coordinates, targetY, maxValue } = useMemo(() => {
-    if (points.length === 0 || width === 0) {
+    if (!canRenderSeries || width === 0) {
       return { pathData: null, coordinates: [], targetY: 0, maxValue: 0 };
     }
 
@@ -43,12 +48,14 @@ export function CalorieLineChart({ points, target }: Props) {
     const targetLineY = CHART_HEIGHT - (target / effectiveMax) * (CHART_HEIGHT - PADDING * 2) - PADDING;
 
     return { pathData: path, coordinates: coords, targetY: targetLineY, maxValue: effectiveMax };
-  }, [points, target, width]);
+  }, [canRenderSeries, points, target, width]);
+
+  const shouldRenderChart = width > 0 && canRenderSeries && maxValue > 0 && Boolean(pathData);
 
   return (
     <View>
       <View style={styles.chartContainer} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
-        {width > 0 && maxValue > 0 ? (
+        {shouldRenderChart ? (
           <Svg width={width} height={CHART_HEIGHT}>
             {target > 0 && (
               <SvgLine
@@ -72,17 +79,19 @@ export function CalorieLineChart({ points, target }: Props) {
           </Svg>
         ) : (
           <View style={styles.emptyChart}>
-            <Text style={styles.placeholder}>データがありません</Text>
+            <Text style={styles.placeholder}>{t('chart.placeholder.insufficientData')}</Text>
           </View>
         )}
       </View>
-      <View style={styles.labelsRow}>
-        {points.map((point) => (
-          <Text key={point.isoDate} style={styles.labelText}>
-            {point.label}
-          </Text>
-        ))}
-      </View>
+      {canRenderSeries && (
+        <View style={styles.labelsRow}>
+          {points.map((point) => (
+            <Text key={point.isoDate} style={styles.labelText}>
+              {point.label}
+            </Text>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
