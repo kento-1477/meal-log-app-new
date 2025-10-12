@@ -8,7 +8,6 @@ import {
   buildRingState,
   type RingInput,
   type TranslateFn,
-  type RingState,
 } from './ringMath';
 
 const LARGE_RING_SIZE = 140;

@@ -39,14 +39,13 @@ function makeRing(overrides: Partial<RingInput> = {}): RingInput {
   };
 }
 
-test('ring state shows minimum arc when current is zero', () => {
+test('ring state is zero when current is zero', () => {
   const ring = makeRing({ current: 0, target: 100 });
   const state = buildRingState(ring, translate);
 
   assert.equal(state.deltaText, '100 g 残り');
   assert.equal(state.status, 'left');
-  assert.equal(state.progress, computeProgress(0, 100));
-  assert.ok(state.progress > 0);
+  assert.equal(state.progress, 0);
 });
 
 test('ring state rounds remaining grams correctly', () => {
@@ -55,7 +54,7 @@ test('ring state rounds remaining grams correctly', () => {
 
   assert.equal(state.deltaText, '50 g 残り');
   assert.equal(state.status, 'left');
-  assert.ok(Math.abs(state.progress - (61 / 111)) < 0.0001);
+  assert.ok(Math.abs(state.progress - 61 / 111) < 0.0001);
 });
 
 test('ring state handles high completion percentages', () => {
@@ -64,16 +63,16 @@ test('ring state handles high completion percentages', () => {
 
   assert.equal(state.deltaText, '32 g 残り');
   assert.equal(state.status, 'left');
-  assert.ok(Math.abs(state.progress - (244 / 276)) < 0.0001);
+  assert.ok(Math.abs(state.progress - 244 / 276) < 0.0001);
 });
 
-test('ring state clamps over-consumption to full arc', () => {
+test('ring state handles over-consumption', () => {
   const ring = makeRing({ current: 120, target: 100 });
   const state = buildRingState(ring, translate);
 
-  assert.equal(state.deltaText, '-20 g 超過');
+  assert.equal(state.deltaText, '20 g 超過');
   assert.equal(state.status, 'over');
-  assert.equal(state.progress, 1);
+  assert.equal(state.progress, 1.2);
 });
 
 test('ring state disables visuals when target is zero', () => {

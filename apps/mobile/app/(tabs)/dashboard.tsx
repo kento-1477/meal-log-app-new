@@ -16,7 +16,7 @@ import { TabBar, type TabKey } from '@/features/dashboard/components/TabBar';
 import { SummaryHeader } from '@/features/dashboard/components/SummaryHeader';
 import { CalorieLineChart } from '@/features/dashboard/components/CalorieLineChart';
 import { MealPeriodBreakdown } from '@/features/dashboard/components/MealPeriodBreakdown';
-import { NutrientTable } from '@/features/dashboard/components/NutrientTable';
+
 import { EmptyStateCard } from '@/features/dashboard/components/EmptyStateCard';
 import { PeriodComparisonCard } from '@/features/dashboard/components/PeriodComparisonCard';
 import { RemainingRings, type MacroRingProps, type RingColorToken } from '@/features/dashboard/components/RemainingRings';
