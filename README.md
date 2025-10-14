@@ -102,7 +102,7 @@ npx expo start --clear
 - Scan the QR code (Expo Go) or press `i`/`a` for simulator.
 - Login with `demo@example.com` / `password123`.
 - Chat tab supports text + image attachment, renders nutrition cards, and surfaces guardrail warnings.
-- Dashboard tab surfaces daily totals, 7-day trends, and recent meals.
+- Dashboard tab surfaces daily totals, 7-day trends, and recent meals, and now shows the refreshed macro rings with “current / target” copy along with left/over states.
 
 Ensure the Expo app is pointed at the same host as the server (`EXPO_PUBLIC_API_BASE_URL`). For physical devices on the same network, set this value to your machine’s LAN IP.
 
@@ -118,12 +118,12 @@ Ensure the Expo app is pointed at the same host as the server (`EXPO_PUBLIC_API_
 - Lint (all workspaces): `npm run lint`
 - Server unit tests: `npm test` (runs `node --test` in `apps/server/tests`)
 - Dual-write regression: `npm run test:golem`
-- Mobile: `npm run test --workspace apps/mobile` (Jest configuration scaffolded, add suites as features grow)
+- Mobile: `npm run test --workspace apps/mobile` (Node test runner + custom TS loader validating chart guards and ring math)
 
 ## Next steps
 
 1. Wire real image uploads (S3/Supabase) instead of data URIs stored in PostgreSQL.
-2. Replace mock analytics chart with Victory/Skia-based line charts once requirements settle.
+2. Introduce user-configurable nutrition targets (persisted per account) and pipe them into the scaled dashboard logic.
 3. Extend guardrails with Prometheus metrics (`/metrics`) and alerting on AI failure rate.
 4. Add push notification reminders using Expo Notifications and scheduled jobs.
 
