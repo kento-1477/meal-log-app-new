@@ -24,7 +24,7 @@ export default function TabsLayout() {
       initialRouteName="chat"
       screenOptions={{
         headerShown: false,
-        tabBarHideOnKeyboard: false,
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.textSecondary,
         tabBarBackground: () => <TabBarBackground />,

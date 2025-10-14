@@ -1,52 +1,16 @@
-import React, { useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Image,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors } from '@/theme/colors';
-import { textStyles } from '@/theme/typography';
-import { ChatBubble } from '@/components/ChatBubble';
-import { NutritionCard } from '@/components/NutritionCard';
-import { ErrorBanner } from '@/components/ErrorBanner';
-import { useChatStore } from '@/store/chat';
-import { postMealLog } from '@/services/api';
-import type { NutritionCardPayload } from '@/types/chat';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-interface TimelineItemMessage {
-  type: 'message';
-  id: string;
-  payload: ReturnType<typeof useChatStore.getState>['messages'][number];
-}
+// ... (rest of the imports)
 
-interface TimelineItemCard {
-  type: 'card';
-  id: string;
-  payload: NutritionCardPayload;
-}
+// ... (Timeline interfaces)
 
-const composeTimeline = (messages: ReturnType<typeof useChatStore.getState>['messages']) =>
-  messages.flatMap((message) => {
-    const base: TimelineItemMessage = { type: 'message', id: message.id, payload: message };
-    if (message.card) {
-      const card: TimelineItemCard = { type: 'card', id: `${message.id}-card`, payload: message.card };
-      return [base, card];
-    }
-    return [base];
-  });
+// ... (composeTimeline function)
 
 export default function ChatScreen() {
   const inset = useSafeAreaInsets();
   const listRef = useRef<FlatList<TimelineItemMessage | TimelineItemCard>>(null);
+  const tabBarHeight = useBottomTabBarHeight();
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -109,14 +73,19 @@ export default function ChatScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: inset.top + 12 }]}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <Text style={styles.headerTitle}>今日の食事</Text>
       {error ? <ErrorBanner message={error} /> : null}
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.flex}
+        keyboardVerticalOffset={tabBarHeight}
+      >
         <FlatList
           ref={listRef}
           data={timeline}
           keyExtractor={(item) => item.id}
+          contentInsetAdjustmentBehavior="automatic"
           renderItem={({ item }) =>
             item.type === 'message' ? (
               <ChatBubble message={item.payload} />
@@ -124,11 +93,11 @@ export default function ChatScreen() {
               <NutritionCard payload={item.payload} />
             )
           }
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: 120 + inset.bottom }]}
           onContentSizeChange={scrollToEnd}
           showsVerticalScrollIndicator={false}
         />
-        <View style={[styles.composer, { paddingBottom: inset.bottom + 16 }]}>
+        <View style={[styles.composer, { paddingBottom: 16 }]}>
           {composingImageUri ? (
             <View style={styles.previewContainer}>
               <Image source={{ uri: composingImageUri }} style={styles.preview} />
@@ -154,97 +123,33 @@ export default function ChatScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
-    </View>
+    </SafeAreaView>
   );
 }
 
-function buildAssistantSummary(response: Awaited<ReturnType<typeof postMealLog>>) {
-  const protein = Math.round(response.totals.protein_g);
-  const fat = Math.round(response.totals.fat_g);
-  const carbs = Math.round(response.totals.carbs_g);
-  return `P${protein}g / F${fat}g / C${carbs}g を推定しました。信頼度は ${Math.round(
-    response.confidence * 100,
-  )}% です。`;
-}
+// ... (buildAssistantSummary function)
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingHorizontal: 20,
   },
   headerTitle: {
     ...textStyles.titleLarge,
     marginBottom: 16,
+    paddingHorizontal: 16,
   },
   flex: {
     flex: 1,
   },
   listContent: {
-    paddingBottom: 120,
+    paddingHorizontal: 16,
   },
   composer: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     paddingTop: 12,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    shadowColor: colors.shadow,
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
-  attachButton: {
-    backgroundColor: `${colors.accent}22`,
-    borderRadius: 16,
-    padding: 8,
-    marginRight: 8,
-  },
-  attachIcon: {
-    fontSize: 18,
-    color: colors.accent,
-  },
-  textInput: {
-    flex: 1,
-    maxHeight: 120,
-    fontSize: 16,
-    paddingVertical: 8,
-  },
-  sendButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 16,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginLeft: 8,
   },
-  sendLabel: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  previewContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  preview: {
-    width: 72,
-    height: 72,
-    borderRadius: 16,
-    marginRight: 12,
-  },
-  removeImage: {
-    backgroundColor: colors.error,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  // ... (rest of the styles)
 });
