@@ -1,10 +1,11 @@
 process.env.NODE_ENV = 'test';
-process.env.SESSION_SECRET ??= 'test-session-secret-1234567890';
+process.env.SESSION_SECRET = 'test-session-secret-1234567890';
+process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/testdb';
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DateTime, Settings } from 'luxon';
-import { prisma } from '../dist/db/prisma.js';
+import { prisma } from '../src/db/prisma.ts';
 import { getUserStreak } from '../src/services/streak-service.ts';
 
 const prismaAny = prisma;
