@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
 import type { AiUsageSummary, GeminiNutritionResponse, SlotSelectionRequest } from '@meal-log/shared';
 import { MealPeriod, Prisma } from '@prisma/client';
-import type { AiUsageSummary } from '@meal-log/shared';
 import { prisma } from '../db/prisma.js';
 import { analyzeMealWithGemini } from './gemini-service.js';
 import { invalidateDashboardCacheForUser } from './dashboard-service.js';
