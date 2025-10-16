@@ -13,6 +13,7 @@ export default function LoginScreen() {
   const router = useRouter();
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
+  const setUsage = useSessionStore((state) => state.setUsage);
 
   const [email, setEmail] = useState('demo@example.com');
   const [password, setPassword] = useState('password123');
@@ -26,6 +27,7 @@ export default function LoginScreen() {
       setError(null);
       const response = await login({ email, password });
       setUser(response?.user ?? null);
+      setUsage(response?.usage ?? null);
       setStatus('authenticated');
       router.replace('/(tabs)/chat');
     } catch (err) {

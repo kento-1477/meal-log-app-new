@@ -11,14 +11,16 @@ import {
 } from 'react-native';
 import type { MealLogSummary } from '@meal-log/shared';
 import { useRouter } from 'expo-router';
-import { cacheDirectory, EncodingType, writeAsStringAsync } from 'expo-file-system';
+import { cacheDirectory, deleteAsync, EncodingType, writeAsStringAsync } from 'expo-file-system';
 import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { useState } from 'react';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import { useTranslation } from '@/i18n';
 import { getLogsExport, getMealLogShare, type ExportRange } from '@/services/api';
+import { buildCsv, buildPdfHtml, type ExportItem } from '@/utils/logExport';
 
 interface Props {
   logs: MealLogSummary[];
@@ -130,17 +132,47 @@ export function RecentLogsList({ logs }: Props) {
         return;
       }
 
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert('共有できません', 'このデバイスではファイル共有がサポートされていません。');
+        return;
+      }
+
+      const exportItems: ExportItem[] = dataset.items.map((item) => ({
+        foodItem: item.foodItem,
+        recordedAt: item.recordedAt,
+        calories: item.calories,
+        proteinG: item.proteinG,
+        fatG: item.fatG,
+        carbsG: item.carbsG,
+      }));
+
       if (exportFormat === 'csv') {
-        const csv = buildCsv(dataset.items);
+        const csv = buildCsv(exportItems);
         const fileUri = `${cacheDirectory}meal-logs-${exportRange}-${Date.now()}.csv`;
         await writeAsStringAsync(fileUri, csv, {
           encoding: EncodingType.UTF8,
         });
-        await Share.share({ url: fileUri, title: 'CSVを共有' });
+        try {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: 'text/csv',
+            dialogTitle: 'CSVを共有',
+            UTI: 'public.comma-separated-values-text',
+          });
+        } finally {
+          await deleteAsync(fileUri, { idempotent: true });
+        }
       } else {
-        const html = buildPdfHtml(dataset.items, dataset.from, dataset.to);
-        const result = await Print.printToFileAsync({ html });
-        await Share.share({ url: result.uri, title: 'PDFを共有' });
+        const html = buildPdfHtml(exportItems, dataset.from, dataset.to);
+        const result = await Print.printToFileAsync({ html, base64: false });
+        try {
+          await Sharing.shareAsync(result.uri, {
+            mimeType: 'application/pdf',
+            dialogTitle: 'PDFを共有',
+            UTI: 'com.adobe.pdf',
+          });
+        } finally {
+          await deleteAsync(result.uri, { idempotent: true });
+        }
       }
     } catch (_error) {
       console.error('Failed to export logs', _error);
@@ -220,108 +252,6 @@ function ExportModal({ visible, onClose, range, setRange, format, setFormat, onE
       </View>
     </Modal>
   );
-}
-
-function buildCsv(items: Array<{ foodItem: string; recordedAt: string; calories: number; proteinG: number; fatG: number; carbsG: number }>) {
-  const header = ['記録日時', '料理名', 'カロリー(kcal)', 'たんぱく質(g)', '脂質(g)', '炭水化物(g)'];
-  const rows = items.map((item) => [
-    formatJpDatetime(item.recordedAt),
-    item.foodItem,
-    Math.round(item.calories),
-    round1(item.proteinG),
-    round1(item.fatG),
-    round1(item.carbsG),
-  ]);
-
-  return [header, ...rows]
-    .map((cols) =>
-      cols
-        .map((value) => {
-          const text = String(value ?? '');
-          return text.includes(',') ? `"${text.replace(/"/g, '""')}"` : text;
-        })
-        .join(','),
-    )
-    .join('\n');
-}
-
-function buildPdfHtml(items: Array<{ foodItem: string; recordedAt: string; calories: number; proteinG: number; fatG: number; carbsG: number }>, from: string, to: string) {
-  const rows = items
-    .map(
-      (item) => `
-        <tr>
-          <td>${formatJpDatetime(item.recordedAt)}</td>
-          <td>${escapeHtml(item.foodItem)}</td>
-          <td>${Math.round(item.calories)}</td>
-          <td>${round1(item.proteinG)}</td>
-          <td>${round1(item.fatG)}</td>
-          <td>${round1(item.carbsG)}</td>
-        </tr>
-      `,
-    )
-    .join('');
-
-  return `
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif; padding: 24px; }
-          h1 { font-size: 20px; margin-bottom: 12px; }
-          table { width: 100%; border-collapse: collapse; }
-          th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 12px; }
-          th { background-color: #f4f4f4; }
-        </style>
-      </head>
-      <body>
-        <h1>食事記録 (${formatJpDatetime(from)} 〜 ${formatJpDatetime(to)})</h1>
-        <table>
-          <thead>
-            <tr>
-              <th>記録日時</th>
-              <th>料理名</th>
-              <th>カロリー(kcal)</th>
-              <th>たんぱく質(g)</th>
-              <th>脂質(g)</th>
-              <th>炭水化物(g)</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </body>
-    </html>
-  `;
-}
-
-function formatJpDatetime(iso: string) {
-  return new Date(iso).toLocaleString('ja-JP', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function round1(value: number) {
-  return Math.round(value * 10) / 10;
-}
-
-function escapeHtml(input: string) {
-  return input.replace(/[&<>"]/g, (match) => {
-    switch (match) {
-      case '&':
-        return '&amp;';
-      case '<':
-        return '&lt;';
-      case '>':
-        return '&gt;';
-      case '"':
-        return '&quot;';
-      default:
-        return match;
-    }
-  });
 }
 
 const styles = StyleSheet.create({

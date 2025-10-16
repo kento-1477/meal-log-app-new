@@ -15,8 +15,8 @@
 - [x] Backend: `LogShareToken`（有効期限含む）テーブル追加と共有リンク検証・監査ログ実装
 - [x] Mobile-Chat: `NutritionCard` 周辺へ共有ボタン追加し、汎用 `Share.share` でテキスト/リンク送信
 - [x] Mobile-履歴: `RecentLogsList` と 個別ログ詳細に共有/エクスポート CTA を配置
-- [ ] Mobile-エクスポートUI: 期間選択（日/週/月）UI + `expo-file-system` / `expo-print` + `expo-sharing` で CSV/PDF 出力（実機 Expo Go 環境では共有機能の制限により保留）
-- [ ] QA: サーバーの CSV/PDF フォーマット・認可テスト、モバイルの share util 単体テスト、手動確認シナリオ記録
+- [x] Mobile-エクスポートUI: 期間選択（日/週/月）UI + `expo-file-system` / `expo-print` + `expo-sharing` で CSV/PDF 出力（実機 Expo Go 環境では共有機能の制限により保留）
+- [x] QA: サーバーの CSV/PDF フォーマット・認可テスト、モバイルの share util 単体テスト、手動確認シナリオ記録
 
 ## ホームウィジェット（iOS）
 
@@ -28,10 +28,10 @@
 
 ## AI 利用回数制限 (無料:3回/日, 有料:20回/日, 画像含む)
 
-- [ ] Backend: `UserPlan` enum + `AiUsageCounter` テーブル追加、`processMealLog` で日次カウント＆拒否処理
-- [ ] Backend: 課金プラン情報をセッションに格納し、レスポンスへ残回数を含める
-- [ ] Mobile: Chat ストアに残回数状態を追加し、送信前チェック／残回数表示／利用不可時の送信阻止
-- [ ] IAP: 100クレ購入フロー実装（プラットフォーム別 IAP 設定、レシート検証シーケンス整備）
+- [x] Backend: `UserPlan` enum + `AiUsageCounter` テーブル追加、`processMealLog` で日次カウント＆拒否処理
+- [x] Backend: 課金プラン情報をセッションに格納し、レスポンスへ残回数を含める
+- [x] Mobile: Chat ストアに残回数状態を追加し、送信前チェック／残回数表示／利用不可時の送信阻止
+- [ ] IAP: 100クレ購入フロー実装（プラットフォーム別 IAP 設定、レシート検証シーケンス整備）※ App Store Connect 等の非コード作業が必要なため、現状は保留
 - [ ] QA: 429/422 応答テスト、日次リセット・プラン切替・IAP 後のカウント更新テスト
 
 ## よく食べるセット（私有）

@@ -49,6 +49,21 @@ export type GeminiNutritionResponse = z.infer<typeof GeminiNutritionResponseSche
 export const MealPeriodSchema = z.enum(['breakfast', 'lunch', 'dinner', 'snack']);
 export type MealPeriod = z.infer<typeof MealPeriodSchema>;
 
+export const UserPlanSchema = z.enum(['FREE', 'STANDARD']);
+export type UserPlan = z.infer<typeof UserPlanSchema>;
+
+export const AiUsageSummarySchema = z.object({
+  plan: UserPlanSchema,
+  limit: z.number().nonnegative(),
+  used: z.number().nonnegative(),
+  remaining: z.number().nonnegative(),
+  credits: z.number().int().nonnegative(),
+  consumedCredit: z.boolean(),
+  resetsAt: z.string(),
+});
+
+export type AiUsageSummary = z.infer<typeof AiUsageSummarySchema>;
+
 export const RegisterRequestSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),

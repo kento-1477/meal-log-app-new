@@ -5,6 +5,7 @@ import { useSessionStore } from '@/store/session';
 export function useSessionBootstrap() {
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
+  const setUsage = useSessionStore((state) => state.setUsage);
   const hydrated = useSessionStore((state) => state.hydrated);
   const markHydrated = useSessionStore((state) => state.markHydrated);
 
@@ -18,9 +19,11 @@ export function useSessionBootstrap() {
       if (cancelled) return;
       if (session.authenticated && session.user) {
         setUser(session.user);
+        setUsage(session.usage ?? null);
       } else {
         setStatus('unauthenticated');
         setUser(null);
+        setUsage(null);
       }
       markHydrated();
     }
@@ -30,5 +33,5 @@ export function useSessionBootstrap() {
     return () => {
       cancelled = true;
     };
-  }, [hydrated, markHydrated, setStatus, setUser]);
+  }, [hydrated, markHydrated, setStatus, setUsage, setUser]);
 }

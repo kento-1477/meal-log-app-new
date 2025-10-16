@@ -1,5 +1,6 @@
 import argon2 from 'argon2';
 import { prisma } from '../db/prisma.js';
+import type { UserPlan } from '@prisma/client';
 
 export async function registerUser(params: { email: string; password: string; username?: string }) {
   const existing = await prisma.user.findUnique({ where: { email: params.email } });
@@ -16,7 +17,7 @@ export async function registerUser(params: { email: string; password: string; us
     },
   });
 
-  return { id: user.id, email: user.email, username: user.username };
+  return serializeUser(user);
 }
 
 export async function authenticateUser(params: { email: string; password: string }) {
@@ -30,11 +31,27 @@ export async function authenticateUser(params: { email: string; password: string
     throw Object.assign(new Error('Invalid credentials'), { statusCode: 401, expose: true });
   }
 
-  return { id: user.id, email: user.email, username: user.username };
+  return serializeUser(user);
 }
 
 export async function findUserById(id: number) {
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user) return null;
-  return { id: user.id, email: user.email, username: user.username };
+  return serializeUser(user);
+}
+
+function serializeUser(user: {
+  id: number;
+  email: string;
+  username: string | null;
+  plan: UserPlan;
+  aiCredits: number;
+}) {
+  return {
+    id: user.id,
+    email: user.email,
+    username: user.username ?? undefined,
+    plan: user.plan,
+    aiCredits: user.aiCredits,
+  };
 }

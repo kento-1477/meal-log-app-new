@@ -36,6 +36,7 @@ async function fetchWithSession(path, init = {}) {
 }
 
 before(async () => {
+  await prisma.$executeRawUnsafe('TRUNCATE "AiUsageCounter" CASCADE');
   await prisma.$executeRawUnsafe('TRUNCATE "MealLog" CASCADE');
   await prisma.$executeRawUnsafe('TRUNCATE "LogShareToken" CASCADE');
   await prisma.$executeRawUnsafe('TRUNCATE "User" CASCADE');
