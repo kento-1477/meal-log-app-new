@@ -2,17 +2,14 @@ import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 
 export async function resolve(specifier, context, defaultResolve) {
-  if (specifier.endsWith('/db/prisma.js') && context.parentURL?.includes('/apps/server/src/')) {
-    const url = new URL('../../dist/db/prisma.js', context.parentURL);
-    return { url: url.href, shortCircuit: true };
-  }
-  if (specifier.endsWith('/utils/ttl-cache.js') && context.parentURL?.includes('/apps/server/src/')) {
-    const url = new URL('../../dist/utils/ttl-cache.js', context.parentURL);
-    return { url: url.href, shortCircuit: true };
-  }
-  if (specifier.endsWith('/env.js') && context.parentURL?.includes('/apps/server/src/')) {
-    const url = new URL('../../src/env.ts', context.parentURL);
-    return { url: url.href, shortCircuit: true };
+  if (specifier.endsWith('.js') && context.parentURL?.includes('/apps/server/')) {
+    const tsUrl = new URL(specifier.replace(/\.js$/, '.ts'), context.parentURL);
+    try {
+      await readFile(tsUrl);
+      return { url: tsUrl.href, shortCircuit: true };
+    } catch (_error) {
+      // ignore and fall through
+    }
   }
   return defaultResolve(specifier, context, defaultResolve);
 }
