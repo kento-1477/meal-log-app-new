@@ -17,7 +17,6 @@ test.afterEach(() => {
 test('getLogsForExport returns records within day range ordered ascending', async () => {
   const base = DateTime.fromISO('2025-03-10T12:00:00Z');
   const startOfDay = base.startOf('day').toJSDate();
-  const endOfDay = base.plus({ days: 1 }).startOf('day').toJSDate();
 
   const sample = [
     {

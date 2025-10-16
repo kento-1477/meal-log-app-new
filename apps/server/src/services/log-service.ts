@@ -2,7 +2,7 @@ import type { Express } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { createHash } from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
-import type { GeminiNutritionResponse, SlotSelectionRequest } from '@meal-log/shared';
+import type { AiUsageSummary, GeminiNutritionResponse, SlotSelectionRequest } from '@meal-log/shared';
 import { MealPeriod, Prisma } from '@prisma/client';
 import type { AiUsageSummary } from '@meal-log/shared';
 import { prisma } from '../db/prisma.js';
