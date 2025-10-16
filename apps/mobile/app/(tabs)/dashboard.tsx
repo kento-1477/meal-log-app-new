@@ -49,6 +49,7 @@ export default function DashboardScreen() {
   const status = useSessionStore((state) => state.status);
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
+  const setUsage = useSessionStore((state) => state.setUsage);
   const isAuthenticated = status === 'authenticated';
   const { t } = useTranslation();
 
@@ -117,6 +118,7 @@ export default function DashboardScreen() {
       setStatus('loading');
       await logout();
       setUser(null);
+      setUsage(null);
       setStatus('unauthenticated');
     } catch (err) {
       console.warn('Failed to logout', err);
