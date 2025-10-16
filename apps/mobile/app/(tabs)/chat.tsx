@@ -1,5 +1,49 @@
+import React, { useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors } from '@/theme/colors';
+import { textStyles } from '@/theme/typography';
+import { ChatBubble } from '@/components/ChatBubble';
+import { NutritionCard } from '@/components/NutritionCard';
+import { ErrorBanner } from '@/components/ErrorBanner';
+import { useChatStore } from '@/store/chat';
+import { postMealLog } from '@/services/api';
+import type { NutritionCardPayload } from '@/types/chat';
+
+interface TimelineItemMessage {
+  type: 'message';
+  id: string;
+  payload: ReturnType<typeof useChatStore.getState>['messages'][number];
+}
+
+interface TimelineItemCard {
+  type: 'card';
+  id: string;
+  payload: NutritionCardPayload;
+}
+
+const composeTimeline = (messages: ReturnType<typeof useChatStore.getState>['messages']) =>
+  messages.flatMap((message) => {
+    const base: TimelineItemMessage = { type: 'message', id: message.id, payload: message };
+    if (message.card) {
+      const card: TimelineItemCard = { type: 'card', id: `${message.id}-card`, payload: message.card };
+      return [base, card];
+    }
+    return [base];
+  });
 
 // ... (rest of the imports)
 
