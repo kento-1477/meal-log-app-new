@@ -10,6 +10,10 @@ export async function resolve(specifier, context, defaultResolve) {
     const url = new URL('../../dist/utils/ttl-cache.js', context.parentURL);
     return { url: url.href, shortCircuit: true };
   }
+  if (specifier.endsWith('/env.js') && context.parentURL?.includes('/apps/server/src/')) {
+    const url = new URL('../../src/env.ts', context.parentURL);
+    return { url: url.href, shortCircuit: true };
+  }
   return defaultResolve(specifier, context, defaultResolve);
 }
 
