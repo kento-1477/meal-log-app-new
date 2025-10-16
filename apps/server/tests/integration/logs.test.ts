@@ -1,7 +1,4 @@
-process.env.NODE_ENV = 'test';
-process.env.SESSION_SECRET = 'test-session-secret';
-process.env.PORT = '4100';
-process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/meal_log_test';
+import '../test-env.ts';
 
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
