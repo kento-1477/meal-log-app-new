@@ -4,6 +4,7 @@ import {
   Alert,
   Image,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -12,7 +13,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getMealLogDetail, updateMealLog } from '@/services/api';
+import { getMealLogDetail, getMealLogShare, updateMealLog } from '@/services/api';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
@@ -48,6 +49,7 @@ export default function MealLogDetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const queryClient = useQueryClient();
   const [fields, setFields] = useState<FieldState>(initialState);
+  const [sharing, setSharing] = useState(false);
 
   const logId = params.id ?? '';
 
@@ -113,6 +115,19 @@ export default function MealLogDetailScreen() {
 
   const historyEntries = detail?.history ?? [];
 
+  const handleShare = async () => {
+    if (!logId) return;
+    try {
+      setSharing(true);
+      const response = await getMealLogShare(logId);
+      await Share.share({ message: response.share.text });
+    } catch (_error) {
+      Alert.alert('共有に失敗しました', '時間をおいて再度お試しください。');
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       {isLoading ? (
@@ -125,6 +140,11 @@ export default function MealLogDetailScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.toolbar}>
+            <TouchableOpacity style={styles.shareButton} onPress={handleShare} disabled={sharing}>
+              <Text style={styles.shareButtonLabel}>{sharing ? '共有中…' : '共有する'}</Text>
+            </TouchableOpacity>
+          </View>
           {detail.image_url ? <Image source={{ uri: detail.image_url }} style={styles.heroImage} /> : null}
 
           <View style={styles.section}>
@@ -282,6 +302,22 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.xl,
     paddingBottom: 120,
+  },
+  toolbar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  shareButton: {
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: 18,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  shareButtonLabel: {
+    ...textStyles.caption,
+    color: colors.accent,
+    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,

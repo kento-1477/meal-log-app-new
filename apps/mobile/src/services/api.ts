@@ -131,6 +131,43 @@ export async function updateMealLog(logId: string, input: UpdateMealLogRequest) 
   });
 }
 
+export async function getMealLogShare(logId: string) {
+  return apiFetch<{ ok: boolean; share: { text: string; token: string; expiresAt: string } }>(
+    `/api/log/${logId}/share`,
+    {
+      method: 'GET',
+    },
+  );
+}
+
+export type ExportRange = 'day' | 'week' | 'month';
+
+export async function getLogsExport(range: ExportRange, anchor?: string) {
+  const params = new URLSearchParams({ range });
+  if (anchor) {
+    params.set('anchor', anchor);
+  }
+
+  return apiFetch<{
+    ok: boolean;
+    range: ExportRange;
+    export: {
+      from: string;
+      to: string;
+      items: Array<{
+        id: string;
+        recordedAt: string;
+        foodItem: string;
+        calories: number;
+        proteinG: number;
+        fatG: number;
+        carbsG: number;
+        mealPeriod: string | null;
+      }>;
+    };
+  }>(`/api/logs/export?${params.toString()}`, { method: 'GET' });
+}
+
 export async function getDashboardSummary(period: DashboardPeriod, range?: { from: string; to: string }) {
   const params = new URLSearchParams({ period });
   if (period === 'custom' && range) {
@@ -150,4 +187,14 @@ export async function getDashboardTargets() {
   const response = await apiFetch<{ ok: boolean; targets: unknown }>(`/api/dashboard/targets`, { method: 'GET' });
   const parsed = DashboardTargetsSchema.parse(response.targets);
   return parsed as DashboardTargets;
+}
+
+export interface StreakPayload {
+  current: number;
+  longest: number;
+  lastLoggedAt: string | null;
+}
+
+export async function getStreak() {
+  return apiFetch<{ ok: boolean; streak: StreakPayload }>(`/api/streak`, { method: 'GET' });
 }

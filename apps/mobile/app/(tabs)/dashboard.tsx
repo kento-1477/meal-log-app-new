@@ -25,7 +25,8 @@ import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import { useSessionStore } from '@/store/session';
-import { logout, getRecentLogs } from '@/services/api';
+import { logout, getRecentLogs, getStreak } from '@/services/api';
+import { cacheStreak } from '@/services/streak-storage';
 import { useTranslation } from '@/i18n';
 
 const DEFAULT_PERIOD: DashboardPeriod = 'thisWeek';
@@ -65,6 +66,17 @@ export default function DashboardScreen() {
       return result.items ?? [];
     },
     enabled: isAuthenticated,
+  });
+
+  const streakQuery = useQuery({
+    queryKey: ['streak'],
+    queryFn: async () => {
+      const response = await getStreak();
+      await cacheStreak(response.streak);
+      return response.streak;
+    },
+    enabled: isAuthenticated,
+    staleTime: 1000 * 60 * 15,
   });
 
   const recentLogs = useMemo(() => (recentLogsQuery.data ?? []).slice(0, 5), [recentLogsQuery.data]);
@@ -123,6 +135,9 @@ export default function DashboardScreen() {
           <View>
             <Text style={styles.title}>{t('dashboard.title')}</Text>
             <Text style={styles.subtitle}>{periodLabel(period, t)}</Text>
+            {isAuthenticated && streakQuery.data ? (
+              <Text style={styles.streakBadge}>🔥 {streakQuery.data.current} {t('streak.days')}</Text>
+            ) : null}
           </View>
           <View style={styles.headerActions}>
             <PeriodSelector period={period} onChange={setPeriod} />
@@ -227,6 +242,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  streakBadge: {
+    ...textStyles.caption,
+    color: colors.accent,
+    marginTop: 4,
+    fontWeight: '600',
   },
   headerActions: {
     flexDirection: 'row',
