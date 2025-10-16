@@ -7,6 +7,8 @@ import type {
   MealLogDetail,
   MealLogSummary,
   UpdateMealLogRequest,
+  AiUsageSummary,
+  UserPlan,
 } from '@meal-log/shared';
 import { DashboardSummarySchema, DashboardTargetsSchema } from '@meal-log/shared';
 
@@ -26,13 +28,24 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
   if (!response.ok) {
     let message = response.statusText;
+    let data: Record<string, unknown> | null = null;
     try {
-      const data = await response.json();
-      message = data?.error ?? data?.message ?? message;
+      data = await response.json();
+      message = (data?.error as string) ?? (data?.message as string) ?? message;
     } catch (_error) {
       // ignore json parse errors
     }
-    throw new Error(message || 'Unknown error');
+    const error = new Error(message || 'Unknown error') as ApiError;
+    error.status = response.status;
+    if (data && typeof data === 'object') {
+      if (typeof data.code === 'string') {
+        error.code = data.code;
+      }
+      if (data.data) {
+        error.data = data.data;
+      }
+    }
+    throw error;
   }
 
   if (response.status === 204) {
@@ -43,15 +56,41 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   return text ? (JSON.parse(text) as T) : (null as T);
 }
 
+export interface ApiError extends Error {
+  status?: number;
+  code?: string;
+  data?: unknown;
+}
+
+export interface SessionUser {
+  id: number;
+  email: string;
+  username?: string;
+  plan: UserPlan;
+  aiCredits: number;
+}
+
+export interface SessionPayload {
+  authenticated: boolean;
+  user?: SessionUser;
+  usage?: AiUsageSummary;
+}
+
+export interface AuthResponse {
+  message: string;
+  user: SessionUser;
+  usage: AiUsageSummary;
+}
+
 export async function registerUser(input: { email: string; password: string; username?: string }) {
-  return apiFetch('/api/register', {
+  return apiFetch<AuthResponse>('/api/register', {
     method: 'POST',
     body: JSON.stringify(input),
   });
 }
 
 export async function login(input: { email: string; password: string }) {
-  return apiFetch('/api/login', {
+  return apiFetch<AuthResponse>('/api/login', {
     method: 'POST',
     body: JSON.stringify(input),
   });
@@ -63,12 +102,9 @@ export async function logout() {
 
 export async function getSession() {
   try {
-    return await apiFetch<{ authenticated: boolean; user?: { id: number; email: string; username?: string } }>(
-      '/api/session',
-      { method: 'GET' },
-    );
+    return await apiFetch<SessionPayload>('/api/session', { method: 'GET' });
   } catch (_error) {
-    return { authenticated: false };
+    return { authenticated: false } satisfies SessionPayload;
   }
 }
 
@@ -84,6 +120,7 @@ export interface MealLogResponse {
   meta: Record<string, unknown>;
   meal_period?: string | null;
   image_url?: string | null;
+  usage?: AiUsageSummary;
 }
 
 export async function postMealLog(params: { message: string; imageUri?: string | null }) {

@@ -2,11 +2,17 @@ import type { Express } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { createHash } from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
-import type { GeminiNutritionResponse, SlotSelectionRequest } from '@meal-log/shared';
+import type { AiUsageSummary, GeminiNutritionResponse, SlotSelectionRequest } from '@meal-log/shared';
 import { MealPeriod, Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma.js';
 import { analyzeMealWithGemini } from './gemini-service.js';
 import { invalidateDashboardCacheForUser } from './dashboard-service.js';
+import {
+  evaluateAiUsage,
+  recordAiUsage,
+  buildUsageLimitError,
+  summarizeUsageStatus,
+} from './ai-usage-service.js';
 
 interface ProcessMealLogParams {
   userId: number;
@@ -30,6 +36,7 @@ interface ProcessMealLogResult {
     warnings: string[];
   };
   meta: Record<string, unknown>;
+  usage?: AiUsageSummary;
 }
 
 const inferMealPeriod = (date: Date): MealPeriod => {
@@ -57,6 +64,9 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
   if (existing?.log && !existing.log.zeroFloored) {
     const log = existing.log;
     const aiRaw = log.aiRaw as GeminiNutritionResponse | null;
+    const usageStatus = await evaluateAiUsage(params.userId);
+    const usageSummary = summarizeUsageStatus(usageStatus);
+
     const totals = aiRaw?.totals ?? {
       kcal: log.calories,
       protein_g: log.proteinG,
@@ -83,7 +93,16 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
         reused: true,
         mealPeriod: log.mealPeriod,
       },
+      usage: usageSummary,
     };
+  }
+
+  const imageBase64 = params.file ? params.file.buffer.toString('base64') : undefined;
+  const imageMimeType = params.file?.mimetype;
+
+  const usageStatus = await evaluateAiUsage(params.userId);
+  if (!usageStatus.allowed) {
+    throw buildUsageLimitError(usageStatus);
   }
 
   let ingest = existing;
@@ -95,9 +114,6 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
       },
     });
   }
-
-  const imageBase64 = params.file ? params.file.buffer.toString('base64') : undefined;
-  const imageMimeType = params.file?.mimetype;
 
   let analysis;
   try {
@@ -172,6 +188,12 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
 
   invalidateDashboardCacheForUser(params.userId);
 
+  const usageSummary = await recordAiUsage({
+    userId: params.userId,
+    usageDate: usageStatus.usageDate,
+    consumeCredit: usageStatus.consumeCredit,
+  });
+
   const meta = {
     ...(enrichedResponse.meta ?? {}),
     imageUrl,
@@ -194,6 +216,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
       warnings,
     },
     meta,
+    usage: usageSummary,
   };
 }
 

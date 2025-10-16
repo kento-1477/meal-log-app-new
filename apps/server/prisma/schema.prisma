@@ -8,16 +8,19 @@ generator client {
 }
 
 model User {
-  id             Int             @id @default(autoincrement())
-  email          String          @unique
+  id             Int              @id @default(autoincrement())
+  email          String           @unique
   username       String?
   passwordHash   String
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  plan           UserPlan         @default(FREE)
+  aiCredits      Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
   mealLogs       MealLog[]
   ingestRequests IngestRequest[]
   edits          MealLogEdit[]
   shareTokens    LogShareToken[]
+  usageCounters  AiUsageCounter[]
 }
 
 model MealLog {
@@ -92,9 +95,25 @@ model LogShareToken {
   @@index([userId, mealLogId])
 }
 
+model AiUsageCounter {
+  id         Int      @id @default(autoincrement())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     Int
+  usageDate  DateTime @db.Date
+  count      Int      @default(0)
+  lastUsedAt DateTime @default(now())
+
+  @@unique([userId, usageDate])
+}
+
 enum MealPeriod {
   BREAKFAST
   LUNCH
   DINNER
   SNACK
+}
+
+enum UserPlan {
+  FREE
+  STANDARD
 }

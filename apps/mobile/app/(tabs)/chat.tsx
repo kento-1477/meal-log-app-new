@@ -23,8 +23,10 @@ import { ChatBubble } from '@/components/ChatBubble';
 import { NutritionCard } from '@/components/NutritionCard';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { useChatStore } from '@/store/chat';
-import { getMealLogShare, postMealLog, type MealLogResponse } from '@/services/api';
+import { useSessionStore } from '@/store/session';
+import { getMealLogShare, postMealLog, type MealLogResponse, type ApiError } from '@/services/api';
 import type { NutritionCardPayload } from '@/types/chat';
+import type { AiUsageSummary } from '@meal-log/shared';
 
 interface TimelineItemMessage {
   type: 'message';
@@ -65,6 +67,9 @@ export default function ChatScreen() {
   const [sharingId, setSharingId] = useState<string | null>(null);
 
   const { messages, addUserMessage, addAssistantMessage, setMessageText, updateMessageStatus, attachCardToMessage, composingImageUri, setComposingImage } = useChatStore();
+  const usage = useSessionStore((state) => state.usage);
+  const setUsage = useSessionStore((state) => state.setUsage);
+  const userPlan = useSessionStore((state) => state.user?.plan ?? 'FREE');
 
   const timeline = useMemo<Array<TimelineItemMessage | TimelineItemCard>>(() => composeTimeline(messages), [messages]);
 
@@ -72,8 +77,14 @@ export default function ChatScreen() {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   };
 
+  const canSend = !usage || usage.remaining > 0 || usage.credits > 0;
+
   const handleSend = async () => {
     if (!input.trim() && !composingImageUri) {
+      return;
+    }
+    if (usage && !canSend) {
+      setError('本日の無料利用回数が上限に達しました。');
       return;
     }
     setSending(true);
@@ -98,15 +109,29 @@ export default function ChatScreen() {
         warnings: response.breakdown.warnings,
       });
       setMessageText(assistantPlaceholder.id, summaryText);
+      if (response.usage) {
+        setUsage(response.usage);
+      }
       setInput('');
       setComposingImage(null);
       queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
       queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
       queryClient.invalidateQueries({ queryKey: ['streak'] });
     } catch (_error) {
+      const apiError = _error as ApiError;
+      if (apiError.code === 'AI_USAGE_LIMIT') {
+        updateMessageStatus(userMessage.id, 'error');
+        updateMessageStatus(assistantPlaceholder.id, 'error');
+        const payload = apiError.data as AiUsageSummary | undefined;
+        if (payload) {
+          setUsage(payload);
+        }
+        setError('本日の利用回数が上限に達しました。');
+      } else {
       updateMessageStatus(userMessage.id, 'error');
       updateMessageStatus(assistantPlaceholder.id, 'error');
       setError('エラーが発生しました。もう一度お試しください。');
+      }
     } finally {
       setSending(false);
       scrollToEnd();
@@ -148,6 +173,14 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <Text style={styles.headerTitle}>今日の食事</Text>
+      {usage ? (
+        <View style={styles.usageBanner}>
+          <Text style={styles.usageText}>
+            {userPlan === 'STANDARD' ? 'Standard プラン' : '無料プラン'} ｜ 残り {usage.remaining} / {usage.limit} 回
+          </Text>
+          {usage.credits > 0 ? <Text style={styles.usageCredits}>クレジット {usage.credits} 回分</Text> : null}
+        </View>
+      ) : null}
       {error ? <ErrorBanner message={error} /> : null}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -194,10 +227,13 @@ export default function ChatScreen() {
               onChangeText={setInput}
               multiline
             />
-            <TouchableOpacity onPress={handleSend} disabled={sending} style={styles.sendButton}>
-              {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>送信</Text>}
+            <TouchableOpacity onPress={handleSend} disabled={sending || !canSend} style={[styles.sendButton, (!canSend || sending) && styles.sendButtonDisabled]}>
+              {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>{canSend ? '送信' : '上限'}</Text>}
             </TouchableOpacity>
           </View>
+          {!canSend ? (
+            <Text style={styles.limitHint}>本日の利用上限に達しました。明日までお待ちいただくか、クレジットを購入してください。</Text>
+          ) : null}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -252,6 +288,19 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingHorizontal: 16,
   },
+  usageBanner: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    gap: 4,
+  },
+  usageText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  usageCredits: {
+    ...textStyles.caption,
+    color: colors.accent,
+  },
   flex: {
     flex: 1,
   },
@@ -263,6 +312,74 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingTop: 12,
     paddingHorizontal: 16,
+    gap: 8,
   },
-  // ... (rest of the styles)
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 12,
+  },
+  attachButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  attachIcon: {
+    fontSize: 22,
+    color: colors.accent,
+  },
+  textInput: {
+    flex: 1,
+    maxHeight: 120,
+    borderRadius: 16,
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    fontSize: 16,
+  },
+  sendButton: {
+    height: 40,
+    borderRadius: 12,
+    paddingHorizontal: 18,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendButtonDisabled: {
+    backgroundColor: colors.border,
+  },
+  sendLabel: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  previewContainer: {
+    marginBottom: 12,
+    position: 'relative',
+    alignSelf: 'flex-start',
+  },
+  preview: {
+    width: 120,
+    height: 120,
+    borderRadius: 12,
+  },
+  removeImage: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  limitHint: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
 });

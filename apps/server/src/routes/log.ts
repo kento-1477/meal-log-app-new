@@ -24,6 +24,11 @@ logRouter.post('/log', requireAuth, upload.single('image'), async (req, res, nex
       idempotencyKey,
     });
 
+    if (result.usage) {
+      req.session.userPlan = result.usage.plan;
+      req.session.aiCredits = result.usage.credits;
+    }
+
     return res.status(StatusCodes.OK).json(result);
   } catch (error) {
     const err = error as Error;
