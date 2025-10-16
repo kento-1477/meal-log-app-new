@@ -87,6 +87,11 @@ test('buildUsageLimitError exposes data payload', () => {
   assert.equal(error.statusCode, 429);
   assert.equal(error.code, 'AI_USAGE_LIMIT');
   assert.equal(error.data.limit, 3);
-  assert.ok(error.data.resetsAt.startsWith('2025-06-02'));
+  const expectedReset = DateTime.fromJSDate(status.usageDate)
+    .setZone('Asia/Tokyo')
+    .startOf('day')
+    .plus({ days: 1 })
+    .toISO();
+  assert.equal(error.data.resetsAt, expectedReset);
   assert.equal(error.expose, true);
 });
