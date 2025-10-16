@@ -71,6 +71,7 @@ const dictionaries: Record<Locale, TranslationTable> = {
     'recentLogs.empty': 'まだ記録がありません。最初の記録を追加しましょう。',
     'recentLogs.addMore': '記録する',
     'chart.placeholder.insufficientData': '今日の推移はデータが足りません',
+    'streak.days': '日継続中',
   },
   en: {
     'dashboard.title': 'Dashboard',
@@ -138,6 +139,7 @@ const dictionaries: Record<Locale, TranslationTable> = {
     'recentLogs.empty': 'No meals logged yet. Start tracking your meals!',
     'recentLogs.addMore': 'Log a meal',
     'chart.placeholder.insufficientData': "Not enough data to show today's trend",
+    'streak.days': 'days streak',
   },
 };
 

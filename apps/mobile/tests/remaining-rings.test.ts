@@ -1,11 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { colors } from '../src/theme/colors.ts';
-import {
-  buildRingState,
-  computeProgress,
-  type RingInput,
-} from '../src/features/dashboard/components/ringMath.ts';
+import { buildRingState, type RingInput } from '../src/features/dashboard/components/ringMath.ts';
 
 const translate = (key: string, params: Record<string, string | number> = {}) => {
   switch (key) {

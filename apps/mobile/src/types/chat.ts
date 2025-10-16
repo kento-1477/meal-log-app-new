@@ -10,6 +10,7 @@ export interface ChatMessage {
 }
 
 export interface NutritionCardPayload {
+  logId?: string;
   dish: string;
   confidence: number;
   totals: {

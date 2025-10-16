@@ -15,6 +15,7 @@
     "migrate:reset": "npx -w apps/server prisma migrate reset --force --skip-generate --skip-seed",
     "test": "npm run test:workspaces",
     "test:workspaces": "npm run test --workspaces --if-present",
+    "test:integration": "node --loader apps/server/tests/ts-loader.mjs --test apps/server/tests/integration/*.test.ts",
     "ci:simulate-dual-write": "node scripts/simulate_dual_write.js",
     "ci:check-diffs": "node scripts/check_diffs.js",
     "test:golem": "npm run ci:simulate-dual-write && npm run ci:check-diffs"
