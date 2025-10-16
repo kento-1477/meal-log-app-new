@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { StatusCodes } from 'http-status-codes';
+import { z } from 'zod';
 import { MealPeriod } from '@prisma/client';
 import { UpdateMealLogRequestSchema } from '@meal-log/shared';
 import { prisma } from '../db/prisma.js';
 import { requireAuth } from '../middleware/require-auth.js';
 import { updateMealLog } from '../services/log-service.js';
+import { getMealLogSharePayload, getLogsForExport } from '../services/log-share-service.js';
 
 export const logsRouter = Router();
 
@@ -151,6 +153,15 @@ logsRouter.get('/log/:id', requireAuth, async (req, res, next) => {
   }
 });
 
+logsRouter.get('/log/:id/share', requireAuth, async (req, res, next) => {
+  try {
+    const payload = await getMealLogSharePayload(req.session.userId!, req.params.id);
+    res.status(StatusCodes.OK).json({ ok: true, share: payload });
+  } catch (error) {
+    next(error);
+  }
+});
+
 logsRouter.patch('/log/:id', requireAuth, async (req, res, next) => {
   try {
     const parsed = UpdateMealLogRequestSchema.safeParse(req.body);
@@ -183,6 +194,21 @@ logsRouter.patch('/log/:id', requireAuth, async (req, res, next) => {
     }
 
     res.status(StatusCodes.OK).json({ ok: true, item: detail });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const exportQuerySchema = z.object({
+  range: z.enum(['day', 'week', 'month']).default('day'),
+  anchor: z.string().optional(),
+});
+
+logsRouter.get('/logs/export', requireAuth, async (req, res, next) => {
+  try {
+    const query = exportQuerySchema.parse(req.query);
+    const dataset = await getLogsForExport(req.session.userId!, query);
+    res.status(StatusCodes.OK).json({ ok: true, range: query.range, export: dataset });
   } catch (error) {
     next(error);
   }

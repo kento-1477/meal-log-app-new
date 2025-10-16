@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { GlassCard } from './GlassCard';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
@@ -7,19 +7,28 @@ import type { NutritionCardPayload } from '@/types/chat';
 
 interface NutritionCardProps {
   payload: NutritionCardPayload;
+  onShare?: () => void;
+  sharing?: boolean;
 }
 
-export const NutritionCard: React.FC<NutritionCardProps> = ({ payload }) => {
+export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, sharing }) => {
   return (
     <GlassCard intensity={30} style={styles.card}>
       <View style={styles.headerRow}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.dish}>{payload.dish}</Text>
           <Text style={styles.confidence}>{Math.round(payload.confidence * 100)}% confidence</Text>
         </View>
-        <View style={styles.kcalBadge}>
-          <Text style={styles.kcalValue}>{Math.round(payload.totals.kcal)}</Text>
-          <Text style={styles.kcalLabel}>kcal</Text>
+        <View style={styles.headerActions}>
+          <View style={styles.kcalBadge}>
+            <Text style={styles.kcalValue}>{Math.round(payload.totals.kcal)}</Text>
+            <Text style={styles.kcalLabel}>kcal</Text>
+          </View>
+          {onShare ? (
+            <TouchableOpacity style={styles.shareButton} onPress={onShare} disabled={sharing}>
+              {sharing ? <ActivityIndicator size="small" color={colors.accent} /> : <Text style={styles.shareLabel}>共有</Text>}
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
       <View style={styles.divider} />
@@ -73,6 +82,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 12,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   dish: {
     ...textStyles.titleMedium,
@@ -98,6 +113,20 @@ const styles = StyleSheet.create({
   kcalLabel: {
     color: 'rgba(255,255,255,0.8)',
     fontSize: 11,
+  },
+  shareButton: {
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  shareLabel: {
+    ...textStyles.caption,
+    color: colors.accent,
+    fontWeight: '600',
   },
   divider: {
     height: 1,

@@ -1,10 +1,12 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   KeyboardAvoidingView,
   Platform,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -14,13 +16,14 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQueryClient } from '@tanstack/react-query';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
 import { ChatBubble } from '@/components/ChatBubble';
 import { NutritionCard } from '@/components/NutritionCard';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { useChatStore } from '@/store/chat';
-import { postMealLog } from '@/services/api';
+import { getMealLogShare, postMealLog, type MealLogResponse } from '@/services/api';
 import type { NutritionCardPayload } from '@/types/chat';
 
 interface TimelineItemMessage {
@@ -55,9 +58,11 @@ export default function ChatScreen() {
   const inset = useSafeAreaInsets();
   const listRef = useRef<FlatList<TimelineItemMessage | TimelineItemCard>>(null);
   const tabBarHeight = useBottomTabBarHeight();
+  const queryClient = useQueryClient();
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [sharingId, setSharingId] = useState<string | null>(null);
 
   const { messages, addUserMessage, addAssistantMessage, setMessageText, updateMessageStatus, attachCardToMessage, composingImageUri, setComposingImage } = useChatStore();
 
@@ -85,6 +90,7 @@ export default function ChatScreen() {
       const summaryText = buildAssistantSummary(response);
       updateMessageStatus(assistantPlaceholder.id, 'delivered');
       attachCardToMessage(assistantPlaceholder.id, {
+        logId: response.logId,
         dish: response.dish,
         confidence: response.confidence,
         totals: response.totals,
@@ -94,6 +100,9 @@ export default function ChatScreen() {
       setMessageText(assistantPlaceholder.id, summaryText);
       setInput('');
       setComposingImage(null);
+      queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
+      queryClient.invalidateQueries({ queryKey: ['streak'] });
     } catch (_error) {
       updateMessageStatus(userMessage.id, 'error');
       updateMessageStatus(assistantPlaceholder.id, 'error');
@@ -116,6 +125,26 @@ export default function ChatScreen() {
     }
   };
 
+  const handleShareCard = async (payload: NutritionCardPayload, cardKey: string) => {
+    try {
+      setSharingId(cardKey);
+      let message = buildShareMessage(payload);
+      if (payload.logId) {
+        try {
+          const response = await getMealLogShare(payload.logId);
+          message = response.share.text;
+        } catch (shareError) {
+          console.warn('Failed to fetch share payload, fallback to local data', shareError);
+        }
+      }
+      await Share.share({ message });
+    } catch (_error) {
+      Alert.alert('共有に失敗しました', '時間をおいて再度お試しください。');
+    } finally {
+      setSharingId(null);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <Text style={styles.headerTitle}>今日の食事</Text>
@@ -134,7 +163,11 @@ export default function ChatScreen() {
             item.type === 'message' ? (
               <ChatBubble message={item.payload} />
             ) : (
-              <NutritionCard payload={item.payload} />
+              <NutritionCard
+                payload={item.payload}
+                onShare={() => handleShareCard(item.payload, item.id)}
+                sharing={sharingId === item.id}
+              />
             )
           }
           contentContainerStyle={[styles.listContent, { paddingBottom: 120 + inset.bottom }]}
@@ -171,7 +204,43 @@ export default function ChatScreen() {
   );
 }
 
-// ... (buildAssistantSummary function)
+function buildAssistantSummary(response: MealLogResponse) {
+  const lines = [
+    `${response.dish}（${Math.round(response.totals.kcal)} kcal）`,
+    `P ${formatMacro(response.totals.protein_g)}g / F ${formatMacro(response.totals.fat_g)}g / C ${formatMacro(response.totals.carbs_g)}g`,
+  ];
+
+  if (response.items?.length) {
+    const primary = response.items
+      .slice(0, 2)
+      .map((item) => `${item.name} ${Math.round(item.grams)}g`)
+      .join('・');
+    lines.push(primary);
+  }
+
+  return lines.join('\n');
+}
+
+function buildShareMessage(payload: NutritionCardPayload) {
+  const lines = [
+    `食事記録: ${payload.dish}`,
+    `カロリー: ${Math.round(payload.totals.kcal)} kcal`,
+    `P: ${formatMacro(payload.totals.protein_g)} g / F: ${formatMacro(payload.totals.fat_g)} g / C: ${formatMacro(payload.totals.carbs_g)} g`,
+  ];
+
+  if (payload.items?.length) {
+    lines.push('内訳:');
+    payload.items.slice(0, 3).forEach((item) => {
+      lines.push(`・${item.name} ${Math.round(item.grams)} g`);
+    });
+  }
+
+  return lines.join('\n');
+}
+
+function formatMacro(value: number) {
+  return Math.round(value * 10) / 10;
+}
 
 const styles = StyleSheet.create({
   container: {
