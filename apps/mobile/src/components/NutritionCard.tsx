@@ -4,6 +4,7 @@ import { GlassCard } from './GlassCard';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
 import type { NutritionCardPayload } from '@/types/chat';
+import { useTranslation } from '@/i18n';
 
 interface NutritionCardProps {
   payload: NutritionCardPayload;
@@ -12,30 +13,56 @@ interface NutritionCardProps {
 }
 
 export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, sharing }) => {
+  const { t } = useTranslation();
+  const warningMessages = payload.warnings?.map((warning) =>
+    warning.startsWith('zeroFloored') ? t('card.warnings.zeroFloored') : warning,
+  );
+
   return (
     <GlassCard intensity={30} style={styles.card}>
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
           <Text style={styles.dish}>{payload.dish}</Text>
-          <Text style={styles.confidence}>{Math.round(payload.confidence * 100)}% confidence</Text>
+          <Text style={styles.confidence}>
+            {t('card.confidence', { value: Math.round(payload.confidence * 100) })}
+          </Text>
         </View>
         <View style={styles.headerActions}>
           <View style={styles.kcalBadge}>
             <Text style={styles.kcalValue}>{Math.round(payload.totals.kcal)}</Text>
-            <Text style={styles.kcalLabel}>kcal</Text>
+            <Text style={styles.kcalLabel}>{t('unit.kcal')}</Text>
           </View>
           {onShare ? (
             <TouchableOpacity style={styles.shareButton} onPress={onShare} disabled={sharing}>
-              {sharing ? <ActivityIndicator size="small" color={colors.accent} /> : <Text style={styles.shareLabel}>共有</Text>}
+              {sharing ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : (
+                <Text style={styles.shareLabel}>{t('card.share')}</Text>
+              )}
             </TouchableOpacity>
           ) : null}
         </View>
       </View>
       <View style={styles.divider} />
       <View style={styles.macroRow}>
-        <MacroPill label="Protein" value={payload.totals.protein_g} unit="g" color="#ff9f0a" />
-        <MacroPill label="Fat" value={payload.totals.fat_g} unit="g" color="#ff453a" />
-        <MacroPill label="Carbs" value={payload.totals.carbs_g} unit="g" color="#bf5af2" />
+        <MacroPill
+          label={t('macro.protein')}
+          value={payload.totals.protein_g}
+          unit={t('unit.gram')}
+          color="#ff9f0a"
+        />
+        <MacroPill
+          label={t('macro.fat')}
+          value={payload.totals.fat_g}
+          unit={t('unit.gram')}
+          color="#ff453a"
+        />
+        <MacroPill
+          label={t('macro.carbs')}
+          value={payload.totals.carbs_g}
+          unit={t('unit.gram')}
+          color="#bf5af2"
+        />
       </View>
       {payload.items?.length ? (
         <View style={styles.itemsBlock}>
@@ -47,9 +74,9 @@ export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, 
           ))}
         </View>
       ) : null}
-      {payload.warnings?.length ? (
+      {warningMessages?.length ? (
         <View style={styles.warningBlock}>
-          {payload.warnings.map((warning) => (
+          {warningMessages.map((warning) => (
             <Text key={warning} style={styles.warningText}>
               ⚠️ {warning}
             </Text>

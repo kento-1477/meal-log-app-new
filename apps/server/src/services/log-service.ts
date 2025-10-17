@@ -144,7 +144,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
   const zeroFloored = Object.values(enrichedResponse.totals).some((value) => value === 0);
   const warnings = [...(enrichedResponse.warnings ?? [])];
   if (zeroFloored) {
-    warnings.push('zeroFloored: AI returned one or more zero totals');
+    warnings.push('zeroFloored: AI が推定した栄養素の一部が 0 として返されました');
   }
   const mealPeriod = inferMealPeriod(new Date());
 
@@ -239,7 +239,7 @@ export async function updateMealLog({ logId, userId, updates }: UpdateMealLogPar
   });
 
   if (!log) {
-    const error = new Error('Log not found');
+    const error = new Error('食事記録が見つかりませんでした');
     Object.assign(error, { statusCode: StatusCodes.NOT_FOUND, expose: true });
     throw error;
   }
@@ -325,13 +325,13 @@ export async function chooseSlot(request: SlotSelectionRequest, userId: number) 
   });
 
   if (!log) {
-    const error = new Error('Log not found');
+    const error = new Error('食事記録が見つかりませんでした');
     Object.assign(error, { statusCode: StatusCodes.NOT_FOUND, expose: true });
     throw error;
   }
 
   if (log.version !== request.prevVersion) {
-    const error = new Error('Conflict: stale version');
+    const error = new Error('編集競合が発生しました。最新の内容を確認してください');
     Object.assign(error, { statusCode: StatusCodes.CONFLICT, expose: true });
     throw error;
   }
