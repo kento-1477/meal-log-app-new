@@ -8,12 +8,14 @@ import { textStyles } from '@/theme/typography';
 import { GlassCard } from '@/components/GlassCard';
 import { login } from '@/services/api';
 import { useSessionStore } from '@/store/session';
+import { useTranslation } from '@/i18n';
 
 export default function LoginScreen() {
   const router = useRouter();
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
   const setUsage = useSessionStore((state) => state.setUsage);
+  const { t } = useTranslation();
 
   const [email, setEmail] = useState('demo@example.com');
   const [password, setPassword] = useState('password123');
@@ -31,7 +33,7 @@ export default function LoginScreen() {
       setStatus('authenticated');
       router.replace('/(tabs)/chat');
     } catch (err) {
-      setError((err as Error).message ?? 'ログインに失敗しました');
+      setError((err as Error).message ?? t('login.error.generic'));
       setStatus('error');
     } finally {
       setLoading(false);
@@ -42,34 +44,34 @@ export default function LoginScreen() {
     <LinearGradient colors={[colors.background, '#ffffff']} style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.inner}>
         <View style={styles.header}> 
-          <Text style={styles.title}>Meal Log</Text>
-          <Text style={styles.subtitle}>食事を記録して、AI が栄養素を推定します。</Text>
+          <Text style={styles.title}>{t('login.title')}</Text>
+          <Text style={styles.subtitle}>{t('login.subtitle')}</Text>
         </View>
         <GlassCard>
           <View style={styles.formGroup}>
-            <Text style={styles.label}>メールアドレス</Text>
+            <Text style={styles.label}>{t('login.emailLabel')}</Text>
             <TextInput
               value={email}
               onChangeText={setEmail}
               inputMode="email"
               autoCapitalize="none"
               style={styles.input}
-              placeholder="you@example.com"
+              placeholder={t('login.emailPlaceholder')}
             />
           </View>
           <View style={styles.formGroup}>
-            <Text style={styles.label}>パスワード</Text>
+            <Text style={styles.label}>{t('login.passwordLabel')}</Text>
             <TextInput
               value={password}
               onChangeText={setPassword}
               secureTextEntry
               style={styles.input}
-              placeholder="••••••••"
+              placeholder={t('login.passwordPlaceholder')}
             />
           </View>
           {error ? <Text style={styles.error}>⚠️ {error}</Text> : null}
           <View style={{ marginTop: 24 }}>
-            <PrimaryButton label="ログイン" onPress={handleLogin} loading={loading} />
+            <PrimaryButton label={t('login.submit')} onPress={handleLogin} loading={loading} />
           </View>
         </GlassCard>
       </KeyboardAvoidingView>
