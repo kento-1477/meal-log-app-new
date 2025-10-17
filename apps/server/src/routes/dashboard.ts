@@ -43,5 +43,7 @@ dashboardRouter.get('/dashboard/targets', requireAuth, (_req, res) => {
 });
 
 dashboardRouter.put('/dashboard/targets', requireAuth, (_req, res) => {
-  res.status(StatusCodes.NOT_IMPLEMENTED).json({ ok: false, error: 'Custom targets not yet supported' });
+  res
+    .status(StatusCodes.NOT_IMPLEMENTED)
+    .json({ ok: false, error: 'カスタム目標の編集には現在対応していません。' });
 });

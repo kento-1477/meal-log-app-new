@@ -35,7 +35,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     } catch (_error) {
       // ignore json parse errors
     }
-    const error = new Error(message || 'Unknown error') as ApiError;
+    const error = new Error(message || '不明なエラーが発生しました') as ApiError;
     error.status = response.status;
     if (data && typeof data === 'object') {
       if (typeof data.code === 'string') {

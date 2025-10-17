@@ -86,18 +86,18 @@ function resolveRange(period, timezone, from, to, userId) {
       };
     case 'custom': {
       if (!from || !to) {
-        throw new Error('from/to query parameters are required for custom period');
+        throw new Error('カスタム期間には from/to の指定が必要です');
       }
       const fromDate = DateTime.fromISO(from, { zone: timezone }).startOf('day');
       const toDate = DateTime.fromISO(to, { zone: timezone }).plus({ days: 1 }).startOf('day');
       if (!fromDate.isValid || !toDate.isValid) {
-        throw new Error('Invalid from/to date');
+        throw new Error('from/to の日付形式が正しくありません');
       }
       if (toDate <= fromDate) {
-        throw new Error('to must be after from');
+        throw new Error('終了日は開始日より後の日付を指定してください');
       }
       if (toDate.diff(fromDate, 'days').days > 31) {
-        throw new Error('custom period cannot exceed 31 days');
+        throw new Error('カスタム期間は31日以内で指定してください');
       }
       return {
         range: { fromDate, toDate, period },
@@ -105,7 +105,7 @@ function resolveRange(period, timezone, from, to, userId) {
       };
     }
     default:
-      throw new Error(`Unsupported period: ${period}`);
+      throw new Error(`未対応の期間指定です: ${period}`);
   }
 }
 
