@@ -180,25 +180,25 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
   const zeroFloored = Object.values(enrichedResponse.totals).some((value) => value === 0);
   const mealPeriod = inferMealPeriod(new Date());
 
-  const translations: Record<Locale, GeminiNutritionResponse> = {
+  const seededTranslations: Record<Locale, GeminiNutritionResponse> = {
     [DEFAULT_LOCALE]: cloneNutritionResponse(enrichedResponse),
   };
   if (requestedLocale !== DEFAULT_LOCALE) {
     const localized = await maybeTranslateNutritionResponse(enrichedResponse, requestedLocale);
     if (localized) {
-      translations[requestedLocale] = cloneNutritionResponse(localized);
+      seededTranslations[requestedLocale] = cloneNutritionResponse(localized);
     }
   }
 
   const aiPayload: MealLogAiRaw = {
     ...cloneNutritionResponse(enrichedResponse),
     locale: DEFAULT_LOCALE,
-    translations,
+    translations: seededTranslations,
   };
 
   const localization = resolveMealLogLocalization(aiPayload, requestedLocale);
   const translation = localization.translation ?? cloneNutritionResponse(enrichedResponse);
-  const translations = cloneTranslationsMap(localization.translations);
+  const responseTranslations = cloneTranslationsMap(localization.translations);
 
   const responseItems = translation.items ?? [];
   const warnings = [...(translation.warnings ?? [])];
@@ -260,7 +260,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
     imageUrl,
     fallback_model_used: analysis.meta.model === 'models/gemini-2.5-pro',
     mealPeriod,
-    localization: buildLocalizationMeta({ ...localization, translations }),
+    localization: buildLocalizationMeta({ ...localization, translations: responseTranslations }),
   };
 
   return {
@@ -271,7 +271,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
     logId: log.id,
     requestLocale: localization.requestedLocale,
     locale: localization.resolvedLocale,
-    translations,
+    translations: responseTranslations,
     fallbackApplied: localization.fallbackApplied,
     dish: translation.dish,
     confidence: translation.confidence,
