@@ -30,10 +30,12 @@ AI_TOTAL_TIMEOUT_MS=35000
 AI_HEDGE_DELAY_MS=5000
 AI_MAX_ATTEMPTS=2
 EXPO_PUBLIC_API_BASE_URL=http://localhost:4000
+# 翻訳戦略（任意: `ai` | `copy` | `none`）
+AI_TRANSLATION_STRATEGY=ai
 ```
 
 > Generate `SESSION_SECRET` with a strong random value (for example `openssl rand -hex 32`) and keep secrets in `.env.local`.
-> Without `GEMINI_API_KEY` the server falls back to a deterministic mock response so flows stay testable.
+> Without `GEMINI_API_KEY` the server falls back to a deterministic mock response so flows stay testable. When `AI_TRANSLATION_STRATEGY=ai` and no key is configured, translations gracefully fall back to English.
 
 ### Optional: ローカルでプランを強制する
 
