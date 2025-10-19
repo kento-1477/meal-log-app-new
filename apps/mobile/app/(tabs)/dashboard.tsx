@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -8,8 +9,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { DashboardPeriod } from '@meal-log/shared';
-import { useQuery } from '@tanstack/react-query';
+import type { DashboardPeriod, MealLogSummary } from '@meal-log/shared';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDashboardSummary, type MacroComparison } from '@/features/dashboard/useDashboardSummary';
 import { PeriodSelector } from '@/features/dashboard/components/PeriodSelector';
 import { TabBar, type TabKey } from '@/features/dashboard/components/TabBar';
@@ -25,9 +26,10 @@ import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import { useSessionStore } from '@/store/session';
-import { logout, getRecentLogs, getStreak } from '@/services/api';
+import { logout, getRecentLogs, getStreak, createFavoriteMeal, deleteFavoriteMeal } from '@/services/api';
 import { cacheStreak } from '@/services/streak-storage';
 import { useTranslation } from '@/i18n';
+import { buildFavoriteDraftFromSummary } from '@/utils/favorites';
 
 const DEFAULT_PERIOD: DashboardPeriod = 'thisWeek';
 
@@ -69,18 +71,48 @@ export default function DashboardScreen() {
     enabled: isAuthenticated,
   });
 
-  const streakQuery = useQuery({
-    queryKey: ['streak', locale],
-    queryFn: async () => {
-      const response = await getStreak();
-      await cacheStreak(response.streak);
-      return response.streak;
-    },
-    enabled: isAuthenticated,
-    staleTime: 1000 * 60 * 15,
-  });
+const streakQuery = useQuery({
+  queryKey: ['streak', locale],
+  queryFn: async () => {
+    const response = await getStreak();
+    await cacheStreak(response.streak);
+    return response.streak;
+  },
+  enabled: isAuthenticated,
+  staleTime: 1000 * 60 * 15,
+});
 
-  const recentLogs = useMemo(() => (recentLogsQuery.data ?? []).slice(0, 5), [recentLogsQuery.data]);
+const queryClient = useQueryClient();
+const [favoriteToggleId, setFavoriteToggleId] = useState<string | null>(null);
+
+const toggleFavoriteMutation = useMutation({
+  mutationFn: async ({ log, targetState }: { log: MealLogSummary; targetState: boolean }) => {
+    if (targetState) {
+      const draft = buildFavoriteDraftFromSummary(log);
+      await createFavoriteMeal(draft);
+    } else if (log.favorite_meal_id) {
+      await deleteFavoriteMeal(log.favorite_meal_id);
+    }
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['recentLogs', locale] });
+    queryClient.invalidateQueries({ queryKey: ['dashboardSummary', period, locale] });
+  },
+  onError: (error: unknown) => {
+    const message = error instanceof Error ? error.message : 'お気に入りの更新に失敗しました。';
+    Alert.alert('お気に入りの更新に失敗しました', message);
+  },
+  onSettled: () => {
+    setFavoriteToggleId(null);
+  },
+});
+
+const recentLogs = useMemo(() => (recentLogsQuery.data ?? []).slice(0, 5), [recentLogsQuery.data]);
+
+const handleToggleFavorite = (log: MealLogSummary, targetState: boolean) => {
+  setFavoriteToggleId(log.id);
+  toggleFavoriteMutation.mutate({ log, targetState });
+};
 
   const ringData = useMemo(() => {
     if (!data?.comparison) {
@@ -197,7 +229,11 @@ export default function DashboardScreen() {
               {recentLogsQuery.isLoading ? (
                 <ActivityIndicator size="small" color={colors.accent} />
               ) : (
-                <RecentLogsList logs={recentLogs} />
+                <RecentLogsList
+                  logs={recentLogs}
+                  onToggleFavorite={handleToggleFavorite}
+                  togglingId={favoriteToggleId}
+                />
               )}
             </View>
           </View>

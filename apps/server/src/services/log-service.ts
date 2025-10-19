@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
 import type {
   AiUsageSummary,
+  FavoriteMealDraft,
   GeminiNutritionResponse,
   SlotSelectionRequest,
   Locale,
@@ -22,6 +23,7 @@ import {
 import { DEFAULT_LOCALE, resolveMealLogLocalization, normalizeLocale, parseMealLogAiRaw } from '../utils/locale.js';
 import type { LocalizationResolution } from '../utils/locale.js';
 import { maybeTranslateNutritionResponse } from './localization-service.js';
+import { buildFavoriteDraftFromAnalysis } from './favorite-service.js';
 
 interface ProcessMealLogParams {
   userId: number;
@@ -51,6 +53,7 @@ interface ProcessMealLogResult {
   };
   meta: Record<string, unknown>;
   usage?: AiUsageSummary;
+  favoriteCandidate: FavoriteMealDraft;
 }
 
 const inferMealPeriod = (date: Date): MealPeriod => {
@@ -98,6 +101,13 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
     }
 
     const translations = cloneTranslationsMap(localization.translations);
+    const favoriteCandidate = buildFavoriteDraftPayload({
+      translation,
+      totals,
+      items,
+      fallbackDish: logRecord.foodItem,
+      sourceMealLogId: logRecord.id,
+    });
 
     const meta: Record<string, unknown> = {
       ...(translation?.meta ?? {}),
@@ -129,6 +139,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
       },
       meta,
       usage: usageSummary,
+      favoriteCandidate,
     };
   }
 
@@ -199,31 +210,38 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
   const localization = resolveMealLogLocalization(aiPayload, requestedLocale);
   const translation = localization.translation ?? cloneNutritionResponse(enrichedResponse);
   const responseTranslations = cloneTranslationsMap(localization.translations);
-
   const responseItems = translation.items ?? [];
   const warnings = [...(translation.warnings ?? [])];
-  if (zeroFloored) {
-    warnings.push('zeroFloored: AI が推定した栄養素の一部が 0 として返されました');
-  }
-  if (localization.fallbackApplied) {
-    warnings.push(`translation_fallback:${localization.resolvedLocale}`);
-  }
-
-  const log = await prisma.mealLog.create({
-    data: {
-      userId: params.userId,
-      foodItem: translation.dish ?? params.message,
-      calories: enrichedResponse.totals.kcal,
-      proteinG: enrichedResponse.totals.protein_g,
-      fatG: enrichedResponse.totals.fat_g,
-      carbsG: enrichedResponse.totals.carbs_g,
-      aiRaw: aiPayload,
-      zeroFloored,
-      guardrailNotes: zeroFloored ? 'zeroFloored' : null,
-      landingType: enrichedResponse.landing_type ?? null,
-      mealPeriod,
-    },
-  });
+    if (zeroFloored) {
+      warnings.push('zeroFloored: AI が推定した栄養素の一部が 0 として返されました');
+    }
+    if (localization.fallbackApplied) {
+      warnings.push(`translation_fallback:${localization.resolvedLocale}`);
+    }
+  
+    const log = await prisma.mealLog.create({
+      data: {
+        userId: params.userId,
+        foodItem: translation.dish ?? params.message,
+        calories: enrichedResponse.totals.kcal,
+        proteinG: enrichedResponse.totals.protein_g,
+        fatG: enrichedResponse.totals.fat_g,
+        carbsG: enrichedResponse.totals.carbs_g,
+        aiRaw: aiPayload,
+        zeroFloored,
+        guardrailNotes: zeroFloored ? 'zeroFloored' : null,
+        landingType: enrichedResponse.landing_type ?? null,
+        mealPeriod,
+      },
+    });
+  
+    const favoriteCandidate = buildFavoriteDraftPayload({
+      translation,
+      totals: translation.totals,
+      items: responseItems,
+      fallbackDish: translation.dish,
+      sourceMealLogId: log.id,
+    });
 
   let imageUrl: string | null = null;
   if (params.file && imageBase64) {
@@ -283,6 +301,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
     },
     meta,
     usage: usageSummary,
+    favoriteCandidate,
   };
 }
 
@@ -482,6 +501,43 @@ function cloneNutritionResponse(payload: GeminiNutritionResponse): GeminiNutriti
 function cloneTranslationsMap(translations: Record<Locale, GeminiNutritionResponse>) {
   const entries = Object.entries(translations).map(([locale, value]) => [locale, cloneNutritionResponse(value)] as const);
   return Object.fromEntries(entries) as Record<Locale, GeminiNutritionResponse>;
+}
+
+function buildFavoriteDraftPayload(params: {
+  translation: GeminiNutritionResponse | null;
+  totals: GeminiNutritionResponse['totals'];
+  items: GeminiNutritionResponse['items'];
+  fallbackDish: string;
+  sourceMealLogId?: string;
+}): FavoriteMealDraft {
+  const baseResponse: GeminiNutritionResponse = params.translation
+    ? params.translation
+    : {
+        dish: params.fallbackDish,
+        confidence: 0.6,
+        totals: params.totals,
+        items: params.items,
+        warnings: [],
+        landing_type: null,
+        meta: undefined,
+      };
+
+  const draft = buildFavoriteDraftFromAnalysis(baseResponse, {
+    sourceMealLogId: params.sourceMealLogId ?? null,
+  });
+  draft.totals = params.totals;
+  if (!params.translation) {
+    draft.items = params.items.map((item, index) => ({
+      name: item.name,
+      grams: item.grams,
+      calories: null,
+      protein_g: item.protein_g ?? null,
+      fat_g: item.fat_g ?? null,
+      carbs_g: item.carbs_g ?? null,
+      order_index: index,
+    }));
+  }
+  return draft;
 }
 
 function buildRequestKey(params: ProcessMealLogParams) {
