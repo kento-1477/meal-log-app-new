@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { AiUsageSummary, UserPlan } from '@meal-log/shared';
+import { getLocale, setLocale as setI18nLocale, type Locale } from '@/i18n';
 
 type User = {
   id: number;
@@ -16,10 +17,12 @@ interface SessionState {
   status: Status;
   hydrated: boolean;
   usage: AiUsageSummary | null;
+  locale: Locale;
   setUser: (user: User | null) => void;
   setStatus: (status: Status) => void;
   setUsage: (usage: AiUsageSummary | null) => void;
   markHydrated: () => void;
+  setLocale: (locale: Locale) => void;
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
@@ -27,6 +30,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   status: 'idle',
   hydrated: false,
   usage: null,
+  locale: getLocale(),
   setUser: (user) => set({ user, status: user ? 'authenticated' : 'unauthenticated' }),
   setStatus: (status) => set({ status }),
   setUsage: (usage) =>
@@ -41,4 +45,8 @@ export const useSessionStore = create<SessionState>((set) => ({
         : state.user,
     })),
   markHydrated: () => set({ hydrated: true }),
+  setLocale: (locale) => {
+    set({ locale });
+    setI18nLocale(locale);
+  },
 }));

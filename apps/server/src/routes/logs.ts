@@ -2,11 +2,13 @@ import { Router } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { z } from 'zod';
 import { MealPeriod } from '@prisma/client';
-import { UpdateMealLogRequestSchema } from '@meal-log/shared';
+import { UpdateMealLogRequestSchema, type GeminiNutritionResponse, type Locale } from '@meal-log/shared';
 import { prisma } from '../db/prisma.js';
 import { requireAuth } from '../middleware/require-auth.js';
 import { updateMealLog } from '../services/log-service.js';
 import { getMealLogSharePayload, getLogsForExport } from '../services/log-share-service.js';
+import { resolveRequestLocale } from '../utils/request-locale.js';
+import { resolveMealLogLocalization, type LocalizationResolution } from '../utils/locale.js';
 
 export const logsRouter = Router();
 
@@ -20,7 +22,7 @@ const mealPeriodLookup: Record<string, MealPeriod> = {
 const toMealPeriodLabel = (period: MealPeriod | null | undefined) =>
   period ? period.toLowerCase() : null;
 
-const fetchMealLogDetail = async (logId: string, userId: number) => {
+const fetchMealLogDetail = async (logId: string, userId: number, locale: Locale) => {
   const item = await prisma.mealLog.findFirst({
     where: { id: logId, userId },
     include: {
@@ -43,6 +45,10 @@ const fetchMealLogDetail = async (logId: string, userId: number) => {
     return null;
   }
 
+  const localization = resolveMealLogLocalization(item.aiRaw, locale);
+  const translation = localization.translation;
+  const aiRawPayload = buildAiRawPayload(localization);
+
   const history = item.edits.map((edit) => ({
     id: edit.id,
     created_at: edit.createdAt.toISOString(),
@@ -54,7 +60,7 @@ const fetchMealLogDetail = async (logId: string, userId: number) => {
 
   return {
     id: item.id,
-    food_item: item.foodItem,
+    food_item: translation?.dish ?? item.foodItem,
     protein_g: item.proteinG,
     fat_g: item.fatG,
     carbs_g: item.carbsG,
@@ -62,7 +68,10 @@ const fetchMealLogDetail = async (logId: string, userId: number) => {
     meal_period: toMealPeriodLabel(item.mealPeriod) ?? item.landingType ?? null,
     created_at: item.createdAt.toISOString(),
     image_url: item.imageUrl,
-    ai_raw: item.aiRaw,
+    ai_raw: aiRawPayload,
+    locale: localization.resolvedLocale,
+    requested_locale: localization.requestedLocale,
+    fallback_applied: localization.fallbackApplied,
     history,
   };
 };
@@ -71,6 +80,8 @@ logsRouter.get('/logs', requireAuth, async (req, res, next) => {
   try {
     const limit = Math.min(Number(req.query.limit ?? 20), 100);
     const offset = Number(req.query.offset ?? 0);
+    const locale = resolveRequestLocale(req);
+    req.session.locale = locale;
 
     const items = await prisma.mealLog.findMany({
       where: { userId: req.session.userId! },
@@ -79,19 +90,26 @@ logsRouter.get('/logs', requireAuth, async (req, res, next) => {
       skip: offset,
     });
 
-    const responseItems = items.map((item) => ({
-      id: item.id,
-      created_at: item.createdAt.toISOString(),
-      dish: item.foodItem,
-      protein_g: item.proteinG,
-      fat_g: item.fatG,
-      carbs_g: item.carbsG,
-      calories: item.calories,
-      meal_period: toMealPeriodLabel(item.mealPeriod) ?? item.landingType ?? null,
-      image_url: item.imageUrl,
-      thumbnail_url: item.imageUrl,
-      ai_raw: item.aiRaw,
-    }));
+    const responseItems = items.map((item) => {
+      const localization = resolveMealLogLocalization(item.aiRaw, locale);
+      const translation = localization.translation;
+      return {
+        id: item.id,
+        created_at: item.createdAt.toISOString(),
+        dish: translation?.dish ?? item.foodItem,
+        protein_g: item.proteinG,
+        fat_g: item.fatG,
+        carbs_g: item.carbsG,
+        calories: item.calories,
+        meal_period: toMealPeriodLabel(item.mealPeriod) ?? item.landingType ?? null,
+        image_url: item.imageUrl,
+        thumbnail_url: item.imageUrl,
+        ai_raw: buildAiRawPayload(localization),
+        locale: localization.resolvedLocale,
+        requested_locale: localization.requestedLocale,
+        fallback_applied: localization.fallbackApplied,
+      };
+    });
 
     res.status(StatusCodes.OK).json({ ok: true, items: responseItems });
   } catch (error) {
@@ -102,6 +120,8 @@ logsRouter.get('/logs', requireAuth, async (req, res, next) => {
 
 logsRouter.get('/logs/summary', requireAuth, async (req, res, next) => {
   try {
+    const locale = resolveRequestLocale(req);
+    req.session.locale = locale;
     const days = Math.min(Number(req.query.days ?? 7), 30);
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const logs = await prisma.mealLog.findMany({
@@ -140,7 +160,9 @@ logsRouter.get('/logs/summary', requireAuth, async (req, res, next) => {
 });
 logsRouter.get('/log/:id', requireAuth, async (req, res, next) => {
   try {
-    const detail = await fetchMealLogDetail(req.params.id, req.session.userId!);
+    const locale = resolveRequestLocale(req);
+    req.session.locale = locale;
+    const detail = await fetchMealLogDetail(req.params.id, req.session.userId!, locale);
     if (!detail) {
       return res.status(StatusCodes.NOT_FOUND).json({ ok: false, message: '記録が見つかりませんでした。' });
     }
@@ -155,7 +177,9 @@ logsRouter.get('/log/:id', requireAuth, async (req, res, next) => {
 
 logsRouter.get('/log/:id/share', requireAuth, async (req, res, next) => {
   try {
-    const payload = await getMealLogSharePayload(req.session.userId!, req.params.id);
+    const locale = resolveRequestLocale(req);
+    req.session.locale = locale;
+    const payload = await getMealLogSharePayload(req.session.userId!, req.params.id, locale);
     res.status(StatusCodes.OK).json({ ok: true, share: payload });
   } catch (error) {
     next(error);
@@ -164,6 +188,8 @@ logsRouter.get('/log/:id/share', requireAuth, async (req, res, next) => {
 
 logsRouter.patch('/log/:id', requireAuth, async (req, res, next) => {
   try {
+    const locale = resolveRequestLocale(req);
+    req.session.locale = locale;
     const parsed = UpdateMealLogRequestSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(StatusCodes.BAD_REQUEST).json({ ok: false, error: parsed.error.flatten().formErrors.join(', ') });
@@ -190,7 +216,7 @@ logsRouter.patch('/log/:id', requireAuth, async (req, res, next) => {
       },
     });
 
-    const detail = await fetchMealLogDetail(req.params.id, req.session.userId!);
+    const detail = await fetchMealLogDetail(req.params.id, req.session.userId!, locale);
     if (!detail) {
       return res
         .status(StatusCodes.NOT_FOUND)
@@ -210,10 +236,43 @@ const exportQuerySchema = z.object({
 
 logsRouter.get('/logs/export', requireAuth, async (req, res, next) => {
   try {
+    const locale = resolveRequestLocale(req);
+    req.session.locale = locale;
     const query = exportQuerySchema.parse(req.query);
-    const dataset = await getLogsForExport(req.session.userId!, query);
+    const dataset = await getLogsForExport(req.session.userId!, query, locale);
     res.status(StatusCodes.OK).json({ ok: true, range: query.range, export: dataset });
   } catch (error) {
     next(error);
   }
 });
+
+function buildAiRawPayload(localization: LocalizationResolution) {
+  const translation = localization.translation;
+  if (!translation) {
+    return null;
+  }
+
+  return {
+    ...cloneResponse(translation),
+    locale: localization.resolvedLocale,
+    translations: cloneTranslations(localization.translations),
+  } satisfies Partial<GeminiNutritionResponse> & {
+    locale: Locale;
+    translations: Record<Locale, GeminiNutritionResponse>;
+  };
+}
+
+function cloneResponse(payload: GeminiNutritionResponse): GeminiNutritionResponse {
+  return {
+    ...payload,
+    totals: { ...payload.totals },
+    items: (payload.items ?? []).map((item) => ({ ...item })),
+    warnings: [...(payload.warnings ?? [])],
+    meta: payload.meta ? { ...payload.meta } : undefined,
+  };
+}
+
+function cloneTranslations(translations: Record<Locale, GeminiNutritionResponse>) {
+  const entries = Object.entries(translations).map(([locale, value]) => [locale, cloneResponse(value)] as const);
+  return Object.fromEntries(entries) as Record<Locale, GeminiNutritionResponse>;
+}

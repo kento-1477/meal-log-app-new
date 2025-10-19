@@ -6,5 +6,6 @@ declare module 'express-session' {
     userId?: number;
     userPlan?: UserPlan;
     aiCredits?: number;
+    locale?: string;
   }
 }

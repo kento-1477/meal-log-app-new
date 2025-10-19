@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery } from '@tanstack/react-query';
 import type { DashboardPeriod } from '@meal-log/shared';
 import { getDashboardSummary, getDashboardTargets } from '@/services/api';
+import { useTranslation } from '@/i18n';
 import { DashboardViewModel, buildViewModel } from './summaryShared';
 
 const CACHE_PREFIX = 'dashboard:summary:';
@@ -10,6 +11,7 @@ const CACHE_PREFIX = 'dashboard:summary:';
 export function useDashboardSummary(period: DashboardPeriod, options?: { enabled?: boolean }) {
   const [cached, setCached] = useState<DashboardViewModel | null>(null);
   const enabled = options?.enabled ?? true;
+  const { locale } = useTranslation();
 
   useEffect(() => {
     let cancelled = false;
@@ -19,7 +21,7 @@ export function useDashboardSummary(period: DashboardPeriod, options?: { enabled
         cancelled = true;
       };
     }
-    AsyncStorage.getItem(cacheKey(period)).then((value) => {
+    AsyncStorage.getItem(cacheKey(period, locale)).then((value) => {
       if (!cancelled && value) {
         try {
           const parsed = JSON.parse(value) as DashboardViewModel;
@@ -32,10 +34,10 @@ export function useDashboardSummary(period: DashboardPeriod, options?: { enabled
     return () => {
       cancelled = true;
     };
-  }, [period, enabled]);
+  }, [period, enabled, locale]);
 
   const summaryQuery = useQuery({
-    queryKey: ['dashboardSummary', period],
+    queryKey: ['dashboardSummary', period, locale],
     queryFn: async () => {
       const [summary, targets] = await Promise.all([
         getDashboardSummary(period),
@@ -52,11 +54,11 @@ export function useDashboardSummary(period: DashboardPeriod, options?: { enabled
     if (!enabled || !summaryQuery.data) {
       return;
     }
-    AsyncStorage.setItem(cacheKey(period), JSON.stringify(summaryQuery.data)).catch((error) => {
+    AsyncStorage.setItem(cacheKey(period, locale), JSON.stringify(summaryQuery.data)).catch((error) => {
       console.warn('Failed to cache dashboard summary', error);
     });
     setCached(summaryQuery.data);
-  }, [enabled, summaryQuery.data, period]);
+  }, [enabled, summaryQuery.data, period, locale]);
 
   const data = liveData ?? cached;
 
@@ -71,8 +73,8 @@ export function useDashboardSummary(period: DashboardPeriod, options?: { enabled
   } as const;
 }
 
-function cacheKey(period: DashboardPeriod) {
-  return `${CACHE_PREFIX}${period}`;
+function cacheKey(period: DashboardPeriod, locale: string) {
+  return `${CACHE_PREFIX}${locale}:${period}`;
 }
 
 export type {

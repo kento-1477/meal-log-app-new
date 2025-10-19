@@ -1,11 +1,14 @@
 import { useSyncExternalStore } from 'react';
 
-type Locale = 'ja' | 'en';
+type Locale = 'ja-JP' | 'en-US';
+
+export const SUPPORTED_LOCALES: readonly Locale[] = ['ja-JP', 'en-US'] as const;
+export const DEFAULT_LOCALE: Locale = 'ja-JP';
 
 type TranslationTable = Record<string, string>;
 
 const dictionaries: Record<Locale, TranslationTable> = {
-  ja: {
+  'ja-JP': {
     'dashboard.title': 'ダッシュボード',
     'dashboard.cacheNotice': 'オフラインのため、保存されたデータを表示しています。',
     'dashboard.requiresLogin': 'ログインが必要です。',
@@ -83,10 +86,11 @@ const dictionaries: Record<Locale, TranslationTable> = {
     'card.confidence': '信頼度 {{value}}%',
     'card.share': '共有',
     'card.warnings.zeroFloored': 'AIが推定した栄養素の一部が0として返されました。値を確認してください。',
+    'card.languageFallback': '※ {{requested}} の翻訳が未対応のため {{resolved}} で表示しています',
     'unit.kcal': 'kcal',
     'unit.gram': 'g',
   },
-  en: {
+  'en-US': {
     'dashboard.title': 'Dashboard',
     'dashboard.cacheNotice': 'Offline data shown from cache.',
     'dashboard.requiresLogin': 'Sign-in required.',
@@ -164,12 +168,13 @@ const dictionaries: Record<Locale, TranslationTable> = {
     'card.confidence': '{{value}}% confidence',
     'card.share': 'Share',
     'card.warnings.zeroFloored': 'Some nutrients were returned as zero. Please double-check them.',
+    'card.languageFallback': '※ Showing {{resolved}} because {{requested}} is not translated yet',
     'unit.kcal': 'kcal',
     'unit.gram': 'g',
   },
 };
 
-let currentLocale: Locale = 'ja';
+let currentLocale: Locale = DEFAULT_LOCALE;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -198,7 +203,7 @@ function resolveTemplate(template: string, params?: Record<string, string | numb
 }
 
 function translate(locale: Locale, key: string, params?: Record<string, string | number>) {
-  const template = dictionaries[locale][key] ?? dictionaries.ja[key] ?? key;
+  const template = dictionaries[locale][key] ?? dictionaries['ja-JP'][key] ?? key;
   return resolveTemplate(template, params);
 }
 
@@ -225,3 +230,7 @@ export function useTranslation() {
 }
 
 export type { Locale };
+
+export function getIntlLocale(locale: Locale = currentLocale) {
+  return locale.startsWith('ja') ? 'ja' : 'en';
+}
