@@ -13,10 +13,11 @@ import {
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getMealLogDetail, getMealLogShare, updateMealLog } from '@/services/api';
+import { createFavoriteMeal, deleteFavoriteMeal, getMealLogDetail, getMealLogShare, updateMealLog } from '@/services/api';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
+import { buildFavoriteDraftFromDetail } from '@/utils/favorites';
 import { useTranslation } from '@/i18n';
 import { describeLocale } from '@/utils/locale';
 
@@ -100,6 +101,27 @@ export default function MealLogDetailScreen() {
     },
   });
 
+  const toggleFavoriteMutation = useMutation({
+    mutationFn: async (targetState: boolean) => {
+      const current = detailQuery.data?.item;
+      if (!current) return;
+      if (targetState) {
+        const draft = buildFavoriteDraftFromDetail(current);
+        await createFavoriteMeal(draft);
+      } else if (current.favorite_meal_id) {
+        await deleteFavoriteMeal(current.favorite_meal_id);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['logDetail', logId, locale] });
+      queryClient.invalidateQueries({ queryKey: ['recentLogs', locale] });
+    },
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : 'お気に入りの更新に失敗しました';
+      Alert.alert('お気に入りの更新に失敗しました', message);
+    },
+  });
+
   const detail = detailQuery.data?.item;
   const isLoading = detailQuery.isLoading;
 
@@ -131,6 +153,10 @@ export default function MealLogDetailScreen() {
     }
   };
 
+  const handleFavoriteToggle = (targetState: boolean) => {
+    toggleFavoriteMutation.mutate(targetState);
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       {isLoading ? (
@@ -144,6 +170,27 @@ export default function MealLogDetailScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.toolbar}>
+            <TouchableOpacity
+              style={[
+                styles.favoriteButton,
+                detail?.favorite_meal_id ? styles.favoriteButtonActive : null,
+              ]}
+              onPress={() => handleFavoriteToggle(!(detail?.favorite_meal_id))}
+              disabled={toggleFavoriteMutation.isPending}
+            >
+              {toggleFavoriteMutation.isPending ? (
+                <ActivityIndicator color={detail?.favorite_meal_id ? '#fff' : colors.accent} />
+              ) : (
+                <Text
+                  style={[
+                    styles.favoriteButtonLabel,
+                    detail?.favorite_meal_id ? styles.favoriteButtonActiveLabel : null,
+                  ]}
+                >
+                  {detail?.favorite_meal_id ? 'お気に入り済み' : 'お気に入り登録'}
+                </Text>
+              )}
+            </TouchableOpacity>
             <TouchableOpacity style={styles.shareButton} onPress={handleShare} disabled={sharing}>
               <Text style={styles.shareButtonLabel}>{sharing ? '共有中…' : '共有する'}</Text>
             </TouchableOpacity>
@@ -314,6 +361,26 @@ const styles = StyleSheet.create({
   toolbar: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    gap: spacing.sm,
+  },
+  favoriteButton: {
+    borderRadius: 18,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    backgroundColor: '#fff',
+  },
+  favoriteButtonActive: {
+    backgroundColor: colors.accent,
+  },
+  favoriteButtonLabel: {
+    ...textStyles.caption,
+    color: colors.accent,
+    fontWeight: '600',
+  },
+  favoriteButtonActiveLabel: {
+    color: '#fff',
   },
   shareButton: {
     borderWidth: 1,

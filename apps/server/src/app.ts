@@ -11,6 +11,7 @@ import { debugRouter } from './routes/debug.js';
 import { foodsRouter } from './routes/foods.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { streakRouter } from './routes/streak.js';
+import { favoritesRouter } from './routes/favorites.js';
 import { errorHandler } from './middleware/error-handler.js';
 
 export function createApp() {
@@ -60,6 +61,7 @@ export function createApp() {
   app.use('/api', foodsRouter);
   app.use('/api', dashboardRouter);
   app.use('/api', streakRouter);
+  app.use('/api', favoritesRouter);
   app.use('/debug', debugRouter);
 
   app.use(errorHandler);

@@ -38,6 +38,10 @@ const fetchMealLogDetail = async (logId: string, userId: number, locale: Locale)
           },
         },
       },
+      favoritedBy: {
+        select: { id: true },
+        take: 1,
+      },
     },
   });
 
@@ -72,6 +76,7 @@ const fetchMealLogDetail = async (logId: string, userId: number, locale: Locale)
     locale: localization.resolvedLocale,
     requested_locale: localization.requestedLocale,
     fallback_applied: localization.fallbackApplied,
+    favorite_meal_id: item.favoritedBy[0]?.id ?? null,
     history,
   };
 };
@@ -88,6 +93,12 @@ logsRouter.get('/logs', requireAuth, async (req, res, next) => {
       orderBy: { createdAt: 'desc' },
       take: limit,
       skip: offset,
+      include: {
+        favoritedBy: {
+          select: { id: true },
+          take: 1,
+        },
+      },
     });
 
     const responseItems = items.map((item) => {
@@ -108,6 +119,7 @@ logsRouter.get('/logs', requireAuth, async (req, res, next) => {
         locale: localization.resolvedLocale,
         requested_locale: localization.requestedLocale,
         fallback_applied: localization.fallbackApplied,
+        favorite_meal_id: item.favoritedBy[0]?.id ?? null,
       };
     });
 

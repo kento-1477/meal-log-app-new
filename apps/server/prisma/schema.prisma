@@ -20,6 +20,7 @@ model User {
   ingestRequests IngestRequest[]
   edits          MealLogEdit[]
   shareTokens    LogShareToken[]
+  favoriteMeals  FavoriteMeal[]
   usageCounters  AiUsageCounter[]
 }
 
@@ -45,6 +46,7 @@ model MealLog {
   ingestRequests IngestRequest[]
   edits          MealLogEdit[]
   shareTokens    LogShareToken[]
+  favoritedBy    FavoriteMeal[]  @relation("FavoriteMealSource")
 
   @@index([userId, createdAt])
 }
@@ -104,6 +106,36 @@ model AiUsageCounter {
   lastUsedAt DateTime @default(now())
 
   @@unique([userId, usageDate])
+}
+
+model FavoriteMeal {
+  id              Int                @id @default(autoincrement())
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          Int
+  sourceLog       MealLog?           @relation("FavoriteMealSource", fields: [sourceMealLogId], references: [id])
+  sourceMealLogId String?
+  name            String
+  notes           String?
+  calories        Float
+  proteinG        Float
+  fatG            Float
+  carbsG          Float
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  items           FavoriteMealItem[]
+}
+
+model FavoriteMealItem {
+  id             Int          @id @default(autoincrement())
+  favoriteMeal   FavoriteMeal @relation(fields: [favoriteMealId], references: [id], onDelete: Cascade)
+  favoriteMealId Int
+  name           String
+  grams          Float
+  calories       Float?
+  proteinG       Float?
+  fatG           Float?
+  carbsG         Float?
+  orderIndex     Int          @default(0)
 }
 
 enum MealPeriod {
