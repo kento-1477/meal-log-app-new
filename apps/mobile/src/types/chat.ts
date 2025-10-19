@@ -1,4 +1,4 @@
-import type { GeminiNutritionResponse } from '@meal-log/shared';
+import type { FavoriteMealDraft, GeminiNutritionResponse } from '@meal-log/shared';
 
 export type ChatRole = 'user' | 'assistant' | 'system' | 'warning';
 
@@ -33,4 +33,5 @@ export interface NutritionCardPayload {
   requestedLocale?: string;
   fallbackApplied?: boolean;
   translations?: Record<string, GeminiNutritionResponse>;
+  favoriteCandidate?: FavoriteMealDraft;
 }

@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { GlassCard } from './GlassCard';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
+import type { FavoriteMealDraft } from '@meal-log/shared';
 import type { NutritionCardPayload } from '@/types/chat';
 import { useTranslation } from '@/i18n';
 import { describeLocale } from '@/utils/locale';
@@ -11,9 +12,11 @@ interface NutritionCardProps {
   payload: NutritionCardPayload;
   onShare?: () => void;
   sharing?: boolean;
+  onAddFavorite?: (draft: FavoriteMealDraft) => void;
+  addingFavorite?: boolean;
 }
 
-export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, sharing }) => {
+export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, sharing, onAddFavorite, addingFavorite }) => {
   const { t } = useTranslation();
   const warnings = (payload.warnings ?? []).map((warning) =>
     warning.startsWith('zeroFloored') ? t('card.warnings.zeroFloored') : warning,
@@ -27,6 +30,8 @@ export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, 
       }),
     );
   }
+
+  const canAddFavorite = Boolean(onAddFavorite && payload.favoriteCandidate);
 
   return (
     <GlassCard intensity={30} style={styles.card}>
@@ -42,6 +47,19 @@ export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, 
             <Text style={styles.kcalValue}>{Math.round(payload.totals.kcal)}</Text>
             <Text style={styles.kcalLabel}>{t('unit.kcal')}</Text>
           </View>
+          {canAddFavorite ? (
+            <TouchableOpacity
+              style={styles.favoriteButton}
+              onPress={() => payload.favoriteCandidate && onAddFavorite?.(payload.favoriteCandidate)}
+              disabled={addingFavorite}
+            >
+              {addingFavorite ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : (
+                <Text style={styles.favoriteLabel}>★</Text>
+              )}
+            </TouchableOpacity>
+          ) : null}
           {onShare ? (
             <TouchableOpacity style={styles.shareButton} onPress={onShare} disabled={sharing}>
               {sharing ? (
@@ -160,7 +178,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  favoriteButton: {
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   shareLabel: {
+    ...textStyles.caption,
+    color: colors.accent,
+    fontWeight: '600',
+  },
+  favoriteLabel: {
     ...textStyles.caption,
     color: colors.accent,
     fontWeight: '600',

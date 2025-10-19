@@ -25,9 +25,11 @@ import { describeLocale } from '@/utils/locale';
 
 interface Props {
   logs: MealLogSummary[];
+  onToggleFavorite?: (log: MealLogSummary, targetState: boolean) => void;
+  togglingId?: string | null;
 }
 
-export function RecentLogsList({ logs }: Props) {
+export function RecentLogsList({ logs, onToggleFavorite, togglingId }: Props) {
   const router = useRouter();
   const { t } = useTranslation();
   const [sharingId, setSharingId] = useState<string | null>(null);
@@ -81,6 +83,24 @@ export function RecentLogsList({ logs }: Props) {
               </Text>
             ) : null}
             <View style={styles.itemFooter}>
+              {onToggleFavorite ? (
+                <TouchableOpacity
+                  style={[styles.favoriteToggle, (log.favorite_meal_id ?? null) !== null && styles.favoriteToggleActive]}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    onToggleFavorite(log, (log.favorite_meal_id ?? null) === null);
+                  }}
+                  disabled={togglingId === log.id}
+                >
+                  {togglingId === log.id ? (
+                    <ActivityIndicator size="small" color={colors.accent} />
+                  ) : (
+                    <Text style={styles.favoriteToggleLabel}>
+                      {(log.favorite_meal_id ?? null) !== null ? '★' : '☆'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity
                 style={styles.shareLink}
                 onPress={(event) => {
@@ -317,7 +337,29 @@ const styles = StyleSheet.create({
   },
   itemFooter: {
     marginTop: spacing.xs,
-    alignItems: 'flex-end',
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.xs,
+  },
+  favoriteToggle: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    alignItems: 'center',
+    minWidth: 48,
+  },
+  favoriteToggleActive: {
+    borderColor: colors.accent,
+    backgroundColor: `${colors.accent}11`,
+  },
+  favoriteToggleLabel: {
+    ...textStyles.caption,
+    color: colors.accent,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   shareLink: {
     borderWidth: 1,

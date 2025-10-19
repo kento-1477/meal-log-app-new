@@ -53,6 +53,64 @@ export const GeminiNutritionResponseSchema = z.object({
 
 export type GeminiNutritionResponse = z.infer<typeof GeminiNutritionResponseSchema>;
 
+export const FavoriteMealItemInputSchema = z.object({
+  name: z.string().min(1),
+  grams: z.number().nonnegative(),
+  calories: z.number().nonnegative().optional().nullable(),
+  protein_g: z.number().nonnegative().optional().nullable(),
+  fat_g: z.number().nonnegative().optional().nullable(),
+  carbs_g: z.number().nonnegative().optional().nullable(),
+  order_index: z.number().int().nonnegative().optional(),
+});
+
+export type FavoriteMealItemInput = z.infer<typeof FavoriteMealItemInputSchema>;
+
+export const FavoriteMealItemSchema = FavoriteMealItemInputSchema.extend({
+  id: z.number().int(),
+  order_index: z.number().int().nonnegative(),
+});
+
+export type FavoriteMealItem = z.infer<typeof FavoriteMealItemSchema>;
+
+export const FavoriteMealDraftSchema = z.object({
+  name: z.string().min(1),
+  notes: z.string().optional().nullable(),
+  totals: NutritionTotalsSchema,
+  items: z.array(FavoriteMealItemInputSchema),
+  source_log_id: z.string().optional().nullable(),
+});
+
+export type FavoriteMealDraft = z.infer<typeof FavoriteMealDraftSchema>;
+
+export const FavoriteMealSchema = FavoriteMealDraftSchema.extend({
+  id: z.number().int(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  items: z.array(FavoriteMealItemSchema),
+});
+
+export type FavoriteMeal = z.infer<typeof FavoriteMealSchema>;
+
+export const FavoriteMealListResponseSchema = z.object({
+  ok: z.literal(true),
+  items: z.array(FavoriteMealSchema),
+});
+
+export const FavoriteMealDetailResponseSchema = z.object({
+  ok: z.literal(true),
+  item: FavoriteMealSchema,
+});
+
+export const FavoriteMealCreateRequestSchema = FavoriteMealDraftSchema;
+export type FavoriteMealCreateRequest = z.infer<typeof FavoriteMealCreateRequestSchema>;
+
+export const FavoriteMealUpdateRequestSchema = FavoriteMealDraftSchema.partial().extend({
+  items: z.array(FavoriteMealItemInputSchema).optional(),
+  totals: NutritionTotalsSchema.optional(),
+});
+
+export type FavoriteMealUpdateRequest = z.infer<typeof FavoriteMealUpdateRequestSchema>;
+
 export const MealLogAiRawSchema = GeminiNutritionResponseSchema.extend({
   locale: LocaleSchema.optional(),
   translations: z.record(LocaleSchema, GeminiNutritionResponseSchema).optional(),
@@ -104,6 +162,7 @@ export const MealLogSummarySchema = z.object({
   locale: LocaleSchema.optional(),
   requested_locale: LocaleSchema.optional(),
   fallback_applied: z.boolean().optional(),
+  favorite_meal_id: z.number().int().nullable().optional(),
 });
 
 export type MealLogSummary = z.infer<typeof MealLogSummarySchema>;
@@ -133,6 +192,7 @@ export const MealLogDetailSchema = z.object({
   locale: LocaleSchema.optional(),
   requested_locale: LocaleSchema.optional(),
   fallback_applied: z.boolean().optional(),
+  favorite_meal_id: z.number().int().nullable().optional(),
   history: z.array(MealLogEditEntrySchema),
 });
 
