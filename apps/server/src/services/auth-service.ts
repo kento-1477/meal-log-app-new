@@ -2,7 +2,10 @@ import argon2 from 'argon2';
 import { prisma } from '../db/prisma.js';
 import type { UserPlan } from '@prisma/client';
 
-const PLAN_OVERRIDE: UserPlan | null = process.env.NODE_ENV !== 'production' ? 'STANDARD' : null;
+function resolvePlanOverride(): UserPlan | null {
+  const value = process.env.USER_PLAN_OVERRIDE;
+  return value === 'FREE' || value === 'STANDARD' ? value : null;
+}
 
 export async function registerUser(params: { email: string; password: string; username?: string }) {
   const existing = await prisma.user.findUnique({ where: { email: params.email } });
@@ -74,14 +77,15 @@ function withPlanOverride(user: {
   plan: UserPlan;
   aiCredits: number;
 }) {
-  if (!PLAN_OVERRIDE) {
+  const override = resolvePlanOverride();
+  if (!override) {
     return user;
   }
-  if (user.plan === PLAN_OVERRIDE) {
+  if (user.plan === override) {
     return user;
   }
   return {
     ...user,
-    plan: PLAN_OVERRIDE,
+    plan: override,
   };
 }

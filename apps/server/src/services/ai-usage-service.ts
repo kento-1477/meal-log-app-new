@@ -9,7 +9,11 @@ const DAILY_LIMITS: Record<UserPlan, number> = {
 };
 
 const USAGE_TIMEZONE = 'Asia/Tokyo';
-const PLAN_OVERRIDE: UserPlan | null = process.env.NODE_ENV !== 'production' ? 'STANDARD' : null;
+
+function resolvePlanOverride(): UserPlan | null {
+  const value = process.env.USER_PLAN_OVERRIDE;
+  return value === 'FREE' || value === 'STANDARD' ? value : null;
+}
 
 export interface AiUsageStatus {
   allowed: boolean;
@@ -50,7 +54,7 @@ export async function evaluateAiUsage(userId: number): Promise<AiUsageStatus> {
 
   const usageDay = startOfUsageDay();
   const usageDate = usageDay.toJSDate();
-  const plan = PLAN_OVERRIDE ?? user.plan;
+  const plan = resolvePlanOverride() ?? user.plan;
   const limit = DAILY_LIMITS[plan];
   const credits = user.aiCredits ?? 0;
 
@@ -125,7 +129,7 @@ export async function recordAiUsage(params: { userId: number; usageDate: Date; c
       consumedCredit = true;
     }
 
-    const plan = PLAN_OVERRIDE ?? user.plan;
+    const plan = resolvePlanOverride() ?? user.plan;
     const limit = DAILY_LIMITS[plan];
     const used = updatedCounter.count;
     const remaining = Math.max(limit - used, 0);
