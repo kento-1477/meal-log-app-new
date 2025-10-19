@@ -37,11 +37,11 @@
 
 ## Step 4: 既存データの追補
 
-- [ ] Prisma Migration で `MealLog.aiRaw` の JSON スキーマに `translations` を追加
-- [ ] バッチスクリプトを用意し、既存ログに対して `translations['ja-JP']` を生成
-  - [ ] AI に再問い合わせする（コスト高） or 外部翻訳 API を利用する（スクリプト化）
-  - [ ] 進捗ログやリトライ戦略を設計
-- [ ] バッチの手順を `docs/` に記載
+- [x] Prisma Migration で `MealLog.aiRaw` の JSON スキーマに `translations` を追加
+- [x] バッチスクリプトを用意し、既存ログに対して `translations['ja-JP']` を生成
+  - [x] AI に再問い合わせする（コスト高） or 外部翻訳 API を利用する（スクリプト化）
+  - [x] 進捗ログやリトライ戦略を設計
+- [x] バッチの手順を `docs/` に記載
 
 ## Step 5: テスト & QA
 

@@ -8,6 +8,10 @@ import {
 } from '@meal-log/shared';
 import { maybeTranslateNutritionResponse } from '../src/services/localization-service.js';
 import { normalizeLocale, DEFAULT_LOCALE } from '../src/utils/locale.js';
+import { env } from '../src/env.js';
+
+const MAX_TRANSLATION_RETRIES = 2;
+const RETRY_DELAY_MS = 1000;
 
 interface CliOptions {
   targetLocale: Locale;
@@ -40,6 +44,7 @@ function parseCliArgs(): CliOptions {
 }
 
 const prisma = new PrismaClient();
+const STRATEGY = env.AI_TRANSLATION_STRATEGY ?? 'ai';
 
 function cloneTranslation(payload: GeminiNutritionResponse): GeminiNutritionResponse {
   return {
@@ -105,8 +110,22 @@ async function main() {
       const baseLocale = payload.locale ? normalizeLocale(payload.locale) : DEFAULT_LOCALE;
       const baseTranslation = payload.translations?.[baseLocale] ?? extractBaseTranslation(payload);
 
-      const translated = await maybeTranslateNutritionResponse(baseTranslation, targetLocale);
+      let translated: GeminiNutritionResponse | null = null;
+      for (let attempt = 0; attempt <= MAX_TRANSLATION_RETRIES; attempt += 1) {
+        translated = await maybeTranslateNutritionResponse(baseTranslation, targetLocale);
+        if (translated || STRATEGY === 'copy' || STRATEGY === 'none') {
+          break;
+        }
+        if (attempt < MAX_TRANSLATION_RETRIES) {
+          console.warn(
+            `[backfill] translation failed for ${log.id} (attempt ${attempt + 1}). Retrying...`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        }
+      }
+
       if (!translated) {
+        console.warn(`[backfill] translation unavailable for ${log.id}, skipping.`);
         skipped += 1;
         continue;
       }
@@ -125,6 +144,7 @@ async function main() {
       });
 
       updated += 1;
+      console.info(`[backfill] translated ${log.id} -> ${targetLocale}`);
     }
   }
 
