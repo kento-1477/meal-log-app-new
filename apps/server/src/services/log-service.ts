@@ -210,6 +210,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
   const localization = resolveMealLogLocalization(aiPayload, requestedLocale);
   const translation = localization.translation ?? cloneNutritionResponse(enrichedResponse);
   const responseTranslations = cloneTranslationsMap(localization.translations);
+  const responseItems = translation.items ?? [];
   const favoriteCandidate = buildFavoriteDraftPayload({
     translation,
     totals: translation.totals,
@@ -217,8 +218,6 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
     fallbackDish: translation.dish,
     sourceMealLogId: log.id,
   });
-
-  const responseItems = translation.items ?? [];
   const warnings = [...(translation.warnings ?? [])];
   if (zeroFloored) {
     warnings.push('zeroFloored: AI が推定した栄養素の一部が 0 として返されました');
