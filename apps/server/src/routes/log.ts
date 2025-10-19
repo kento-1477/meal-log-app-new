@@ -13,7 +13,7 @@ logRouter.post('/log', requireAuth, upload.single('image'), async (req, res, nex
   try {
     const message = (req.body?.message ?? '').trim();
     if (!message && !req.file) {
-      return res.status(StatusCodes.BAD_REQUEST).json({ ok: false, error: 'message is required' });
+      return res.status(StatusCodes.BAD_REQUEST).json({ ok: false, error: 'メッセージまたは画像のいずれかを送信してください。' });
     }
 
     const idempotencyKey = (req.get('Idempotency-Key') ?? undefined) as string | undefined;
@@ -36,7 +36,7 @@ logRouter.post('/log', requireAuth, upload.single('image'), async (req, res, nex
       return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
         ok: false,
         success: false,
-        error: err.message ?? 'AI timeout',
+        error: err.message ?? 'AIの処理がタイムアウトしました',
       });
     }
     next(error);

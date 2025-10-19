@@ -22,7 +22,7 @@ export async function getMealLogSharePayload(userId: number, mealLogId: string):
   });
 
   if (!mealLog) {
-    const error = new Error('Meal log not found');
+    const error = new Error('食事記録が見つかりませんでした');
     Object.assign(error, { statusCode: StatusCodes.NOT_FOUND, expose: true });
     throw error;
   }
@@ -101,7 +101,10 @@ function formatShareText(log: { foodItem: string; calories: number; proteinG: nu
 function resolveRange(range: ExportRange['range'], anchor?: string) {
   const base = anchor ? DateTime.fromISO(anchor) : DateTime.now();
   if (!base.isValid) {
-    throw Object.assign(new Error('Invalid anchor date'), { statusCode: StatusCodes.BAD_REQUEST, expose: true });
+    throw Object.assign(new Error('アンカー日付が無効です'), {
+      statusCode: StatusCodes.BAD_REQUEST,
+      expose: true,
+    });
   }
 
   switch (range) {
@@ -121,7 +124,10 @@ function resolveRange(range: ExportRange['range'], anchor?: string) {
       return { from, to };
     }
     default:
-      throw Object.assign(new Error('Unsupported range'), { statusCode: StatusCodes.BAD_REQUEST, expose: true });
+      throw Object.assign(new Error('未対応の期間指定です'), {
+        statusCode: StatusCodes.BAD_REQUEST,
+        expose: true,
+      });
   }
 }
 

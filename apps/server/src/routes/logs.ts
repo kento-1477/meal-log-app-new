@@ -142,7 +142,7 @@ logsRouter.get('/log/:id', requireAuth, async (req, res, next) => {
   try {
     const detail = await fetchMealLogDetail(req.params.id, req.session.userId!);
     if (!detail) {
-      return res.status(StatusCodes.NOT_FOUND).json({ ok: false, message: 'not found' });
+      return res.status(StatusCodes.NOT_FOUND).json({ ok: false, message: '記録が見つかりませんでした。' });
     }
     res.status(StatusCodes.OK).json({
       ok: true,
@@ -172,7 +172,9 @@ logsRouter.patch('/log/:id', requireAuth, async (req, res, next) => {
     const payload = parsed.data;
     const mealPeriod = payload.meal_period ? mealPeriodLookup[payload.meal_period] : undefined;
     if (payload.meal_period && !mealPeriod) {
-      return res.status(StatusCodes.BAD_REQUEST).json({ ok: false, error: 'Invalid meal period' });
+      return res
+        .status(StatusCodes.BAD_REQUEST)
+        .json({ ok: false, error: '指定された時間帯タグが正しくありません。' });
     }
 
     await updateMealLog({
@@ -190,7 +192,9 @@ logsRouter.patch('/log/:id', requireAuth, async (req, res, next) => {
 
     const detail = await fetchMealLogDetail(req.params.id, req.session.userId!);
     if (!detail) {
-      return res.status(StatusCodes.NOT_FOUND).json({ ok: false, message: 'not found' });
+      return res
+        .status(StatusCodes.NOT_FOUND)
+        .json({ ok: false, message: '記録が見つかりませんでした。' });
     }
 
     res.status(StatusCodes.OK).json({ ok: true, item: detail });

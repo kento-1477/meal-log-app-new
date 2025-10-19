@@ -10,6 +10,11 @@ const DAILY_LIMITS: Record<UserPlan, number> = {
 
 const USAGE_TIMEZONE = 'Asia/Tokyo';
 
+function resolvePlanOverride(): UserPlan | null {
+  const value = process.env.USER_PLAN_OVERRIDE;
+  return value === 'FREE' || value === 'STANDARD' ? value : null;
+}
+
 export interface AiUsageStatus {
   allowed: boolean;
   plan: UserPlan;
@@ -42,14 +47,15 @@ export async function evaluateAiUsage(userId: number): Promise<AiUsageStatus> {
   });
 
   if (!user) {
-    const error = new Error('User not found for AI usage evaluation');
+    const error = new Error('AI 利用状況の確認対象ユーザーが見つかりませんでした');
     Object.assign(error, { statusCode: StatusCodes.NOT_FOUND, expose: true });
     throw error;
   }
 
   const usageDay = startOfUsageDay();
   const usageDate = usageDay.toJSDate();
-  const limit = DAILY_LIMITS[user.plan];
+  const plan = resolvePlanOverride() ?? user.plan;
+  const limit = DAILY_LIMITS[plan];
   const credits = user.aiCredits ?? 0;
 
   const counter = await prisma.aiUsageCounter.findUnique({
@@ -68,7 +74,7 @@ export async function evaluateAiUsage(userId: number): Promise<AiUsageStatus> {
 
   return {
     allowed,
-    plan: user.plan,
+    plan,
     limit,
     used,
     remaining,
@@ -88,7 +94,7 @@ export async function recordAiUsage(params: { userId: number; usageDate: Date; c
       select: { plan: true, aiCredits: true },
     });
     if (!user) {
-      const error = new Error('User not found during AI usage recording');
+      const error = new Error('AI 利用記録の対象ユーザーが見つかりませんでした');
       Object.assign(error, { statusCode: StatusCodes.NOT_FOUND, expose: true });
       throw error;
     }
@@ -123,12 +129,13 @@ export async function recordAiUsage(params: { userId: number; usageDate: Date; c
       consumedCredit = true;
     }
 
-    const limit = DAILY_LIMITS[user.plan];
+    const plan = resolvePlanOverride() ?? user.plan;
+    const limit = DAILY_LIMITS[plan];
     const used = updatedCounter.count;
     const remaining = Math.max(limit - used, 0);
 
     return {
-      plan: user.plan,
+      plan,
       limit,
       used,
       remaining,
@@ -142,7 +149,7 @@ export async function recordAiUsage(params: { userId: number; usageDate: Date; c
 }
 
 export function buildUsageLimitError(status: AiUsageStatus) {
-  const error = new Error('AI usage limit reached');
+  const error = new Error('AI の利用上限に達しました');
   Object.assign(error, {
     statusCode: StatusCodes.TOO_MANY_REQUESTS,
     expose: true,
