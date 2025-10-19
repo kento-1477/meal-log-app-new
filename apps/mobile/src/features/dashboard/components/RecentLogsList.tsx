@@ -21,6 +21,7 @@ import { textStyles } from '@/theme/typography';
 import { useTranslation } from '@/i18n';
 import { getLogsExport, getMealLogShare, type ExportRange } from '@/services/api';
 import { buildCsv, buildPdfHtml, type ExportItem } from '@/utils/logExport';
+import { describeLocale } from '@/utils/locale';
 
 interface Props {
   logs: MealLogSummary[];
@@ -74,6 +75,11 @@ export function RecentLogsList({ logs }: Props) {
               <Text style={styles.macroLabel}>{t('macro.fat')}: {log.fat_g} g</Text>
               <Text style={styles.macroLabel}>{t('macro.carbs')}: {log.carbs_g} g</Text>
             </View>
+            {log.fallback_applied && log.requested_locale && log.locale && log.requested_locale !== log.locale ? (
+              <Text style={styles.fallbackNote}>
+                ※ {describeLocale(log.requested_locale)} の翻訳が未対応のため {describeLocale(log.locale)} で表示しています
+              </Text>
+            ) : null}
             <View style={styles.itemFooter}>
               <TouchableOpacity
                 style={styles.shareLink}
@@ -300,6 +306,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     flexWrap: 'wrap',
+  },
+  fallbackNote: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
   },
   macroLabel: {
     ...textStyles.caption,

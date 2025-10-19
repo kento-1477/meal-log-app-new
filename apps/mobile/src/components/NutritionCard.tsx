@@ -5,6 +5,7 @@ import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
 import type { NutritionCardPayload } from '@/types/chat';
 import { useTranslation } from '@/i18n';
+import { describeLocale } from '@/utils/locale';
 
 interface NutritionCardProps {
   payload: NutritionCardPayload;
@@ -14,9 +15,18 @@ interface NutritionCardProps {
 
 export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, sharing }) => {
   const { t } = useTranslation();
-  const warningMessages = payload.warnings?.map((warning) =>
+  const warnings = (payload.warnings ?? []).map((warning) =>
     warning.startsWith('zeroFloored') ? t('card.warnings.zeroFloored') : warning,
   );
+
+  if (payload.fallbackApplied && payload.requestedLocale && payload.locale && payload.requestedLocale !== payload.locale) {
+    warnings.push(
+      t('card.languageFallback', {
+        requested: describeLocale(payload.requestedLocale),
+        resolved: describeLocale(payload.locale),
+      }),
+    );
+  }
 
   return (
     <GlassCard intensity={30} style={styles.card}>
@@ -74,9 +84,9 @@ export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, 
           ))}
         </View>
       ) : null}
-      {warningMessages?.length ? (
+      {warnings.length ? (
         <View style={styles.warningBlock}>
-          {warningMessages.map((warning) => (
+          {warnings.map((warning) => (
             <Text key={warning} style={styles.warningText}>
               ⚠️ {warning}
             </Text>

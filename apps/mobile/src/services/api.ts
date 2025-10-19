@@ -1,4 +1,5 @@
 import { API_BASE_URL } from './config';
+import { getLocale } from '@/i18n';
 import type { NutritionCardPayload } from '@/types/chat';
 import type {
   DashboardSummary,
@@ -9,6 +10,7 @@ import type {
   UpdateMealLogRequest,
   AiUsageSummary,
   UserPlan,
+  GeminiNutritionResponse,
 } from '@meal-log/shared';
 import { DashboardSummarySchema, DashboardTargetsSchema } from '@meal-log/shared';
 
@@ -18,6 +20,11 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
   if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
+  }
+
+  const appLocale = getLocale();
+  if (!headers.has('Accept-Language')) {
+    headers.set('Accept-Language', appLocale);
   }
 
   const response = await fetch(url, {
@@ -54,6 +61,19 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
   const text = await response.text();
   return text ? (JSON.parse(text) as T) : (null as T);
+}
+
+function appendLocale(path: string, locale: string): string {
+  if (!locale) {
+    return path;
+  }
+
+  const [base, hashFragment] = path.split('#');
+  const url = new URL(base, 'https://api.local');
+  url.searchParams.set('locale', locale);
+  const search = url.search ? url.search : '';
+  const localizedPath = `${url.pathname}${search}`;
+  return hashFragment ? `${localizedPath}#${hashFragment}` : localizedPath;
 }
 
 export interface ApiError extends Error {
@@ -121,6 +141,10 @@ export interface MealLogResponse {
   meal_period?: string | null;
   image_url?: string | null;
   usage?: AiUsageSummary;
+  requestLocale: string;
+  locale: string;
+  fallbackApplied: boolean;
+  translations?: Record<string, GeminiNutritionResponse>;
 }
 
 export async function postMealLog(params: { message: string; imageUri?: string | null }) {
@@ -138,6 +162,8 @@ export async function postMealLog(params: { message: string; imageUri?: string |
     form.append('image', file);
   }
 
+  form.append('locale', getLocale());
+
   return apiFetch<MealLogResponse>('/log', {
     method: 'POST',
     body: form,
@@ -146,31 +172,45 @@ export async function postMealLog(params: { message: string; imageUri?: string |
 }
 
 export async function getRecentLogs() {
-  return apiFetch<{ ok: boolean; items: MealLogSummary[] }>('/api/logs', { method: 'GET' });
+  const locale = getLocale();
+  return apiFetch<{ ok: boolean; items: MealLogSummary[] }>(appendLocale('/api/logs', locale), {
+    method: 'GET',
+  });
 }
 
 export async function getDailySummary(days = 7) {
-  return apiFetch<{ ok: boolean; today: unknown; daily: any[] }>(`/api/logs/summary?days=${days}`);
+  const locale = getLocale();
+  return apiFetch<{ ok: boolean; today: unknown; daily: any[] }>(
+    appendLocale(`/api/logs/summary?days=${days}`, locale),
+  );
 }
 
 export async function searchFoods(query: string) {
-  return apiFetch<{ q: string; candidates: any[] }>(`/api/foods/search?q=${encodeURIComponent(query)}`);
+  const locale = getLocale();
+  return apiFetch<{ q: string; candidates: any[] }>(
+    appendLocale(`/api/foods/search?q=${encodeURIComponent(query)}`, locale),
+  );
 }
 
 export async function getMealLogDetail(logId: string) {
-  return apiFetch<{ ok: boolean; item: MealLogDetail }>(`/api/log/${logId}`, { method: 'GET' });
+  const locale = getLocale();
+  return apiFetch<{ ok: boolean; item: MealLogDetail }>(appendLocale(`/api/log/${logId}`, locale), {
+    method: 'GET',
+  });
 }
 
 export async function updateMealLog(logId: string, input: UpdateMealLogRequest) {
-  return apiFetch<{ ok: boolean; item: MealLogDetail }>(`/api/log/${logId}`, {
+  const locale = getLocale();
+  return apiFetch<{ ok: boolean; item: MealLogDetail }>(appendLocale(`/api/log/${logId}`, locale), {
     method: 'PATCH',
     body: JSON.stringify(input),
   });
 }
 
 export async function getMealLogShare(logId: string) {
+  const locale = getLocale();
   return apiFetch<{ ok: boolean; share: { text: string; token: string; expiresAt: string } }>(
-    `/api/log/${logId}/share`,
+    appendLocale(`/api/log/${logId}/share`, locale),
     {
       method: 'GET',
     },
@@ -184,6 +224,7 @@ export async function getLogsExport(range: ExportRange, anchor?: string) {
   if (anchor) {
     params.set('anchor', anchor);
   }
+  params.set('locale', getLocale());
 
   return apiFetch<{
     ok: boolean;
@@ -200,6 +241,9 @@ export async function getLogsExport(range: ExportRange, anchor?: string) {
         fatG: number;
         carbsG: number;
         mealPeriod: string | null;
+        locale: string;
+        requestedLocale: string;
+        fallbackApplied: boolean;
       }>;
     };
   }>(`/api/logs/export?${params.toString()}`, { method: 'GET' });
@@ -211,6 +255,7 @@ export async function getDashboardSummary(period: DashboardPeriod, range?: { fro
     params.set('from', range.from);
     params.set('to', range.to);
   }
+  params.set('locale', getLocale());
 
   const response = await apiFetch<{ ok: boolean; summary: unknown }>(`/api/dashboard/summary?${params.toString()}`, {
     method: 'GET',
@@ -221,7 +266,10 @@ export async function getDashboardSummary(period: DashboardPeriod, range?: { fro
 }
 
 export async function getDashboardTargets() {
-  const response = await apiFetch<{ ok: boolean; targets: unknown }>(`/api/dashboard/targets`, { method: 'GET' });
+  const response = await apiFetch<{ ok: boolean; targets: unknown }>(
+    appendLocale(`/api/dashboard/targets`, getLocale()),
+    { method: 'GET' },
+  );
   const parsed = DashboardTargetsSchema.parse(response.targets);
   return parsed as DashboardTargets;
 }
@@ -233,5 +281,7 @@ export interface StreakPayload {
 }
 
 export async function getStreak() {
-  return apiFetch<{ ok: boolean; streak: StreakPayload }>(`/api/streak`, { method: 'GET' });
+  return apiFetch<{ ok: boolean; streak: StreakPayload }>(appendLocale(`/api/streak`, getLocale()), {
+    method: 'GET',
+  });
 }

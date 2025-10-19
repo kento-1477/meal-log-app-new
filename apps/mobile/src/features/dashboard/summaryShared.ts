@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
 import type { DashboardSummary, DashboardTargets } from '@meal-log/shared';
+import { getIntlLocale } from '@/i18n';
 
 export interface ChartPoint {
   label: string;
@@ -215,7 +216,7 @@ export function formatDayLabel(isoDate: string, timezone: string) {
     const fallback = DateTime.fromISO(isoDate);
     return fallback.isValid ? fallback.toFormat('MM/dd') : isoDate;
   }
-  const weekday = date.setLocale('ja').toFormat('ccc');
+  const weekday = date.setLocale(getIntlLocale()).toFormat('ccc');
   return `${weekday} ${date.day}`;
 }
 

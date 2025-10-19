@@ -17,6 +17,8 @@ import { getMealLogDetail, getMealLogShare, updateMealLog } from '@/services/api
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
+import { useTranslation } from '@/i18n';
+import { describeLocale } from '@/utils/locale';
 
 const mealPeriodOptions = [
   { value: 'breakfast', label: '朝食' },
@@ -50,11 +52,12 @@ export default function MealLogDetailScreen() {
   const queryClient = useQueryClient();
   const [fields, setFields] = useState<FieldState>(initialState);
   const [sharing, setSharing] = useState(false);
+  const { locale } = useTranslation();
 
   const logId = params.id ?? '';
 
   const detailQuery = useQuery({
-    queryKey: ['logDetail', logId],
+    queryKey: ['logDetail', logId, locale],
     queryFn: () => getMealLogDetail(logId),
     enabled: Boolean(logId),
   });
@@ -149,6 +152,11 @@ export default function MealLogDetailScreen() {
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>基本情報</Text>
+            {detail.fallback_applied && detail.requested_locale && detail.locale && detail.requested_locale !== detail.locale ? (
+              <Text style={styles.fallbackNote}>
+                ※ {describeLocale(detail.requested_locale)} の翻訳が未対応のため {describeLocale(detail.locale)} で表示しています
+              </Text>
+            ) : null}
             <Text style={styles.label}>料理名</Text>
             <TextInput
               value={fields.dish}
@@ -336,6 +344,10 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...textStyles.titleMedium,
+  },
+  fallbackNote: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
   },
   label: {
     ...textStyles.caption,

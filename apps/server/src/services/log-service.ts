@@ -2,7 +2,13 @@ import type { Express } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { createHash } from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
-import type { AiUsageSummary, GeminiNutritionResponse, SlotSelectionRequest } from '@meal-log/shared';
+import type {
+  AiUsageSummary,
+  GeminiNutritionResponse,
+  SlotSelectionRequest,
+  Locale,
+  MealLogAiRaw,
+} from '@meal-log/shared';
 import { MealPeriod, Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma.js';
 import { analyzeMealWithGemini } from './gemini-service.js';
@@ -13,12 +19,16 @@ import {
   buildUsageLimitError,
   summarizeUsageStatus,
 } from './ai-usage-service.js';
+import { DEFAULT_LOCALE, resolveMealLogLocalization, normalizeLocale, parseMealLogAiRaw } from '../utils/locale.js';
+import type { LocalizationResolution } from '../utils/locale.js';
+import { maybeTranslateNutritionResponse } from './localization-service.js';
 
 interface ProcessMealLogParams {
   userId: number;
   message: string;
   file?: Express.Multer.File;
   idempotencyKey?: string;
+  locale?: Locale;
 }
 
 interface ProcessMealLogResult {
@@ -27,6 +37,10 @@ interface ProcessMealLogResult {
   idempotent: boolean;
   idempotency_key: string;
   logId: string;
+  requestLocale: Locale;
+  locale: Locale;
+  translations: Record<Locale, GeminiNutritionResponse>;
+  fallbackApplied: boolean;
   dish: string;
   confidence: number;
   totals: GeminiNutritionResponse['totals'];
@@ -55,6 +69,7 @@ const inferMealPeriod = (date: Date): MealPeriod => {
 
 export async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMealLogResult> {
   const requestKey = params.idempotencyKey ?? buildRequestKey(params);
+  const requestedLocale = normalizeLocale(params.locale);
 
   const existing = await prisma.ingestRequest.findUnique({
     where: { userId_requestKey: { userId: params.userId, requestKey } },
@@ -62,37 +77,57 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
   });
 
   if (existing?.log && !existing.log.zeroFloored) {
-    const log = existing.log;
-    const aiRaw = log.aiRaw as GeminiNutritionResponse | null;
     const usageStatus = await evaluateAiUsage(params.userId);
     const usageSummary = summarizeUsageStatus(usageStatus);
 
-    const totals = aiRaw?.totals ?? {
-      kcal: log.calories,
-      protein_g: log.proteinG,
-      fat_g: log.fatG,
-      carbs_g: log.carbsG,
+    const logRecord = existing.log;
+    const localization = resolveMealLogLocalization(logRecord.aiRaw, requestedLocale);
+    const translation = localization.translation;
+
+    const totals = translation?.totals ?? {
+      kcal: logRecord.calories,
+      protein_g: logRecord.proteinG,
+      fat_g: logRecord.fatG,
+      carbs_g: logRecord.carbsG,
     };
+
+    const items = translation?.items ?? [];
+    const warnings = [...(translation?.warnings ?? [])];
+    if (localization.fallbackApplied) {
+      warnings.push(`translation_fallback:${localization.resolvedLocale}`);
+    }
+
+    const translations = cloneTranslationsMap(localization.translations);
+
+    const meta: Record<string, unknown> = {
+      ...(translation?.meta ?? {}),
+      reused: true,
+      mealPeriod: logRecord.mealPeriod,
+      localization: buildLocalizationMeta({ ...localization, translations }),
+    };
+    if (logRecord.imageUrl) {
+      meta.imageUrl = logRecord.imageUrl;
+    }
 
     return {
       ok: true,
       success: true,
       idempotent: true,
       idempotency_key: requestKey,
-      logId: log.id,
-      dish: aiRaw?.dish ?? log.foodItem,
-      confidence: aiRaw?.confidence ?? 0.5,
+      logId: logRecord.id,
+      requestLocale: localization.requestedLocale,
+      locale: localization.resolvedLocale,
+      translations,
+      fallbackApplied: localization.fallbackApplied,
+      dish: translation?.dish ?? logRecord.foodItem,
+      confidence: translation?.confidence ?? 0.5,
       totals,
-      items: aiRaw?.items ?? [],
+      items,
       breakdown: {
-        items: aiRaw?.items ?? [],
-        warnings: Array.isArray(aiRaw?.warnings) ? aiRaw.warnings : [],
+        items,
+        warnings,
       },
-      meta: {
-        ...(aiRaw?.meta ?? {}),
-        reused: true,
-        mealPeriod: log.mealPeriod,
-      },
+      meta,
       usage: usageSummary,
     };
   }
@@ -121,6 +156,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
       message: params.message,
       imageBase64,
       imageMimeType,
+      locale: requestedLocale,
     });
   } catch (error) {
     await prisma.ingestRequest.update({
@@ -142,21 +178,46 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
   };
 
   const zeroFloored = Object.values(enrichedResponse.totals).some((value) => value === 0);
-  const warnings = [...(enrichedResponse.warnings ?? [])];
+  const mealPeriod = inferMealPeriod(new Date());
+
+  const seededTranslations: Record<Locale, GeminiNutritionResponse> = {
+    [DEFAULT_LOCALE]: cloneNutritionResponse(enrichedResponse),
+  };
+  if (requestedLocale !== DEFAULT_LOCALE) {
+    const localized = await maybeTranslateNutritionResponse(enrichedResponse, requestedLocale);
+    if (localized) {
+      seededTranslations[requestedLocale] = cloneNutritionResponse(localized);
+    }
+  }
+
+  const aiPayload: MealLogAiRaw = {
+    ...cloneNutritionResponse(enrichedResponse),
+    locale: DEFAULT_LOCALE,
+    translations: seededTranslations,
+  };
+
+  const localization = resolveMealLogLocalization(aiPayload, requestedLocale);
+  const translation = localization.translation ?? cloneNutritionResponse(enrichedResponse);
+  const responseTranslations = cloneTranslationsMap(localization.translations);
+
+  const responseItems = translation.items ?? [];
+  const warnings = [...(translation.warnings ?? [])];
   if (zeroFloored) {
     warnings.push('zeroFloored: AI が推定した栄養素の一部が 0 として返されました');
   }
-  const mealPeriod = inferMealPeriod(new Date());
+  if (localization.fallbackApplied) {
+    warnings.push(`translation_fallback:${localization.resolvedLocale}`);
+  }
 
   const log = await prisma.mealLog.create({
     data: {
       userId: params.userId,
-      foodItem: enrichedResponse.dish ?? params.message,
+      foodItem: translation.dish ?? params.message,
       calories: enrichedResponse.totals.kcal,
       proteinG: enrichedResponse.totals.protein_g,
       fatG: enrichedResponse.totals.fat_g,
       carbsG: enrichedResponse.totals.carbs_g,
-      aiRaw: enrichedResponse,
+      aiRaw: aiPayload,
       zeroFloored,
       guardrailNotes: zeroFloored ? 'zeroFloored' : null,
       landingType: enrichedResponse.landing_type ?? null,
@@ -194,12 +255,13 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
     consumeCredit: usageStatus.consumeCredit,
   });
 
-  const meta = {
+  const meta: Record<string, unknown> = {
     ...(enrichedResponse.meta ?? {}),
     imageUrl,
     fallback_model_used: analysis.meta.model === 'models/gemini-2.5-pro',
     mealPeriod,
-  } satisfies Record<string, unknown>;
+    localization: buildLocalizationMeta({ ...localization, translations: responseTranslations }),
+  };
 
   return {
     ok: true,
@@ -207,12 +269,16 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
     idempotent: false,
     idempotency_key: requestKey,
     logId: log.id,
-    dish: enrichedResponse.dish,
-    confidence: enrichedResponse.confidence,
-    totals: enrichedResponse.totals,
-    items: enrichedResponse.items,
+    requestLocale: localization.requestedLocale,
+    locale: localization.resolvedLocale,
+    translations: responseTranslations,
+    fallbackApplied: localization.fallbackApplied,
+    dish: translation.dish,
+    confidence: translation.confidence,
+    totals: translation.totals,
+    items: responseItems,
     breakdown: {
-      items: enrichedResponse.items,
+      items: responseItems,
       warnings,
     },
     meta,
@@ -278,18 +344,58 @@ export async function updateMealLog({ logId, userId, updates }: UpdateMealLogPar
     return log;
   }
 
-  const aiRaw = (log.aiRaw ?? null) as GeminiNutritionResponse | null;
-  let updatedAiRaw: GeminiNutritionResponse | null = aiRaw;
-  if (aiRaw) {
+  const parsedAiRaw = parseMealLogAiRaw(log.aiRaw);
+  let updatedAiRaw: MealLogAiRaw | null = parsedAiRaw;
+
+  if (parsedAiRaw) {
+    const baseLocale = parsedAiRaw.locale ? normalizeLocale(parsedAiRaw.locale) : DEFAULT_LOCALE;
+    const baseSource =
+      parsedAiRaw.translations?.[baseLocale] ??
+      parsedAiRaw.translations?.[DEFAULT_LOCALE] ??
+      cloneNutritionResponse(parsedAiRaw);
+
+    const updatedBase = cloneNutritionResponse(baseSource);
+    if (typeof updates.foodItem === 'string') {
+      updatedBase.dish = updates.foodItem;
+    }
+    updatedBase.totals = {
+      ...updatedBase.totals,
+      ...(typeof updates.calories === 'number' ? { kcal: updates.calories } : {}),
+      ...(typeof updates.proteinG === 'number' ? { protein_g: updates.proteinG } : {}),
+      ...(typeof updates.fatG === 'number' ? { fat_g: updates.fatG } : {}),
+      ...(typeof updates.carbsG === 'number' ? { carbs_g: updates.carbsG } : {}),
+    };
+
+    const updatedTranslations = { ...(parsedAiRaw.translations ?? {}) } as Record<Locale, GeminiNutritionResponse>;
+    updatedTranslations[baseLocale] = updatedBase;
+
     updatedAiRaw = {
-      ...aiRaw,
-      dish: typeof updates.foodItem === 'string' ? updates.foodItem : aiRaw.dish,
+      ...parsedAiRaw,
+      dish: updatedBase.dish,
+      totals: updatedBase.totals,
+      items: updatedBase.items,
+      warnings: updatedBase.warnings,
+      translations: updatedTranslations,
+    };
+  } else if (log.aiRaw) {
+    const legacy = log.aiRaw as GeminiNutritionResponse;
+    const updatedLegacy = {
+      ...legacy,
+      dish: typeof updates.foodItem === 'string' ? updates.foodItem : legacy.dish,
       totals: {
-        ...aiRaw.totals,
+        ...legacy.totals,
         ...(typeof updates.calories === 'number' ? { kcal: updates.calories } : {}),
         ...(typeof updates.proteinG === 'number' ? { protein_g: updates.proteinG } : {}),
         ...(typeof updates.fatG === 'number' ? { fat_g: updates.fatG } : {}),
         ...(typeof updates.carbsG === 'number' ? { carbs_g: updates.carbsG } : {}),
+      },
+    } satisfies GeminiNutritionResponse;
+
+    updatedAiRaw = {
+      ...cloneNutritionResponse(updatedLegacy),
+      locale: DEFAULT_LOCALE,
+      translations: {
+        [DEFAULT_LOCALE]: cloneNutritionResponse(updatedLegacy),
       },
     };
   }
@@ -299,7 +405,7 @@ export async function updateMealLog({ logId, userId, updates }: UpdateMealLogPar
       where: { id: log.id },
       data: {
         ...updateData,
-        aiRaw: updatedAiRaw ? { ...updatedAiRaw } : log.aiRaw,
+        aiRaw: updatedAiRaw ?? log.aiRaw,
       },
     });
 
@@ -352,6 +458,30 @@ export async function chooseSlot(request: SlotSelectionRequest, userId: number) 
   });
 
   return updated;
+}
+
+function buildLocalizationMeta(localization: LocalizationResolution) {
+  return {
+    requested: localization.requestedLocale,
+    resolved: localization.resolvedLocale,
+    fallbackApplied: localization.fallbackApplied,
+    available: Object.keys(localization.translations),
+  } satisfies Record<string, unknown>;
+}
+
+function cloneNutritionResponse(payload: GeminiNutritionResponse): GeminiNutritionResponse {
+  return {
+    ...payload,
+    totals: { ...payload.totals },
+    items: (payload.items ?? []).map((item) => ({ ...item })),
+    warnings: [...(payload.warnings ?? [])],
+    meta: payload.meta ? { ...payload.meta } : undefined,
+  };
+}
+
+function cloneTranslationsMap(translations: Record<Locale, GeminiNutritionResponse>) {
+  const entries = Object.entries(translations).map(([locale, value]) => [locale, cloneNutritionResponse(value)] as const);
+  return Object.fromEntries(entries) as Record<Locale, GeminiNutritionResponse>;
 }
 
 function buildRequestKey(params: ProcessMealLogParams) {

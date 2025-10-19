@@ -51,7 +51,7 @@ export default function DashboardScreen() {
   const setStatus = useSessionStore((state) => state.setStatus);
   const setUsage = useSessionStore((state) => state.setUsage);
   const isAuthenticated = status === 'authenticated';
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
 
   const { data, isLoading, isFetching, error, refetch, isStaleFromCache } = useDashboardSummary(period, {
     enabled: isAuthenticated,
@@ -61,7 +61,7 @@ export default function DashboardScreen() {
   const emptyMessage = period === 'thisWeek' ? t('dashboard.empty.week') : t('dashboard.empty.generic');
 
   const recentLogsQuery = useQuery({
-    queryKey: ['recentLogs'],
+    queryKey: ['recentLogs', locale],
     queryFn: async () => {
       const result = await getRecentLogs();
       return result.items ?? [];
@@ -70,7 +70,7 @@ export default function DashboardScreen() {
   });
 
   const streakQuery = useQuery({
-    queryKey: ['streak'],
+    queryKey: ['streak', locale],
     queryFn: async () => {
       const response = await getStreak();
       await cacheStreak(response.streak);
