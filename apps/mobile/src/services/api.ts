@@ -11,6 +11,10 @@ import type {
   AiUsageSummary,
   UserPlan,
   GeminiNutritionResponse,
+  FavoriteMeal,
+  FavoriteMealDraft,
+  FavoriteMealCreateRequest,
+  FavoriteMealUpdateRequest,
 } from '@meal-log/shared';
 import { DashboardSummarySchema, DashboardTargetsSchema } from '@meal-log/shared';
 
@@ -145,6 +149,7 @@ export interface MealLogResponse {
   locale: string;
   fallbackApplied: boolean;
   translations?: Record<string, GeminiNutritionResponse>;
+  favoriteCandidate: FavoriteMealDraft;
 }
 
 export async function postMealLog(params: { message: string; imageUri?: string | null }) {
@@ -283,5 +288,39 @@ export interface StreakPayload {
 export async function getStreak() {
   return apiFetch<{ ok: boolean; streak: StreakPayload }>(appendLocale(`/api/streak`, getLocale()), {
     method: 'GET',
+  });
+}
+
+export async function getFavorites() {
+  return apiFetch<{ ok: boolean; items: FavoriteMeal[] }>('/api/favorites', { method: 'GET' });
+}
+
+export async function getFavoriteDetail(favoriteId: number) {
+  return apiFetch<{ ok: boolean; item: FavoriteMeal }>(`/api/favorites/${favoriteId}`, { method: 'GET' });
+}
+
+export async function createFavoriteMeal(payload: FavoriteMealCreateRequest) {
+  return apiFetch<{ ok: boolean; item: FavoriteMeal }>('/api/favorites', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateFavoriteMeal(favoriteId: number, payload: FavoriteMealUpdateRequest) {
+  return apiFetch<{ ok: boolean; item: FavoriteMeal }>(`/api/favorites/${favoriteId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteFavoriteMeal(favoriteId: number) {
+  await apiFetch<void>(`/api/favorites/${favoriteId}`, { method: 'DELETE' });
+}
+
+export async function createLogFromFavorite(favoriteId: number) {
+  return apiFetch<MealLogResponse>(`/api/favorites/${favoriteId}/log`, {
+    method: 'POST',
   });
 }

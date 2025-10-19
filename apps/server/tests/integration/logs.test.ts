@@ -39,6 +39,8 @@ before(async () => {
   await prisma.$executeRawUnsafe('TRUNCATE "AiUsageCounter" CASCADE');
   await prisma.$executeRawUnsafe('TRUNCATE "MealLog" CASCADE');
   await prisma.$executeRawUnsafe('TRUNCATE "LogShareToken" CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE "FavoriteMealItem" CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE "FavoriteMeal" CASCADE');
   await prisma.$executeRawUnsafe('TRUNCATE "User" CASCADE');
   const passwordHash = await argon2.hash('password123');
   await prisma.user.create({

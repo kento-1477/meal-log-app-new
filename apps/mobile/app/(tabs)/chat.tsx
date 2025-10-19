@@ -1,11 +1,13 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -16,7 +18,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
 import { ChatBubble } from '@/components/ChatBubble';
@@ -24,10 +26,19 @@ import { NutritionCard } from '@/components/NutritionCard';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { useChatStore } from '@/store/chat';
 import { useSessionStore } from '@/store/session';
-import { getMealLogShare, postMealLog, type MealLogResponse, type ApiError } from '@/services/api';
+import {
+  createFavoriteMeal,
+  createLogFromFavorite,
+  getFavorites,
+  getMealLogShare,
+  postMealLog,
+  type MealLogResponse,
+  type ApiError,
+} from '@/services/api';
 import { describeLocale } from '@/utils/locale';
 import type { NutritionCardPayload } from '@/types/chat';
-import type { AiUsageSummary } from '@meal-log/shared';
+import type { AiUsageSummary, FavoriteMeal, FavoriteMealDraft } from '@meal-log/shared';
+import { useTranslation } from '@/i18n';
 
 interface TimelineItemMessage {
   type: 'message';
@@ -62,15 +73,42 @@ export default function ChatScreen() {
   const listRef = useRef<FlatList<TimelineItemMessage | TimelineItemCard>>(null);
   const tabBarHeight = useBottomTabBarHeight();
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [sharingId, setSharingId] = useState<string | null>(null);
+  const [favoritesVisible, setFavoritesVisible] = useState(false);
+  const [addingFavoriteId, setAddingFavoriteId] = useState<string | null>(null);
 
   const { messages, addUserMessage, addAssistantMessage, setMessageText, updateMessageStatus, attachCardToMessage, composingImageUri, setComposingImage } = useChatStore();
   const usage = useSessionStore((state) => state.usage);
   const setUsage = useSessionStore((state) => state.setUsage);
   const userPlan = useSessionStore((state) => state.user?.plan ?? 'FREE');
+
+  const favoritesQuery = useQuery({
+    queryKey: ['favorites'],
+    queryFn: async () => {
+      const response = await getFavorites();
+      return response.items;
+    },
+    enabled: favoritesVisible,
+  });
+
+  const createFavoriteMutation = useMutation({
+    mutationFn: (draft: FavoriteMealDraft) => createFavoriteMeal(draft),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['favorites'] });
+      queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
+    },
+  });
+
+  useEffect(() => {
+    if (favoritesVisible) {
+      favoritesQuery.refetch();
+    }
+  }, [favoritesVisible]);
 
   const timeline = useMemo<Array<TimelineItemMessage | TimelineItemCard>>(() => composeTimeline(messages), [messages]);
 
@@ -80,23 +118,49 @@ export default function ChatScreen() {
 
   const canSend = !usage || usage.remaining > 0 || usage.credits > 0;
 
-  const handleSend = async () => {
-    if (!input.trim() && !composingImageUri) {
-      return;
+  const favoritesList = favoritesQuery.data ?? [];
+
+  const resetComposer = () => {
+    setInput('');
+    setComposingImage(null);
+  };
+
+  const submitMeal = async (
+    rawMessage: string,
+    options: {
+      imageUri?: string | null;
+      onSuccess?: (response: MealLogResponse) => void;
+      request?: () => Promise<MealLogResponse>;
+    } = {},
+  ) => {
+    const trimmedMessage = rawMessage.trim();
+    const hasImage = Boolean(options.imageUri);
+    if (!trimmedMessage && !hasImage) {
+      return null;
     }
     if (usage && !canSend) {
       setError('本日の無料利用回数が上限に達しました。');
-      return;
+      return null;
     }
+
     setSending(true);
     setError(null);
 
-    const userMessage = addUserMessage(input.trim() || '（画像解析）');
+    const displayMessage = trimmedMessage || rawMessage || '（画像解析）';
+
+    const userMessage = addUserMessage(displayMessage);
     const assistantPlaceholder = addAssistantMessage('解析中です…', { status: 'sending' });
     scrollToEnd();
 
     try {
-      const response = await postMealLog({ message: input.trim(), imageUri: composingImageUri ?? undefined });
+      const requestFn =
+        options.request ??
+        (() =>
+          postMealLog({
+            message: trimmedMessage || rawMessage,
+            imageUri: options.imageUri ?? undefined,
+          }));
+      const response = await requestFn();
       updateMessageStatus(userMessage.id, 'delivered');
 
       const summaryText = buildAssistantSummary(response);
@@ -112,16 +176,17 @@ export default function ChatScreen() {
         requestedLocale: response.requestLocale,
         fallbackApplied: response.fallbackApplied,
         translations: response.translations,
+        favoriteCandidate: response.favoriteCandidate,
       });
       setMessageText(assistantPlaceholder.id, summaryText);
       if (response.usage) {
         setUsage(response.usage);
       }
-      setInput('');
-      setComposingImage(null);
       queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
       queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
       queryClient.invalidateQueries({ queryKey: ['streak'] });
+      options.onSuccess?.(response);
+      return response;
     } catch (_error) {
       const apiError = _error as ApiError;
       if (apiError.code === 'AI_USAGE_LIMIT') {
@@ -133,13 +198,61 @@ export default function ChatScreen() {
         }
         setError('本日の利用回数が上限に達しました。');
       } else {
-      updateMessageStatus(userMessage.id, 'error');
-      updateMessageStatus(assistantPlaceholder.id, 'error');
-      setError('エラーが発生しました。もう一度お試しください。');
+        updateMessageStatus(userMessage.id, 'error');
+        updateMessageStatus(assistantPlaceholder.id, 'error');
+        setError('エラーが発生しました。もう一度お試しください。');
       }
+      return null;
     } finally {
       setSending(false);
       scrollToEnd();
+    }
+  };
+
+  const handleAddFavoriteFromCard = async (cardId: string, draft: FavoriteMealDraft) => {
+    try {
+      setAddingFavoriteId(cardId);
+      await createFavoriteMutation.mutateAsync(draft);
+      Alert.alert('お気に入りに追加しました');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'お気に入りの保存に失敗しました';
+      Alert.alert('お気に入りの保存に失敗しました', message);
+    } finally {
+      setAddingFavoriteId(null);
+    }
+  };
+
+  const buildMessageFromFavorite = (favorite: FavoriteMeal) => {
+    const lines = [favorite.name];
+    if (favorite.items.length) {
+      const detail = favorite.items
+        .slice(0, 4)
+        .map((item) => `${item.name} ${Math.round(item.grams)}g`)
+        .join(' ／ ');
+      lines.push(detail);
+    }
+    return lines.join('\n');
+  };
+
+  const handleFavoriteSelect = async (favorite: FavoriteMeal) => {
+    if (sending) {
+      return;
+    }
+    setFavoritesVisible(false);
+    const message = buildMessageFromFavorite(favorite);
+    await submitMeal(message, {
+      onSuccess: resetComposer,
+      request: () => createLogFromFavorite(favorite.id),
+    });
+  };
+
+  const handleSend = async () => {
+    const response = await submitMeal(input, {
+      imageUri: composingImageUri ?? null,
+      onSuccess: resetComposer,
+    });
+    if (!response) {
+      return;
     }
   };
 
@@ -205,6 +318,8 @@ export default function ChatScreen() {
                 payload={item.payload}
                 onShare={() => handleShareCard(item.payload, item.id)}
                 sharing={sharingId === item.id}
+                onAddFavorite={item.payload.favoriteCandidate ? (draft) => handleAddFavoriteFromCard(item.id, draft) : undefined}
+                addingFavorite={addingFavoriteId === item.id}
               />
             )
           }
@@ -225,6 +340,9 @@ export default function ChatScreen() {
             <TouchableOpacity onPress={handleAttach} style={styles.attachButton}>
               <Text style={styles.attachIcon}>＋</Text>
             </TouchableOpacity>
+            <TouchableOpacity onPress={() => setFavoritesVisible(true)} style={styles.favoriteButton}>
+              <Text style={styles.favoriteIcon}>★</Text>
+            </TouchableOpacity>
             <TextInput
               style={styles.textInput}
               placeholder="食事内容を入力..."
@@ -241,6 +359,44 @@ export default function ChatScreen() {
           ) : null}
         </View>
       </KeyboardAvoidingView>
+      <Modal
+        visible={favoritesVisible}
+        animationType="slide"
+        onRequestClose={() => setFavoritesVisible(false)}
+      >
+        <SafeAreaView style={styles.favoritesModalContainer} edges={['top', 'left', 'right']}>
+          <View style={styles.favoritesHeader}>
+            <Text style={styles.favoritesTitle}>{t('recentLogs.heading')}</Text>
+            <TouchableOpacity onPress={() => setFavoritesVisible(false)}>
+              <Text style={styles.favoritesClose}>閉じる</Text>
+            </TouchableOpacity>
+          </View>
+          {favoritesQuery.isLoading ? (
+            <View style={styles.favoritesLoading}>
+              <ActivityIndicator color={colors.accent} />
+            </View>
+          ) : favoritesList.length ? (
+            <ScrollView contentContainerStyle={styles.favoritesList}>
+              {favoritesList.map((favorite) => (
+                <TouchableOpacity
+                  key={favorite.id}
+                  style={styles.favoritesItem}
+                  onPress={() => handleFavoriteSelect(favorite)}
+                >
+                  <Text style={styles.favoritesItemName}>{favorite.name}</Text>
+                  <Text style={styles.favoritesItemMeta}>
+                    {Math.round(favorite.totals.kcal)} kcal ／ P {formatMacro(favorite.totals.protein_g)}g ／ F {formatMacro(favorite.totals.fat_g)}g ／ C {formatMacro(favorite.totals.carbs_g)}g
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={styles.favoritesEmpty}>
+              <Text style={styles.favoritesEmptyText}>お気に入りがまだ登録されていません。</Text>
+            </View>
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -350,6 +506,20 @@ const styles = StyleSheet.create({
     fontSize: 22,
     color: colors.accent,
   },
+  favoriteButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  favoriteIcon: {
+    fontSize: 20,
+    color: colors.accent,
+  },
   textInput: {
     flex: 1,
     maxHeight: 120,
@@ -396,6 +566,59 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   limitHint: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  favoritesModalContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  favoritesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  favoritesTitle: {
+    ...textStyles.titleMedium,
+  },
+  favoritesClose: {
+    ...textStyles.body,
+    color: colors.accent,
+    fontWeight: '600',
+  },
+  favoritesLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  favoritesList: {
+    padding: 16,
+    gap: 12,
+  },
+  favoritesItem: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    gap: 6,
+  },
+  favoritesItemName: {
+    ...textStyles.body,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  favoritesItemMeta: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  favoritesEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  favoritesEmptyText: {
     ...textStyles.caption,
     color: colors.textSecondary,
   },

@@ -36,11 +36,11 @@
 
 ## よく食べるセット（私有）
 
-- [ ] Backend: `FavoriteMeal`/`FavoriteMealItem` テーブル + CRUD API (`/api/favorites`) 実装
-- [ ] Backend: `processMealLog` 結果からお気に入り登録用サマリを生成可能にするユーティリティ追加
-- [ ] Mobile: Chat composer に「お気に入り呼び出し」、履歴カードに登録トグルを追加
-- [ ] Mobile: お気に入り管理画面 (`app/favorites/[id].tsx`) 作成、手入力・既存ログ複製両対応
-- [ ] QA: Prisma migration / seed 更新、API 契約テスト、React Query キャッシュ確認
+- [x] Backend: `FavoriteMeal`/`FavoriteMealItem` テーブル + CRUD API (`/api/favorites`) 実装
+- [x] Backend: `processMealLog` 結果からお気に入り登録用サマリを生成可能にするユーティリティ追加
+- [x] Mobile: Chat composer に「お気に入り呼び出し」、履歴カードに登録トグルを追加
+- [x] Mobile: お気に入り管理画面 (`app/favorites/[id].tsx`) 作成、手入力・既存ログ複製両対応
+- [x] QA: Prisma migration / seed 更新、API 契約テスト、React Query キャッシュ確認
 
 ## 履歴削除（無料30日制限）
 
