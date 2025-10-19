@@ -3,7 +3,7 @@ UPDATE "MealLog"
 SET "aiRaw" = (
   (("aiRaw" - 'translations') - 'locale')
   || jsonb_build_object(
-    'locale', to_jsonb('en-US'),
+    'locale', to_jsonb('en-US'::text),
     'translations', jsonb_build_object(
       'en-US', (("aiRaw" - 'translations') - 'locale')
     )
