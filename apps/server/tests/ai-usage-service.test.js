@@ -17,6 +17,10 @@ const originalCounterUpsert = prismaAny.aiUsageCounter.upsert;
 const originalUserUpdate = prismaAny.user.update;
 const originalTransaction = prismaAny.$transaction;
 
+test.beforeEach(() => {
+  delete process.env.USER_PLAN_OVERRIDE;
+});
+
 test.afterEach(() => {
   prismaAny.user.findUnique = originalUserFindUnique;
   prismaAny.aiUsageCounter.findUnique = originalCounterFindUnique;

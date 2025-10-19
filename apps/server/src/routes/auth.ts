@@ -19,7 +19,7 @@ authRouter.post('/register', async (req, res, next) => {
     const usageStatus = await evaluateAiUsage(user.id);
     const usage = summarizeUsageStatus(usageStatus);
     res.status(StatusCodes.CREATED).json({
-      message: 'User registered successfully',
+      message: 'ユーザー登録が完了しました',
       user,
       usage,
     });
@@ -38,7 +38,7 @@ authRouter.post('/login', async (req, res, next) => {
     const usageStatus = await evaluateAiUsage(user.id);
     const usage = summarizeUsageStatus(usageStatus);
     res.status(StatusCodes.OK).json({
-      message: 'Logged in successfully',
+      message: 'ログインに成功しました',
       user,
       usage,
     });
@@ -49,7 +49,7 @@ authRouter.post('/login', async (req, res, next) => {
 
 authRouter.post('/logout', async (req, res) => {
   req.session.destroy(() => {
-    res.status(StatusCodes.OK).json({ message: 'Logged out successfully' });
+    res.status(StatusCodes.OK).json({ message: 'ログアウトしました' });
   });
 });
 

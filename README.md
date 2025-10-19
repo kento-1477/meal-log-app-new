@@ -35,6 +35,16 @@ EXPO_PUBLIC_API_BASE_URL=http://localhost:4000
 > Generate `SESSION_SECRET` with a strong random value (for example `openssl rand -hex 32`) and keep secrets in `.env.local`.
 > Without `GEMINI_API_KEY` the server falls back to a deterministic mock response so flows stay testable.
 
+### Optional: ローカルでプランを強制する
+
+開発時に全ユーザーを一時的に `STANDARD` プランとして扱いたい場合は、サーバー側の `.env.local` に次の環境変数を追加してください。
+
+```
+USER_PLAN_OVERRIDE=STANDARD
+```
+
+`FREE` か `STANDARD` を指定できます。変数を設定していない場合は、データベース上の実際のプランがそのまま使われます。
+
 ## Install dependencies
 
 ```bash

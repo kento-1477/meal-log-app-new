@@ -60,9 +60,9 @@
 
 ## UI 日本語化
 
-- [ ] コード全体を走査し、ハードコード英語ラベルを `t()` 呼び出しへ置換
-- [ ] `src/i18n` 辞書を拡充（Confidence、kcal、Macroラベルなど網羅）
-- [ ] サーバー側ラベル（Dashboard builder 等）も日本語へ統一、英語fallback を維持
+- [x] コード全体を走査し、ハードコード英語ラベルを `t()` 呼び出しへ置換
+- [x] `src/i18n` 辞書を拡充（Confidence、kcal、Macroラベルなど網羅）
+- [x] サーバー側ラベル（Dashboard builder 等）も日本語へ統一、英語fallback を維持
 - [ ] QA: 画面レビュー／スクリーンショット比較、locale fallback テスト追加
 
 ## 言語切替の将来拡張
