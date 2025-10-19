@@ -16,31 +16,31 @@
 
 ## Step 1: 仕様・データモデル整備
 
-- [ ] ロケール表現の統一（`locale` は BCP 47 形式、例: `ja-JP`）
-- [ ] `aiRaw` に `translations` プロパティ（例: `translations: { 'ja-JP': {...}, 'en-US': {...} }`）を追加する仕様策定
-- [ ] API リクエスト/レスポンス仕様書を更新（`docs/` 内に新規ページ作成）
+- [x] ロケール表現の統一（`locale` は BCP 47 形式、例: `ja-JP`）
+- [x] `aiRaw` に `translations` プロパティ（例: `translations: { 'ja-JP': {...}, 'en-US': {...} }`）を追加する仕様策定
+- [x] API リクエスト/レスポンス仕様書を更新（`docs/` 内に新規ページ作成）
 
 ## Step 2: サーバー実装
 
-- [ ] `post /log` 等でロケールを受け取るパラメータを追加しバリデーション
-- [ ] `processMealLog` へロケール引数を追加し、AI 呼び出し時にプロンプトへ反映
-- [ ] 返却された料理名・内訳を `translations[locale]` に格納、既存 `foodItem` などの互換性を維持
-- [ ] 既存の `getMealLogDetail` / `getLogs` / `getMealLogShare` / `getLogsExport` でロケールを指定できるようにし、該当言語が無い場合はフォールバックを返す
-- [ ] セッションやクエリからロケールを取得する仕組みを追加（将来の設定画面で利用）
+- [x] `post /log` 等でロケールを受け取るパラメータを追加しバリデーション
+- [x] `processMealLog` へロケール引数を追加し、AI 呼び出し時にプロンプトへ反映
+- [x] 返却された料理名・内訳を `translations[locale]` に格納、既存 `foodItem` などの互換性を維持
+- [x] 既存の `getMealLogDetail` / `getLogs` / `getMealLogShare` / `getLogsExport` でロケールを指定できるようにし、該当言語が無い場合はフォールバックを返す
+- [x] セッションやクエリからロケールを取得する仕組みを追加（将来の設定画面で利用）
 
 ## Step 3: モバイル実装
 
-- [ ] 送信側（`postMealLog`）に現在のアプリロケールを添付する
-- [ ] ストア／設定でロケールを選択できるようプロパティ追加（現在は固定で `ja-JP`）
-- [ ] 取得系 API 呼び出し（ダッシュボード、履歴、詳細、エクスポート等）にロケールを渡し、レスポンスから `translations` を優先的に表示
-- [ ] UI でフォールバックが発生した際にはユーザーに言語未対応であることを示す表示（任意）
+- [x] 送信側（`postMealLog`）に現在のアプリロケールを添付する
+- [x] ストア／設定でロケールを選択できるようプロパティ追加（現在は固定で `ja-JP`）
+- [x] 取得系 API 呼び出し（ダッシュボード、履歴、詳細、エクスポート等）にロケールを渡し、レスポンスから `translations` を優先的に表示
+- [x] UI でフォールバックが発生した際にはユーザーに言語未対応であることを示す表示（任意）
 
 ## Step 4: 既存データの追補
 
-- [ ] Prisma Migration で `MealLog.aiRaw` の JSON スキーマに `translations` を追加
-- [ ] バッチスクリプトを用意し、既存ログに対して `translations['ja-JP']` を生成
+- [x] Prisma Migration で `MealLog.aiRaw` の JSON スキーマに `translations` を追加
+- [x] バッチスクリプトを用意し、既存ログに対して `translations['ja-JP']` を生成
   - [ ] AI に再問い合わせする（コスト高） or 外部翻訳 API を利用する（スクリプト化）
-  - [ ] 進捗ログやリトライ戦略を設計
+  - [x] 進捗ログやリトライ戦略を設計
 - [ ] バッチの手順を `docs/` に記載
 
 ## Step 5: テスト & QA

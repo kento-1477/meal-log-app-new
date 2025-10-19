@@ -77,7 +77,7 @@ test('getLogsForExport returns records within day range ordered ascending', asyn
     );
   };
 
-  const result = await getLogsForExport(1, { range: 'day', anchor: base.toISO() ?? undefined });
+  const result = await getLogsForExport(1, { range: 'day', anchor: base.toISO() ?? undefined }, 'ja-JP');
 
   assert.ok(capturedWhere);
   assert.equal(capturedWhere?.userId, 1);
@@ -90,6 +90,9 @@ test('getLogsForExport returns records within day range ordered ascending', asyn
   assert.equal(result.items[0].mealPeriod, MealPeriod.BREAKFAST);
   assert.equal(result.items[0].foodItem, 'おにぎり');
   assert.equal(result.items[0].proteinG, 8);
+  assert.equal(result.items[0].requestedLocale, 'ja-JP');
+  assert.equal(result.items[0].locale, 'en-US');
+  assert.equal(result.items[0].fallbackApplied, true);
   assert.ok(result.from.startsWith('2025-03-10'));
   assert.ok(result.to.startsWith('2025-03-11'));
 });

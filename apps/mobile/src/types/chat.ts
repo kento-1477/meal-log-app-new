@@ -1,3 +1,5 @@
+import type { GeminiNutritionResponse } from '@meal-log/shared';
+
 export type ChatRole = 'user' | 'assistant' | 'system' | 'warning';
 
 export interface ChatMessage {
@@ -27,4 +29,8 @@ export interface NutritionCardPayload {
     carbs_g?: number;
   }>;
   warnings?: string[];
+  locale?: string;
+  requestedLocale?: string;
+  fallbackApplied?: boolean;
+  translations?: Record<string, GeminiNutritionResponse>;
 }

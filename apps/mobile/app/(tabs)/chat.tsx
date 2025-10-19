@@ -25,6 +25,7 @@ import { ErrorBanner } from '@/components/ErrorBanner';
 import { useChatStore } from '@/store/chat';
 import { useSessionStore } from '@/store/session';
 import { getMealLogShare, postMealLog, type MealLogResponse, type ApiError } from '@/services/api';
+import { describeLocale } from '@/utils/locale';
 import type { NutritionCardPayload } from '@/types/chat';
 import type { AiUsageSummary } from '@meal-log/shared';
 
@@ -107,6 +108,10 @@ export default function ChatScreen() {
         totals: response.totals,
         items: response.items,
         warnings: response.breakdown.warnings,
+        locale: response.locale,
+        requestedLocale: response.requestLocale,
+        fallbackApplied: response.fallbackApplied,
+        translations: response.translations,
       });
       setMessageText(assistantPlaceholder.id, summaryText);
       if (response.usage) {
@@ -254,6 +259,12 @@ function buildAssistantSummary(response: MealLogResponse) {
     lines.push(primary);
   }
 
+  if (response.fallbackApplied && response.requestLocale !== response.locale) {
+    const requested = describeLocale(response.requestLocale);
+    const resolved = describeLocale(response.locale);
+    lines.push(`※ ${requested} の翻訳が未対応のため ${resolved} で表示しています`);
+  }
+
   return lines.join('\n');
 }
 
@@ -269,6 +280,12 @@ function buildShareMessage(payload: NutritionCardPayload) {
     payload.items.slice(0, 3).forEach((item) => {
       lines.push(`・${item.name} ${Math.round(item.grams)} g`);
     });
+  }
+
+  if (payload.fallbackApplied && payload.requestedLocale && payload.locale && payload.requestedLocale !== payload.locale) {
+    lines.push(
+      `※ ${describeLocale(payload.requestedLocale)} の翻訳が未対応のため ${describeLocale(payload.locale)} で表示しています`,
+    );
   }
 
   return lines.join('\n');
