@@ -15,6 +15,7 @@ const BaseEnvSchema = z.object({
     .string()
     .transform((val) => val === 'true')
     .optional(),
+  AI_TRANSLATION_STRATEGY: z.enum(['ai', 'copy', 'none']).default('ai').optional(),
 });
 
 const TimeoutEnvSchema = AiTimeoutConfigSchema.partial();

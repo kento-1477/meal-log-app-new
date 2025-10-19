@@ -28,7 +28,8 @@
 - スクリプトの挙動:
   - 既に `translations[ja-JP]` が存在するレコードはスキップ
   - `AI_TRANSLATION_STRATEGY=copy` を指定した場合は英語の値をそのままコピー
-  - `AI_TRANSLATION_STRATEGY` を未指定にすると翻訳はスキップされる（外部翻訳 API を組み込む際のフック用）
+  - `AI_TRANSLATION_STRATEGY=none` にすると翻訳をスキップ（カスタム翻訳サービスを組み込む際のフック用）
+  - 省略時のデフォルトは `ai`（Gemini）で、API キーが未設定の場合は自動的にスキップされます
   - 実行完了後に `processed`, `updated`, `skipped` の統計が標準出力に表示されます
 
 ## 3. 外部翻訳サービスの統合

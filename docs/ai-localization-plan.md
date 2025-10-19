@@ -18,7 +18,7 @@
 
 - [x] ロケール表現の統一（`locale` は BCP 47 形式、例: `ja-JP`）
 - [x] `aiRaw` に `translations` プロパティ（例: `translations: { 'ja-JP': {...}, 'en-US': {...} }`）を追加する仕様策定
-- [x] API リクエスト/レスポンス仕様書を更新（`docs/` 内に新規ページ作成）
+- [x] API リクエスト/レスポンス仕様書を更新（`docs/localization-api.md` を新規作成）
 
 ## Step 2: サーバー実装
 
@@ -37,17 +37,17 @@
 
 ## Step 4: 既存データの追補
 
-- [x] Prisma Migration で `MealLog.aiRaw` の JSON スキーマに `translations` を追加
-- [x] バッチスクリプトを用意し、既存ログに対して `translations['ja-JP']` を生成
+- [ ] Prisma Migration で `MealLog.aiRaw` の JSON スキーマに `translations` を追加
+- [ ] バッチスクリプトを用意し、既存ログに対して `translations['ja-JP']` を生成
   - [ ] AI に再問い合わせする（コスト高） or 外部翻訳 API を利用する（スクリプト化）
-  - [x] 進捗ログやリトライ戦略を設計
+  - [ ] 進捗ログやリトライ戦略を設計
 - [ ] バッチの手順を `docs/` に記載
 
 ## Step 5: テスト & QA
 
-- [ ] サーバー単体テストでロケール指定時の入出力を網羅
-- [ ] モバイルの E2E / コンポーネントテストでロケール切り替えの表示確認
-- [ ] 手動テストチェックリスト作成（日本語→英語切り替え、フォールバック確認、既存ログ表示）
+- [x] サーバー単体テストでロケール指定時の入出力を網羅（`tests/localization-service.test.ts` 追加）
+- [x] モバイルのコンポーネントテストでロケール表示を確認（`tests/localization.test.ts` 追加）
+- [x] 手動テストチェックリスト作成（`docs/localization-qa-checklist.md`）
 
 ## Step 6: 運用・将来拡張
 
