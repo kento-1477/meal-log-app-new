@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { DateTime } from 'luxon';
 import { StatusCodes } from 'http-status-codes';
+import type { Locale } from '@meal-log/shared';
 import { prisma } from '../db/prisma.js';
+import { resolveMealLogLocalization } from '../utils/locale.js';
 
 const SHARE_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 
@@ -16,7 +18,7 @@ interface ExportRange {
   anchor?: string;
 }
 
-export async function getMealLogSharePayload(userId: number, mealLogId: string): Promise<SharePayload> {
+export async function getMealLogSharePayload(userId: number, mealLogId: string, locale: Locale): Promise<SharePayload> {
   const mealLog = await prisma.mealLog.findFirst({
     where: { id: mealLogId, userId },
   });
@@ -50,14 +52,28 @@ export async function getMealLogSharePayload(userId: number, mealLogId: string):
         },
       });
 
+  const localization = resolveMealLogLocalization(mealLog.aiRaw, locale);
+  const translation = localization.translation;
+  const text = formatShareText({
+    foodItem: translation?.dish ?? mealLog.foodItem,
+    calories: mealLog.calories,
+    proteinG: mealLog.proteinG,
+    fatG: mealLog.fatG,
+    carbsG: mealLog.carbsG,
+    createdAt: mealLog.createdAt,
+    resolvedLocale: localization.resolvedLocale,
+    fallbackApplied: localization.fallbackApplied,
+    requestedLocale: localization.requestedLocale,
+  });
+
   return {
-    text: formatShareText(mealLog),
+    text,
     token: tokenRecord.token,
     expiresAt: tokenRecord.expiresAt.toISOString(),
   };
 }
 
-export async function getLogsForExport(userId: number, { range, anchor }: ExportRange) {
+export async function getLogsForExport(userId: number, { range, anchor }: ExportRange, locale: Locale) {
   const { from, to } = resolveRange(range, anchor);
 
   const mealLogs = await prisma.mealLog.findMany({
@@ -71,23 +87,42 @@ export async function getLogsForExport(userId: number, { range, anchor }: Export
     orderBy: { createdAt: 'asc' },
   });
 
-  return {
-    from: from.toISO(),
-    to: to.toISO(),
-    items: mealLogs.map((log) => ({
+  const items = mealLogs.map((log) => {
+    const localization = resolveMealLogLocalization(log.aiRaw, locale);
+    const translation = localization.translation;
+    return {
       id: log.id,
       recordedAt: log.createdAt.toISOString(),
-      foodItem: log.foodItem,
+      foodItem: translation?.dish ?? log.foodItem,
       calories: log.calories,
       proteinG: log.proteinG,
       fatG: log.fatG,
       carbsG: log.carbsG,
       mealPeriod: log.mealPeriod ?? null,
-    })),
+      locale: localization.resolvedLocale,
+      requestedLocale: localization.requestedLocale,
+      fallbackApplied: localization.fallbackApplied,
+    };
+  });
+
+  return {
+    from: from.toISO(),
+    to: to.toISO(),
+    items,
   };
 }
 
-function formatShareText(log: { foodItem: string; calories: number; proteinG: number; fatG: number; carbsG: number; createdAt: Date }) {
+function formatShareText(log: {
+  foodItem: string;
+  calories: number;
+  proteinG: number;
+  fatG: number;
+  carbsG: number;
+  createdAt: Date;
+  resolvedLocale: Locale;
+  requestedLocale: Locale;
+  fallbackApplied: boolean;
+}) {
   const recordedAtJst = DateTime.fromJSDate(log.createdAt).setZone('Asia/Tokyo');
   const lines = [
     `食事記録: ${log.foodItem}`,
@@ -95,6 +130,9 @@ function formatShareText(log: { foodItem: string; calories: number; proteinG: nu
     `P: ${roundLabel(log.proteinG)} g / F: ${roundLabel(log.fatG)} g / C: ${roundLabel(log.carbsG)} g`,
     `記録日時: ${recordedAtJst.toFormat('yyyy/LL/dd HH:mm')}`,
   ];
+  if (log.fallbackApplied && log.requestedLocale !== log.resolvedLocale) {
+    lines.push(`※ ${log.requestedLocale} 未対応のため ${log.resolvedLocale} を表示しています`);
+  }
   return lines.join('\n');
 }
 

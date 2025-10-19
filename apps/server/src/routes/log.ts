@@ -4,6 +4,7 @@ import { StatusCodes } from 'http-status-codes';
 import { SlotSelectionRequestSchema } from '@meal-log/shared';
 import { requireAuth } from '../middleware/require-auth.js';
 import { processMealLog, chooseSlot } from '../services/log-service.js';
+import { resolveRequestLocale } from '../utils/request-locale.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -16,18 +17,23 @@ logRouter.post('/log', requireAuth, upload.single('image'), async (req, res, nex
       return res.status(StatusCodes.BAD_REQUEST).json({ ok: false, error: 'メッセージまたは画像のいずれかを送信してください。' });
     }
 
+    const locale = resolveRequestLocale(req, { bodyField: 'locale' });
+
     const idempotencyKey = (req.get('Idempotency-Key') ?? undefined) as string | undefined;
     const result = await processMealLog({
       userId: req.session.userId!,
       message,
       file: req.file ?? undefined,
       idempotencyKey,
+      locale,
     });
 
     if (result.usage) {
       req.session.userPlan = result.usage.plan;
       req.session.aiCredits = result.usage.credits;
     }
+
+    req.session.locale = result.requestLocale;
 
     return res.status(StatusCodes.OK).json(result);
   } catch (error) {

@@ -1,10 +1,17 @@
-import { GeminiNutritionResponseSchema, type GeminiNutritionResponse, type HedgeAttemptReport } from '@meal-log/shared';
+import {
+  GeminiNutritionResponseSchema,
+  type GeminiNutritionResponse,
+  type HedgeAttemptReport,
+  type Locale,
+} from '@meal-log/shared';
 import { env, timeoutConfig } from '../env.js';
+import { DEFAULT_LOCALE } from '../utils/locale.js';
 
 interface AnalyzeMealParams {
   message: string;
   imageBase64?: string;
   imageMimeType?: string;
+  locale?: Locale;
 }
 
 interface AnalyzeMealResult {
@@ -30,7 +37,7 @@ class AiAttemptError extends Error {
 
 export async function analyzeMealWithGemini(params: AnalyzeMealParams): Promise<AnalyzeMealResult> {
   if (!env.GEMINI_API_KEY) {
-    const mock = buildMockResponse(params.message);
+    const mock = buildMockResponse(params.message, params.locale);
     const meta = { model: 'mock', attempt: 1, latencyMs: 12, rawText: JSON.stringify(mock) };
     return { response: mock, attemptReports: [{ model: 'mock', ok: true, latencyMs: 12, attempt: 1, textLen: meta.rawText.length }], meta };
   }
@@ -120,7 +127,7 @@ async function callGemini(model: string, params: AnalyzeMealParams, signal: Abor
   const url = new URL(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent`);
   url.searchParams.set('key', env.GEMINI_API_KEY!);
 
-  const prompt = buildPrompt(params.message);
+  const prompt = buildPrompt(params.message, params.locale);
 
   const requestBody: Record<string, unknown> = {
     contents: [
@@ -174,7 +181,7 @@ async function callGemini(model: string, params: AnalyzeMealParams, signal: Abor
   return firstCandidate;
 }
 
-function buildPrompt(userMessage: string) {
+function buildPrompt(userMessage: string, locale: Locale = DEFAULT_LOCALE) {
   return `You are a nutrition analyst. Analyze the following meal description and respond ONLY with a JSON object that matches this TypeScript type: {
   "dish": string,
   "confidence": number between 0 and 1,
@@ -184,11 +191,11 @@ function buildPrompt(userMessage: string) {
   "landing_type"?: string | null,
   "meta"?: { "model": string, "fallback_model_used"?: boolean }
 }.
-Numbers must be floats, never strings. Calories must be > 0 when meal is realistic. Use realistic default assumptions if unspecified.
+Numbers must be floats, never strings. Calories must be > 0 when meal is realistic. Use realistic default assumptions if unspecified. The end-user locale is ${locale}; consider locale-specific context but keep all text fields in English (United States).
 User description: ${userMessage}`;
 }
 
-function buildMockResponse(message: string): GeminiNutritionResponse {
+function buildMockResponse(message: string, locale: Locale | undefined): GeminiNutritionResponse {
   const baseCalories = Math.max(200, Math.min(900, message.length * 15));
   const protein = Math.round(baseCalories * 0.3);
   const fat = Math.round(baseCalories * 0.25);
@@ -212,7 +219,7 @@ function buildMockResponse(message: string): GeminiNutritionResponse {
         carbs_g: Number(((carbs / 4) * 0.85).toFixed(1)),
       },
     ],
-    warnings: [],
+    warnings: [...(locale && locale !== DEFAULT_LOCALE ? [`mock-locale:${locale}`] : [])],
     landing_type: 'mock',
     meta: {
       model: 'mock-gemini',

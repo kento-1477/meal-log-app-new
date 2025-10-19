@@ -1,5 +1,12 @@
 import { z } from 'zod';
 
+export const LocaleSchema = z
+  .string()
+  .min(2)
+  .regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/, 'Locale must follow BCP 47 format');
+
+export type Locale = z.infer<typeof LocaleSchema>;
+
 export const NutritionTotalsSchema = z.object({
   kcal: z.number().nonnegative(),
   protein_g: z.number().nonnegative(),
@@ -46,6 +53,13 @@ export const GeminiNutritionResponseSchema = z.object({
 
 export type GeminiNutritionResponse = z.infer<typeof GeminiNutritionResponseSchema>;
 
+export const MealLogAiRawSchema = GeminiNutritionResponseSchema.extend({
+  locale: LocaleSchema.optional(),
+  translations: z.record(LocaleSchema, GeminiNutritionResponseSchema).optional(),
+});
+
+export type MealLogAiRaw = z.infer<typeof MealLogAiRawSchema>;
+
 export const MealPeriodSchema = z.enum(['breakfast', 'lunch', 'dinner', 'snack']);
 export type MealPeriod = z.infer<typeof MealPeriodSchema>;
 
@@ -86,7 +100,10 @@ export const MealLogSummarySchema = z.object({
   meal_period: MealPeriodSchema.nullable(),
   image_url: z.string().url().nullable(),
   thumbnail_url: z.string().url().nullable(),
-  ai_raw: GeminiNutritionResponseSchema.optional(),
+  ai_raw: MealLogAiRawSchema.optional(),
+  locale: LocaleSchema.optional(),
+  requested_locale: LocaleSchema.optional(),
+  fallback_applied: z.boolean().optional(),
 });
 
 export type MealLogSummary = z.infer<typeof MealLogSummarySchema>;
@@ -112,7 +129,10 @@ export const MealLogDetailSchema = z.object({
   meal_period: MealPeriodSchema.nullable(),
   created_at: z.string(),
   image_url: z.string().url().nullable(),
-  ai_raw: GeminiNutritionResponseSchema.nullable(),
+  ai_raw: MealLogAiRawSchema.nullable(),
+  locale: LocaleSchema.optional(),
+  requested_locale: LocaleSchema.optional(),
+  fallback_applied: z.boolean().optional(),
   history: z.array(MealLogEditEntrySchema),
 });
 
