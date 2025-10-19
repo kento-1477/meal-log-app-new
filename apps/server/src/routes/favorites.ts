@@ -5,7 +5,6 @@ import {
   FavoriteMealCreateRequestSchema,
   FavoriteMealDetailResponseSchema,
   FavoriteMealListResponseSchema,
-  FavoriteMealSchema,
   FavoriteMealUpdateRequestSchema,
 } from '@meal-log/shared';
 import { requireAuth } from '../middleware/require-auth.js';

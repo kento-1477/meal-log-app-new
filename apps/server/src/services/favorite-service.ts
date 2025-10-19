@@ -9,11 +9,13 @@ import {
   type FavoriteMealDraft,
   type FavoriteMealItemInput,
   type GeminiNutritionResponse,
+  type LocalizationResolution,
+  type Locale,
+  type MealLogAiRaw,
 } from '@meal-log/shared';
 import { prisma } from '../db/prisma.js';
 import { StatusCodes } from 'http-status-codes';
 import { DEFAULT_LOCALE, resolveMealLogLocalization } from '../utils/locale.js';
-import type { MealLogAiRaw, LocalizationResolution, Locale } from '@meal-log/shared';
 
 const DEFAULT_NOTES = null;
 

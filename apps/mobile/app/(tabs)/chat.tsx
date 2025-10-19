@@ -108,7 +108,7 @@ export default function ChatScreen() {
     if (favoritesVisible) {
       favoritesQuery.refetch();
     }
-  }, [favoritesVisible]);
+  }, [favoritesVisible, favoritesQuery]);
 
   const timeline = useMemo<Array<TimelineItemMessage | TimelineItemCard>>(() => composeTimeline(messages), [messages]);
 
