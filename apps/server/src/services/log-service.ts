@@ -209,38 +209,38 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
 
   const localization = resolveMealLogLocalization(aiPayload, requestedLocale);
   const translation = localization.translation ?? cloneNutritionResponse(enrichedResponse);
-  const responseTranslations = cloneTranslationsMap(localization.translations);
-  const responseItems = translation.items ?? [];
-  const favoriteCandidate = buildFavoriteDraftPayload({
-    translation,
-    totals: translation.totals,
-    items: responseItems,
-    fallbackDish: translation.dish,
-    sourceMealLogId: log.id,
-  });
-  const warnings = [...(translation.warnings ?? [])];
-  if (zeroFloored) {
-    warnings.push('zeroFloored: AI が推定した栄養素の一部が 0 として返されました');
-  }
-  if (localization.fallbackApplied) {
-    warnings.push(`translation_fallback:${localization.resolvedLocale}`);
-  }
-
-  const log = await prisma.mealLog.create({
-    data: {
-      userId: params.userId,
-      foodItem: translation.dish ?? params.message,
-      calories: enrichedResponse.totals.kcal,
-      proteinG: enrichedResponse.totals.protein_g,
-      fatG: enrichedResponse.totals.fat_g,
-      carbsG: enrichedResponse.totals.carbs_g,
-      aiRaw: aiPayload,
-      zeroFloored,
-      guardrailNotes: zeroFloored ? 'zeroFloored' : null,
-      landingType: enrichedResponse.landing_type ?? null,
-      mealPeriod,
-    },
-  });
+    const responseItems = translation.items ?? [];
+    const warnings = [...(translation.warnings ?? [])];
+    if (zeroFloored) {
+      warnings.push('zeroFloored: AI が推定した栄養素の一部が 0 として返されました');
+    }
+    if (localization.fallbackApplied) {
+      warnings.push(`translation_fallback:${localization.resolvedLocale}`);
+    }
+  
+    const log = await prisma.mealLog.create({
+      data: {
+        userId: params.userId,
+        foodItem: translation.dish ?? params.message,
+        calories: enrichedResponse.totals.kcal,
+        proteinG: enrichedResponse.totals.protein_g,
+        fatG: enrichedResponse.totals.fat_g,
+        carbsG: enrichedResponse.totals.carbs_g,
+        aiRaw: aiPayload,
+        zeroFloored,
+        guardrailNotes: zeroFloored ? 'zeroFloored' : null,
+        landingType: enrichedResponse.landing_type ?? null,
+        mealPeriod,
+      },
+    });
+  
+    const favoriteCandidate = buildFavoriteDraftPayload({
+      translation,
+      totals: translation.totals,
+      items: responseItems,
+      fallbackDish: translation.dish,
+      sourceMealLogId: log.id,
+    });
 
   let imageUrl: string | null = null;
   if (params.file && imageBase64) {
