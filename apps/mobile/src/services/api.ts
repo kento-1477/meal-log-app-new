@@ -15,6 +15,8 @@ import type {
   FavoriteMealDraft,
   FavoriteMealCreateRequest,
   FavoriteMealUpdateRequest,
+  IapPurchaseRequest,
+  IapPurchaseResponse,
 } from '@meal-log/shared';
 import { DashboardSummarySchema, DashboardTargetsSchema } from '@meal-log/shared';
 
@@ -322,5 +324,24 @@ export async function deleteFavoriteMeal(favoriteId: number) {
 export async function createLogFromFavorite(favoriteId: number) {
   return apiFetch<MealLogResponse>(`/api/favorites/${favoriteId}/log`, {
     method: 'POST',
+  });
+}
+
+export async function deleteMealLogEntry(logId: string) {
+  return apiFetch<{ ok: boolean; deletedAt: string | null }>(`/api/log/${logId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function restoreMealLogEntry(logId: string) {
+  return apiFetch<{ ok: boolean }>(`/api/log/${logId}/restore`, {
+    method: 'POST',
+  });
+}
+
+export async function submitIapPurchase(payload: IapPurchaseRequest) {
+  return apiFetch<IapPurchaseResponse>('/api/iap/purchase', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }

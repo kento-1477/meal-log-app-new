@@ -5,7 +5,7 @@ import { MealPeriod } from '@prisma/client';
 import { UpdateMealLogRequestSchema, type GeminiNutritionResponse, type Locale } from '@meal-log/shared';
 import { prisma } from '../db/prisma.js';
 import { requireAuth } from '../middleware/require-auth.js';
-import { updateMealLog } from '../services/log-service.js';
+import { updateMealLog, deleteMealLog, restoreMealLog } from '../services/log-service.js';
 import { getMealLogSharePayload, getLogsForExport } from '../services/log-share-service.js';
 import { resolveRequestLocale } from '../utils/request-locale.js';
 import { resolveMealLogLocalization, type LocalizationResolution } from '../utils/locale.js';
@@ -24,7 +24,7 @@ const toMealPeriodLabel = (period: MealPeriod | null | undefined) =>
 
 const fetchMealLogDetail = async (logId: string, userId: number, locale: Locale) => {
   const item = await prisma.mealLog.findFirst({
-    where: { id: logId, userId },
+    where: { id: logId, userId, deletedAt: null },
     include: {
       edits: {
         orderBy: { createdAt: 'desc' },
@@ -89,7 +89,7 @@ logsRouter.get('/logs', requireAuth, async (req, res, next) => {
     req.session.locale = locale;
 
     const items = await prisma.mealLog.findMany({
-      where: { userId: req.session.userId! },
+      where: { userId: req.session.userId!, deletedAt: null },
       orderBy: { createdAt: 'desc' },
       take: limit,
       skip: offset,
@@ -140,6 +140,7 @@ logsRouter.get('/logs/summary', requireAuth, async (req, res, next) => {
       where: {
         userId: req.session.userId!,
         createdAt: { gte: since },
+        deletedAt: null,
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -193,6 +194,24 @@ logsRouter.get('/log/:id/share', requireAuth, async (req, res, next) => {
     req.session.locale = locale;
     const payload = await getMealLogSharePayload(req.session.userId!, req.params.id, locale);
     res.status(StatusCodes.OK).json({ ok: true, share: payload });
+  } catch (error) {
+    next(error);
+  }
+});
+
+logsRouter.delete('/log/:id', requireAuth, async (req, res, next) => {
+  try {
+    const deleted = await deleteMealLog(req.params.id, req.session.userId!);
+    res.status(StatusCodes.OK).json({ ok: true, deletedAt: deleted.deletedAt?.toISOString() ?? null });
+  } catch (error) {
+    next(error);
+  }
+});
+
+logsRouter.post('/log/:id/restore', requireAuth, async (req, res, next) => {
+  try {
+    await restoreMealLog(req.params.id, req.session.userId!);
+    res.status(StatusCodes.OK).json({ ok: true });
   } catch (error) {
     next(error);
   }

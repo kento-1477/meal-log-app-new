@@ -15,13 +15,21 @@ import { cacheDirectory, deleteAsync, EncodingType, writeAsStringAsync } from 'e
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import { useTranslation } from '@/i18n';
-import { getLogsExport, getMealLogShare, type ExportRange } from '@/services/api';
+import {
+  getLogsExport,
+  getMealLogShare,
+  deleteMealLogEntry,
+  restoreMealLogEntry,
+  type ExportRange,
+} from '@/services/api';
 import { buildCsv, buildPdfHtml, type ExportItem } from '@/utils/logExport';
 import { describeLocale } from '@/utils/locale';
+import { useSessionStore } from '@/store/session';
 
 interface Props {
   logs: MealLogSummary[];
@@ -31,12 +39,15 @@ interface Props {
 
 export function RecentLogsList({ logs, onToggleFavorite, togglingId }: Props) {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [sharingId, setSharingId] = useState<string | null>(null);
   const [exportVisible, setExportVisible] = useState(false);
   const [exportRange, setExportRange] = useState<ExportRange>('day');
   const [exportFormat, setExportFormat] = useState<'csv' | 'pdf'>('csv');
   const [isExporting, setIsExporting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const plan = useSessionStore((state) => state.user?.plan ?? 'FREE');
 
   if (!logs.length) {
     return (
@@ -44,6 +55,7 @@ export function RecentLogsList({ logs, onToggleFavorite, togglingId }: Props) {
         <Text style={styles.heading}>{t('recentLogs.heading')}</Text>
         <View style={styles.emptyCard}>
           <Text style={styles.emptyText}>{t('recentLogs.empty')}</Text>
+          {plan === 'FREE' ? <Text style={styles.resetNotice}>{t('recentLogs.resetNotice')}</Text> : null}
           <TouchableOpacity style={styles.cta} onPress={() => router.push('/(tabs)/chat')}>
             <Text style={styles.ctaLabel}>{t('button.record')}</Text>
           </TouchableOpacity>
@@ -115,6 +127,20 @@ export function RecentLogsList({ logs, onToggleFavorite, togglingId }: Props) {
                   <Text style={styles.shareLabel}>共有</Text>
                 )}
               </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteLink}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  confirmDelete(log.id);
+                }}
+                disabled={deletingId === log.id}
+              >
+                {deletingId === log.id ? (
+                  <ActivityIndicator size="small" color={colors.error} />
+                ) : (
+                  <Text style={styles.deleteLabel}>{t('common.delete')}</Text>
+                )}
+              </TouchableOpacity>
             </View>
           </TouchableOpacity>
         ))}
@@ -142,6 +168,54 @@ export function RecentLogsList({ logs, onToggleFavorite, togglingId }: Props) {
     } finally {
       setSharingId(null);
     }
+  }
+
+  function confirmDelete(logId: string) {
+    Alert.alert(t('logs.deleteConfirm.title'), t('logs.deleteConfirm.message'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.delete'),
+        style: 'destructive',
+        onPress: () => void handleDelete(logId),
+      },
+    ]);
+  }
+
+  async function handleDelete(logId: string) {
+    try {
+      setDeletingId(logId);
+      await deleteMealLogEntry(logId);
+      invalidateLogQueries();
+      Alert.alert(t('logs.deleted.title'), t('logs.deleted.message'), [
+        {
+          text: t('logs.deleted.undo'),
+          onPress: () => void handleUndo(logId),
+        },
+        { text: t('common.close'), style: 'cancel' },
+      ]);
+    } catch (error) {
+      console.error('Failed to delete meal log', error);
+      Alert.alert(t('logs.deleted.failed'));
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleUndo(logId: string) {
+    try {
+      await restoreMealLogEntry(logId);
+      invalidateLogQueries();
+      Alert.alert(t('logs.restore.success'));
+    } catch (error) {
+      console.error('Failed to restore meal log', error);
+      Alert.alert(t('logs.restore.failed'));
+    }
+  }
+
+  function invalidateLogQueries() {
+    queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
+    queryClient.invalidateQueries({ queryKey: ['streak'] });
   }
 
   async function handleExport() {
@@ -173,7 +247,7 @@ export function RecentLogsList({ logs, onToggleFavorite, togglingId }: Props) {
       }));
 
       if (exportFormat === 'csv') {
-        const csv = buildCsv(exportItems);
+        const csv = buildCsv(exportItems, locale);
         const fileUri = `${cacheDirectory}meal-logs-${exportRange}-${Date.now()}.csv`;
         await writeAsStringAsync(fileUri, csv, {
           encoding: EncodingType.UTF8,
@@ -188,7 +262,7 @@ export function RecentLogsList({ logs, onToggleFavorite, togglingId }: Props) {
           await deleteAsync(fileUri, { idempotent: true });
         }
       } else {
-        const html = buildPdfHtml(exportItems, dataset.from, dataset.to);
+        const html = buildPdfHtml(exportItems, dataset.from, dataset.to, locale);
         const result = await Print.printToFileAsync({ html, base64: false });
         try {
           await Sharing.shareAsync(result.uri, {
@@ -375,6 +449,20 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontWeight: '600',
   },
+  deleteLink: {
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: 12,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    minWidth: 72,
+    alignItems: 'center',
+  },
+  deleteLabel: {
+    ...textStyles.caption,
+    color: colors.error,
+    fontWeight: '600',
+  },
   emptyCard: {
     backgroundColor: colors.surface,
     borderRadius: 12,
@@ -385,6 +473,12 @@ const styles = StyleSheet.create({
   emptyText: {
     ...textStyles.caption,
     color: colors.textSecondary,
+  },
+  resetNotice: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
   },
   cta: {
     backgroundColor: colors.accent,

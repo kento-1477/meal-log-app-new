@@ -20,7 +20,7 @@ interface ExportRange {
 
 export async function getMealLogSharePayload(userId: number, mealLogId: string, locale: Locale): Promise<SharePayload> {
   const mealLog = await prisma.mealLog.findFirst({
-    where: { id: mealLogId, userId },
+    where: { id: mealLogId, userId, deletedAt: null },
   });
 
   if (!mealLog) {
@@ -64,7 +64,7 @@ export async function getMealLogSharePayload(userId: number, mealLogId: string, 
     resolvedLocale: localization.resolvedLocale,
     fallbackApplied: localization.fallbackApplied,
     requestedLocale: localization.requestedLocale,
-  });
+  }, locale);
 
   return {
     text,
@@ -83,6 +83,7 @@ export async function getLogsForExport(userId: number, { range, anchor }: Export
         gte: from.toJSDate(),
         lt: to.toJSDate(),
       },
+      deletedAt: null,
     },
     orderBy: { createdAt: 'asc' },
   });
@@ -112,26 +113,60 @@ export async function getLogsForExport(userId: number, { range, anchor }: Export
   };
 }
 
-function formatShareText(log: {
-  foodItem: string;
-  calories: number;
-  proteinG: number;
-  fatG: number;
-  carbsG: number;
-  createdAt: Date;
-  resolvedLocale: Locale;
-  requestedLocale: Locale;
-  fallbackApplied: boolean;
-}) {
-  const recordedAtJst = DateTime.fromJSDate(log.createdAt).setZone('Asia/Tokyo');
+const SHARE_STRINGS = {
+  ja: {
+    heading: '食事記録',
+    calories: 'カロリー',
+    macros: (protein: number, fat: number, carbs: number) => `P: ${roundLabel(protein)} g / F: ${roundLabel(fat)} g / C: ${roundLabel(carbs)} g`,
+    recordedAt: '記録日時',
+    fallback: (requested: Locale, resolved: Locale) => `※ ${requested} 未対応のため ${resolved} を表示しています`,
+  },
+  en: {
+    heading: 'Meal Log',
+    calories: 'Calories',
+    macros: (protein: number, fat: number, carbs: number) => `Macros — P: ${roundLabel(protein)} g / F: ${roundLabel(fat)} g / C: ${roundLabel(carbs)} g`,
+    recordedAt: 'Recorded at',
+    fallback: (requested: Locale, resolved: Locale) => `* Showing in ${resolved} because ${requested} is not available`,
+  },
+} satisfies Record<'ja' | 'en', {
+  heading: string;
+  calories: string;
+  macros: (protein: number, fat: number, carbs: number) => string;
+  recordedAt: string;
+  fallback: (requested: Locale, resolved: Locale) => string;
+}>;
+
+function resolveShareStrings(locale: Locale) {
+  if (locale?.toLowerCase().startsWith('en')) {
+    return SHARE_STRINGS.en;
+  }
+  return SHARE_STRINGS.ja;
+}
+
+function formatShareText(
+  log: {
+    foodItem: string;
+    calories: number;
+    proteinG: number;
+    fatG: number;
+    carbsG: number;
+    createdAt: Date;
+    resolvedLocale: Locale;
+    requestedLocale: Locale;
+    fallbackApplied: boolean;
+  },
+  locale: Locale,
+) {
+  const strings = resolveShareStrings(locale);
+  const recordedAt = DateTime.fromJSDate(log.createdAt).setZone('Asia/Tokyo').setLocale(locale.startsWith('en') ? 'en' : 'ja');
   const lines = [
-    `食事記録: ${log.foodItem}`,
-    `カロリー: ${Math.round(log.calories)} kcal`,
-    `P: ${roundLabel(log.proteinG)} g / F: ${roundLabel(log.fatG)} g / C: ${roundLabel(log.carbsG)} g`,
-    `記録日時: ${recordedAtJst.toFormat('yyyy/LL/dd HH:mm')}`,
+    `${strings.heading}: ${log.foodItem}`,
+    `${strings.calories}: ${Math.round(log.calories)} kcal`,
+    strings.macros(log.proteinG, log.fatG, log.carbsG),
+    `${strings.recordedAt}: ${recordedAt.toFormat('yyyy/LL/dd HH:mm')}`,
   ];
   if (log.fallbackApplied && log.requestedLocale !== log.resolvedLocale) {
-    lines.push(`※ ${log.requestedLocale} 未対応のため ${log.resolvedLocale} を表示しています`);
+    lines.push(strings.fallback(log.requestedLocale, log.resolvedLocale));
   }
   return lines.join('\n');
 }

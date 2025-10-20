@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setWidgetData } from 'expo-widget';
 import type { StreakPayload } from './api';
 
 const STREAK_CACHE_KEY = 'widget:streak';
@@ -13,6 +14,11 @@ export async function cacheStreak(streak: StreakPayload) {
     cachedAt: Date.now(),
   };
   await AsyncStorage.setItem(STREAK_CACHE_KEY, JSON.stringify(payload));
+  try {
+    await setWidgetData('widget:streak', payload);
+  } catch (error) {
+    console.warn('Failed to set widget data', error);
+  }
 }
 
 export async function readCachedStreak(): Promise<CachedStreak | null> {

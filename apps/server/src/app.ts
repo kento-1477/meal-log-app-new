@@ -13,6 +13,7 @@ import { dashboardRouter } from './routes/dashboard.js';
 import { streakRouter } from './routes/streak.js';
 import { favoritesRouter } from './routes/favorites.js';
 import { errorHandler } from './middleware/error-handler.js';
+import { iapRouter } from './routes/iap.js';
 
 export function createApp() {
   const app = express();
@@ -62,6 +63,7 @@ export function createApp() {
   app.use('/api', dashboardRouter);
   app.use('/api', streakRouter);
   app.use('/api', favoritesRouter);
+  app.use('/api', iapRouter);
   app.use('/debug', debugRouter);
 
   app.use(errorHandler);
