@@ -320,7 +320,7 @@ interface UpdateMealLogParams {
 
 export async function updateMealLog({ logId, userId, updates }: UpdateMealLogParams) {
   const log = await prisma.mealLog.findFirst({
-    where: { id: logId, userId },
+    where: { id: logId, userId, deletedAt: null },
   });
 
   if (!log) {
@@ -446,7 +446,7 @@ export async function updateMealLog({ logId, userId, updates }: UpdateMealLogPar
 
 export async function chooseSlot(request: SlotSelectionRequest, userId: number) {
   const log = await prisma.mealLog.findFirst({
-    where: { id: request.logId, userId },
+    where: { id: request.logId, userId, deletedAt: null },
   });
 
   if (!log) {
@@ -475,6 +475,61 @@ export async function chooseSlot(request: SlotSelectionRequest, userId: number) 
       version: { increment: 1 },
     },
   });
+
+  return updated;
+}
+
+export async function deleteMealLog(logId: string, userId: number) {
+  const deleted = await prisma.$transaction(async (tx) => {
+    const log = await tx.mealLog.findFirst({
+      where: { id: logId, userId, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!log) {
+      const error = new Error('食事記録が見つかりませんでした');
+      Object.assign(error, { statusCode: StatusCodes.NOT_FOUND, expose: true });
+      throw error;
+    }
+
+    const deletedAt = new Date();
+
+    await tx.logShareToken.deleteMany({ where: { mealLogId: log.id } });
+    await tx.favoriteMeal.updateMany({
+      where: { userId, sourceMealLogId: log.id },
+      data: { sourceMealLogId: null },
+    });
+
+    const updated = await tx.mealLog.update({
+      where: { id: log.id },
+      data: { deletedAt },
+    });
+
+    return updated;
+  });
+
+  invalidateDashboardCacheForUser(userId);
+
+  return deleted;
+}
+
+export async function restoreMealLog(logId: string, userId: number) {
+  const restored = await prisma.mealLog.findFirst({
+    where: { id: logId, userId, deletedAt: { not: null } },
+  });
+
+  if (!restored) {
+    const error = new Error('復元対象の食事記録が見つかりませんでした');
+    Object.assign(error, { statusCode: StatusCodes.NOT_FOUND, expose: true });
+    throw error;
+  }
+
+  const updated = await prisma.mealLog.update({
+    where: { id: restored.id },
+    data: { deletedAt: null, updatedAt: new Date() },
+  });
+
+  invalidateDashboardCacheForUser(userId);
 
   return updated;
 }

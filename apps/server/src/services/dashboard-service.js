@@ -22,6 +22,7 @@ export async function getDashboardSummary({ userId, period, from, to }) {
         gte: range.fromDate.toJSDate(),
         lt: range.toDate.toJSDate(),
       },
+      deletedAt: null,
     },
     select: {
       createdAt: true,
@@ -60,6 +61,7 @@ function fetchTodayTotals(userId, timezone) {
           gte: fromDate.toJSDate(),
           lt: toDate.toJSDate(),
         },
+        deletedAt: null,
       },
     })
     .then((result) => ({

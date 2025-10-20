@@ -1,13 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  buildCsv,
-  buildPdfHtml,
-  escapeHtml,
-  formatJpDatetime,
-  round1,
-  type ExportItem,
-} from '../src/utils/logExport.ts';
+import { buildCsv, buildPdfHtml, escapeHtml, formatDatetime, round1, type ExportItem } from '../src/utils/logExport.ts';
 
 test('buildCsv returns CSV header and quoted fields', () => {
   const items: ExportItem[] = [
@@ -21,7 +14,7 @@ test('buildCsv returns CSV header and quoted fields', () => {
     },
   ];
 
-  const csv = buildCsv(items);
+  const csv = buildCsv(items, 'ja-JP');
   const lines = csv.split('\n');
   assert.equal(lines.length, 2);
   assert.equal(lines[0], '記録日時,料理名,カロリー(kcal),たんぱく質(g),脂質(g),炭水化物(g)');
@@ -42,7 +35,7 @@ test('buildPdfHtml escapes HTML and shows range heading', () => {
     },
   ];
 
-  const html = buildPdfHtml(items, '2025-02-01T00:00:00.000Z', '2025-02-02T00:00:00.000Z');
+  const html = buildPdfHtml(items, '2025-02-01T00:00:00.000Z', '2025-02-02T00:00:00.000Z', 'ja-JP');
   assert.ok(html.includes('食事記録'));
   assert.ok(html.includes('&amp;'));
   assert.ok(html.includes('&lt;'));
@@ -50,10 +43,28 @@ test('buildPdfHtml escapes HTML and shows range heading', () => {
   assert.ok(html.includes('245'));
 });
 
-test('formatJpDatetime falls back to original string on invalid date', () => {
-  const formatted = formatJpDatetime('2000-01-01T00:00:00.000Z');
+test('buildCsv uses English headers for en locale', () => {
+  const items: ExportItem[] = [
+    {
+      foodItem: 'Chicken salad',
+      recordedAt: '2025-03-15T12:00:00.000Z',
+      calories: 320,
+      proteinG: 25,
+      fatG: 12,
+      carbsG: 18,
+    },
+  ];
+
+  const csv = buildCsv(items, 'en-US');
+  const lines = csv.split('\n');
+  assert.equal(lines[0], 'Recorded at,Meal,Calories (kcal),Protein (g),Fat (g),Carbs (g)');
+  assert.ok(lines[1].includes('Chicken salad'));
+});
+
+test('formatDatetime falls back to original string on invalid date', () => {
+  const formatted = formatDatetime('2000-01-01T00:00:00.000Z', 'ja-JP');
   assert.match(formatted, /2000/);
-  assert.equal(formatJpDatetime('not-a-date'), 'not-a-date');
+  assert.equal(formatDatetime('not-a-date', 'ja-JP'), 'not-a-date');
 });
 
 test('round1 rounds to single decimal place', () => {

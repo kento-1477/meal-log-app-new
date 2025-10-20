@@ -7,11 +7,33 @@ export interface ExportItem {
   carbsG: number;
 }
 
-const CSV_HEADER = ['記録日時', '料理名', 'カロリー(kcal)', 'たんぱく質(g)', '脂質(g)', '炭水化物(g)'];
+interface ExportStrings {
+  headers: [string, string, string, string, string, string];
+  title: string;
+}
 
-export function buildCsv(items: ExportItem[]): string {
+const EXPORT_STRINGS: Record<'ja' | 'en', ExportStrings> = {
+  ja: {
+    headers: ['記録日時', '料理名', 'カロリー(kcal)', 'たんぱく質(g)', '脂質(g)', '炭水化物(g)'],
+    title: '食事記録',
+  },
+  en: {
+    headers: ['Recorded at', 'Meal', 'Calories (kcal)', 'Protein (g)', 'Fat (g)', 'Carbs (g)'],
+    title: 'Meal Log',
+  },
+};
+
+function resolveStrings(locale: string): ExportStrings {
+  if (locale?.toLowerCase().startsWith('en')) {
+    return EXPORT_STRINGS.en;
+  }
+  return EXPORT_STRINGS.ja;
+}
+
+export function buildCsv(items: ExportItem[], locale: string): string {
+  const strings = resolveStrings(locale);
   const rows = items.map((item) => [
-    formatJpDatetime(item.recordedAt),
+    formatDatetime(item.recordedAt, locale),
     item.foodItem,
     Math.round(item.calories),
     round1(item.proteinG),
@@ -19,7 +41,7 @@ export function buildCsv(items: ExportItem[]): string {
     round1(item.carbsG),
   ]);
 
-  return [CSV_HEADER, ...rows]
+  return [strings.headers, ...rows]
     .map((columns) =>
       columns
         .map((value) => {
@@ -34,12 +56,13 @@ export function buildCsv(items: ExportItem[]): string {
     .join('\n');
 }
 
-export function buildPdfHtml(items: ExportItem[], fromIso: string, toIso: string): string {
+export function buildPdfHtml(items: ExportItem[], fromIso: string, toIso: string, locale: string): string {
+  const strings = resolveStrings(locale);
   const rows = items
     .map(
       (item) => `
         <tr>
-          <td>${formatJpDatetime(item.recordedAt)}</td>
+          <td>${formatDatetime(item.recordedAt, locale)}</td>
           <td>${escapeHtml(item.foodItem)}</td>
           <td>${Math.round(item.calories)}</td>
           <td>${round1(item.proteinG)}</td>
@@ -63,16 +86,11 @@ export function buildPdfHtml(items: ExportItem[], fromIso: string, toIso: string
         </style>
       </head>
       <body>
-        <h1>食事記録 (${formatJpDatetime(fromIso)} 〜 ${formatJpDatetime(toIso)})</h1>
+        <h1>${strings.title} (${formatDatetime(fromIso, locale)} – ${formatDatetime(toIso, locale)})</h1>
         <table>
           <thead>
             <tr>
-              <th>記録日時</th>
-              <th>料理名</th>
-              <th>カロリー(kcal)</th>
-              <th>たんぱく質(g)</th>
-              <th>脂質(g)</th>
-              <th>炭水化物(g)</th>
+              ${strings.headers.map((header) => `<th>${header}</th>`).join('')}
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -82,12 +100,12 @@ export function buildPdfHtml(items: ExportItem[], fromIso: string, toIso: string
   `;
 }
 
-export function formatJpDatetime(isoString: string): string {
+export function formatDatetime(isoString: string, locale: string): string {
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) {
     return isoString;
   }
-  return new Intl.DateTimeFormat('ja-JP', {
+  return new Intl.DateTimeFormat(locale.startsWith('en') ? 'en-US' : 'ja-JP', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
