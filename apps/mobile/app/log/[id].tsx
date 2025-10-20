@@ -11,9 +11,17 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createFavoriteMeal, deleteFavoriteMeal, getMealLogDetail, getMealLogShare, updateMealLog } from '@/services/api';
+import {
+  createFavoriteMeal,
+  deleteFavoriteMeal,
+  deleteMealLogEntry,
+  getMealLogDetail,
+  getMealLogShare,
+  restoreMealLogEntry,
+  updateMealLog,
+} from '@/services/api';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
@@ -50,10 +58,12 @@ const initialState: FieldState = {
 
 export default function MealLogDetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [fields, setFields] = useState<FieldState>(initialState);
   const [sharing, setSharing] = useState(false);
-  const { locale } = useTranslation();
+  const [deleting, setDeleting] = useState(false);
+  const { locale, t } = useTranslation();
 
   const logId = params.id ?? '';
 
@@ -157,6 +167,62 @@ export default function MealLogDetailScreen() {
     toggleFavoriteMutation.mutate(targetState);
   };
 
+  const handleDelete = () => {
+    if (!logId) {
+      return;
+    }
+    Alert.alert(t('logs.deleteConfirm.title'), t('logs.deleteConfirm.message'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.delete'),
+        style: 'destructive',
+        onPress: () => void performDelete(logId),
+      },
+    ]);
+  };
+
+  async function performDelete(targetId: string) {
+    try {
+      setDeleting(true);
+      await deleteMealLogEntry(targetId);
+      invalidateQueries(targetId);
+      Alert.alert(t('logs.deleted.title'), t('logs.deleted.message'), [
+        {
+          text: t('logs.deleted.undo'),
+          onPress: () => void undoDelete(targetId),
+        },
+        {
+          text: t('common.close'),
+          style: 'cancel',
+          onPress: () => router.back(),
+        },
+      ]);
+    } catch (error) {
+      console.error('Failed to delete meal log', error);
+      Alert.alert(t('logs.deleted.failed'));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function undoDelete(targetId: string) {
+    try {
+      await restoreMealLogEntry(targetId);
+      invalidateQueries(targetId);
+      Alert.alert(t('logs.restore.success'));
+    } catch (error) {
+      console.error('Failed to restore meal log', error);
+      Alert.alert(t('logs.restore.failed'));
+    }
+  }
+
+  function invalidateQueries(targetId: string) {
+    queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
+    queryClient.invalidateQueries({ queryKey: ['streak'] });
+    queryClient.invalidateQueries({ queryKey: ['logDetail', targetId] });
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       {isLoading ? (
@@ -193,6 +259,17 @@ export default function MealLogDetailScreen() {
             </TouchableOpacity>
             <TouchableOpacity style={styles.shareButton} onPress={handleShare} disabled={sharing}>
               <Text style={styles.shareButtonLabel}>{sharing ? '共有中…' : '共有する'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.deleteButton, deleting && styles.deleteButtonDisabled]}
+              onPress={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.deleteButtonLabel}>{t('common.delete')}</Text>
+              )}
             </TouchableOpacity>
           </View>
           {detail.image_url ? <Image source={{ uri: detail.image_url }} style={styles.heroImage} /> : null}
@@ -392,6 +469,20 @@ const styles = StyleSheet.create({
   shareButtonLabel: {
     ...textStyles.caption,
     color: colors.accent,
+    fontWeight: '600',
+  },
+  deleteButton: {
+    borderRadius: 18,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.error,
+  },
+  deleteButtonDisabled: {
+    opacity: 0.6,
+  },
+  deleteButtonLabel: {
+    ...textStyles.caption,
+    color: '#fff',
     fontWeight: '600',
   },
   loadingContainer: {

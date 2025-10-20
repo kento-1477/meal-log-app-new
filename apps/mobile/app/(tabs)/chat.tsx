@@ -19,6 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
 import { ChatBubble } from '@/components/ChatBubble';
@@ -31,14 +32,18 @@ import {
   createLogFromFavorite,
   getFavorites,
   getMealLogShare,
+  getStreak,
   postMealLog,
   type MealLogResponse,
   type ApiError,
 } from '@/services/api';
+import { purchaseCreditPack, IAP_UNSUPPORTED_ERROR } from '@/services/iap';
+import { hasDialogBeenSeen, markDialogSeen } from '@/services/dialog-tracker';
 import { describeLocale } from '@/utils/locale';
 import type { NutritionCardPayload } from '@/types/chat';
 import type { AiUsageSummary, FavoriteMeal, FavoriteMealDraft } from '@meal-log/shared';
 import { useTranslation } from '@/i18n';
+import { DevResetStreak } from '@/components/DevResetStreak';
 
 interface TimelineItemMessage {
   type: 'message';
@@ -70,21 +75,26 @@ const composeTimeline = (messages: ReturnType<typeof useChatStore.getState>['mes
 
 export default function ChatScreen() {
   const inset = useSafeAreaInsets();
+  const router = useRouter();
   const listRef = useRef<FlatList<TimelineItemMessage | TimelineItemCard>>(null);
   const tabBarHeight = useBottomTabBarHeight();
   const queryClient = useQueryClient();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [sharingId, setSharingId] = useState<string | null>(null);
   const [favoritesVisible, setFavoritesVisible] = useState(false);
   const [addingFavoriteId, setAddingFavoriteId] = useState<string | null>(null);
+  const [limitModalVisible, setLimitModalVisible] = useState(false);
+  const [streakModalVisible, setStreakModalVisible] = useState(false);
+  const [iapLoading, setIapLoading] = useState(false);
 
   const { messages, addUserMessage, addAssistantMessage, setMessageText, updateMessageStatus, attachCardToMessage, composingImageUri, setComposingImage } = useChatStore();
   const usage = useSessionStore((state) => state.usage);
   const setUsage = useSessionStore((state) => state.setUsage);
   const userPlan = useSessionStore((state) => state.user?.plan ?? 'FREE');
+  const isAuthenticated = useSessionStore((state) => state.status === 'authenticated');
 
   const favoritesQuery = useQuery({
     queryKey: ['favorites'],
@@ -94,6 +104,18 @@ export default function ChatScreen() {
     },
     enabled: favoritesVisible,
   });
+
+  const streakQuery = useQuery({
+    queryKey: ['streak', locale],
+    queryFn: async () => {
+      const response = await getStreak();
+      return response.streak;
+    },
+    enabled: isAuthenticated,
+    staleTime: 1000 * 60 * 15,
+  });
+
+  const streak = streakQuery.data;
 
   const createFavoriteMutation = useMutation({
     mutationFn: (draft: FavoriteMealDraft) => createFavoriteMeal(draft),
@@ -109,6 +131,51 @@ export default function ChatScreen() {
       favoritesQuery.refetch();
     }
   }, [favoritesVisible, favoritesQuery]);
+
+  useEffect(() => {
+    if (!usage || usage.plan !== 'FREE' || usage.remaining > 0) {
+      return;
+    }
+    let cancelled = false;
+    const dateToken = new Date().toISOString().slice(0, 10);
+
+    (async () => {
+      const seen = await hasDialogBeenSeen('limit', dateToken);
+      if (!cancelled && !seen) {
+        setLimitModalVisible(true);
+        await markDialogSeen('limit', dateToken);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [usage?.plan, usage?.remaining]);
+
+  useEffect(() => {
+    if (!streak || userPlan !== 'FREE') {
+      return;
+    }
+    if ((streak.current ?? 0) < 30) {
+      return;
+    }
+
+    let cancelled = false;
+    const tokenSource = streak.lastLoggedAt ?? new Date().toISOString();
+    const token = tokenSource.slice(0, 10);
+
+    (async () => {
+      const seen = await hasDialogBeenSeen('streak', token);
+      if (!cancelled && !seen) {
+        setStreakModalVisible(true);
+        await markDialogSeen('streak', token);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [streak?.current, streak?.lastLoggedAt, userPlan]);
 
   const timeline = useMemo<Array<TimelineItemMessage | TimelineItemCard>>(() => composeTimeline(messages), [messages]);
 
@@ -288,15 +355,54 @@ export default function ChatScreen() {
     }
   };
 
+  const handlePurchaseCredits = async () => {
+    try {
+      setIapLoading(true);
+      const result = await purchaseCreditPack();
+      setUsage(result.response.usage);
+      queryClient.invalidateQueries({ queryKey: ['streak'] });
+      Alert.alert(t('usage.purchase.success'));
+      setLimitModalVisible(false);
+    } catch (error) {
+      const err = error as { code?: string; message?: string } | Error;
+      if ((err as any)?.code === 'iap.cancelled') {
+        return;
+      }
+      if ((err as any)?.code === IAP_UNSUPPORTED_ERROR) {
+        Alert.alert(t('usage.purchase.unsupported'));
+        return;
+      }
+      const message = err instanceof Error ? err.message : undefined;
+      Alert.alert(t('usage.purchase.error'), message);
+    } finally {
+      setIapLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <Text style={styles.headerTitle}>今日の食事</Text>
+      <Text style={styles.headerTitle}>{t('chat.header')}</Text>
+      <DevResetStreak />
       {usage ? (
         <View style={styles.usageBanner}>
-          <Text style={styles.usageText}>
-            {userPlan === 'STANDARD' ? 'Standard プラン' : '無料プラン'} ｜ 残り {usage.remaining} / {usage.limit} 回
-          </Text>
-          {usage.credits > 0 ? <Text style={styles.usageCredits}>クレジット {usage.credits} 回分</Text> : null}
+          <View style={styles.usageBannerText}>
+            <Text style={styles.usageText}>
+              {userPlan === 'STANDARD' ? t('usage.plan.standard') : t('usage.plan.free')} ｜{' '}
+              {t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}
+            </Text>
+            {usage.credits > 0 ? (
+              <Text style={styles.usageCredits}>{t('usage.banner.credits', { credits: usage.credits })}</Text>
+            ) : null}
+          </View>
+          {userPlan === 'FREE' ? (
+            <TouchableOpacity
+              style={[styles.usageAction, iapLoading && styles.usageActionDisabled]}
+              onPress={handlePurchaseCredits}
+              disabled={iapLoading}
+            >
+              {iapLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.usageActionLabel}>{t('usage.limitModal.purchase')}</Text>}
+            </TouchableOpacity>
+          ) : null}
         </View>
       ) : null}
       {error ? <ErrorBanner message={error} /> : null}
@@ -354,9 +460,7 @@ export default function ChatScreen() {
               {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>{canSend ? '送信' : '上限'}</Text>}
             </TouchableOpacity>
           </View>
-          {!canSend ? (
-            <Text style={styles.limitHint}>本日の利用上限に達しました。明日までお待ちいただくか、クレジットを購入してください。</Text>
-          ) : null}
+          {!canSend ? <Text style={styles.limitHint}>{t('usage.limitHint')}</Text> : null}
         </View>
       </KeyboardAvoidingView>
       <Modal
@@ -396,6 +500,64 @@ export default function ChatScreen() {
             </View>
           )}
         </SafeAreaView>
+      </Modal>
+      <Modal
+        visible={limitModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLimitModalVisible(false)}
+      >
+        <View style={styles.usageModalBackdrop}>
+          <View style={styles.usageModalCard}>
+            <Text style={styles.usageModalTitle}>{t('usage.limitModal.title')}</Text>
+            <Text style={styles.usageModalMessage}>
+              {t('usage.limitModal.message', { limit: usage?.limit ?? 0 })}
+            </Text>
+            <View style={styles.usageModalActions}>
+              <TouchableOpacity
+                style={[styles.usageModalPrimary, iapLoading && styles.usageModalDisabled]}
+                onPress={handlePurchaseCredits}
+                disabled={iapLoading}
+              >
+                {iapLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.usageModalPrimaryLabel}>{t('usage.limitModal.purchase')}</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setLimitModalVisible(false)}>
+                <Text style={styles.usageModalSecondary}>{t('usage.limitModal.close')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={streakModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setStreakModalVisible(false)}
+      >
+        <View style={styles.usageModalBackdrop}>
+          <View style={styles.usageModalCard}>
+            <Text style={styles.usageModalTitle}>{t('usage.streakModal.title')}</Text>
+            <Text style={styles.usageModalMessage}>{t('usage.streakModal.message')}</Text>
+            <View style={styles.usageModalActions}>
+              <TouchableOpacity
+                style={styles.usageModalPrimary}
+                onPress={() => {
+                  setStreakModalVisible(false);
+                  router.push('/(tabs)/settings');
+                }}
+              >
+                <Text style={styles.usageModalPrimaryLabel}>{t('usage.streakModal.upgrade')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setStreakModalVisible(false)}>
+                <Text style={styles.usageModalSecondary}>{t('usage.streakModal.close')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -462,8 +624,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   usageBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
+    paddingVertical: 8,
     marginBottom: 8,
+    gap: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+  },
+  usageBannerText: {
+    flex: 1,
     gap: 4,
   },
   usageText: {
@@ -473,6 +645,67 @@ const styles = StyleSheet.create({
   usageCredits: {
     ...textStyles.caption,
     color: colors.accent,
+  },
+  usageAction: {
+    backgroundColor: colors.accent,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  usageActionDisabled: {
+    opacity: 0.7,
+  },
+  usageActionLabel: {
+    ...textStyles.caption,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  usageModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  usageModalCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    gap: 16,
+  },
+  usageModalTitle: {
+    ...textStyles.titleMedium,
+    color: colors.textPrimary,
+  },
+  usageModalMessage: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+  },
+  usageModalActions: {
+    gap: 12,
+  },
+  usageModalPrimary: {
+    backgroundColor: colors.accent,
+    borderRadius: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  usageModalPrimaryLabel: {
+    ...textStyles.body,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  usageModalSecondary: {
+    ...textStyles.body,
+    color: colors.accent,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  usageModalDisabled: {
+    opacity: 0.6,
   },
   flex: {
     flex: 1,

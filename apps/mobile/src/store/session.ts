@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { AiUsageSummary, UserPlan } from '@meal-log/shared';
 import { getLocale, setLocale as setI18nLocale, type Locale } from '@/i18n';
+import { savePreferredLocale } from '@/services/locale-storage';
 
 type User = {
   id: number;
@@ -48,5 +49,6 @@ export const useSessionStore = create<SessionState>((set) => ({
   setLocale: (locale) => {
     set({ locale });
     setI18nLocale(locale);
+    void savePreferredLocale(locale);
   },
 }));

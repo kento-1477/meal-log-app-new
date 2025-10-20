@@ -10,7 +10,7 @@ export interface UserStreak {
 
 export async function getUserStreak(userId: number): Promise<UserStreak> {
   const logs = await prisma.mealLog.findMany({
-    where: { userId },
+    where: { userId, deletedAt: null },
     select: { createdAt: true },
     orderBy: { createdAt: 'desc' },
   });

@@ -124,6 +124,23 @@ export type MealPeriod = z.infer<typeof MealPeriodSchema>;
 export const UserPlanSchema = z.enum(['FREE', 'STANDARD']);
 export type UserPlan = z.infer<typeof UserPlanSchema>;
 
+export const IapPlatformSchema = z.enum(['APP_STORE', 'GOOGLE_PLAY']);
+export type IapPlatform = z.infer<typeof IapPlatformSchema>;
+
+export const IapEnvironmentSchema = z.enum(['sandbox', 'production']);
+export type IapEnvironment = z.infer<typeof IapEnvironmentSchema>;
+
+export const IAP_CREDIT_PRODUCTS = [
+  { productId: 'com.meallog.credits.100', credits: 100 },
+] as const;
+
+export type IapCreditProduct = (typeof IAP_CREDIT_PRODUCTS)[number];
+
+export function resolveCreditsForProduct(productId: string): number | null {
+  const entry = IAP_CREDIT_PRODUCTS.find((item) => item.productId === productId);
+  return entry ? entry.credits : null;
+}
+
 export const AiUsageSummarySchema = z.object({
   plan: UserPlanSchema,
   limit: z.number().nonnegative(),
@@ -135,6 +152,25 @@ export const AiUsageSummarySchema = z.object({
 });
 
 export type AiUsageSummary = z.infer<typeof AiUsageSummarySchema>;
+
+export const IapPurchaseRequestSchema = z.object({
+  platform: IapPlatformSchema,
+  productId: z.string().min(1),
+  transactionId: z.string().min(1),
+  receiptData: z.string().min(1),
+  environment: IapEnvironmentSchema.optional(),
+  quantity: z.number().int().positive().optional(),
+});
+
+export type IapPurchaseRequest = z.infer<typeof IapPurchaseRequestSchema>;
+
+export const IapPurchaseResponseSchema = z.object({
+  ok: z.literal(true),
+  creditsGranted: z.number().int().nonnegative(),
+  usage: AiUsageSummarySchema,
+});
+
+export type IapPurchaseResponse = z.infer<typeof IapPurchaseResponseSchema>;
 
 export const RegisterRequestSchema = z.object({
   email: z.string().email(),
