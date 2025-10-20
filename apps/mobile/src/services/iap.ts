@@ -1,8 +1,7 @@
 import { Platform } from 'react-native';
 import * as InAppPurchases from 'expo-in-app-purchases';
-import type { IapPurchaseResponse } from '@meal-log/shared';
+import type { IapPurchaseRequest, IapPurchaseResponse } from '@meal-log/shared';
 import { submitIapPurchase } from '@/services/api';
-import type { IapPurchaseRequest } from '@meal-log/shared';
 
 const CREDIT_PRODUCT_ID = 'com.meallog.credits.100';
 export const IAP_UNSUPPORTED_ERROR = 'iap.unsupportedPlatform';
@@ -113,8 +112,9 @@ function encodeToBase64(value: string) {
   if (typeof globalThis.btoa === 'function') {
     return globalThis.btoa(value);
   }
-  // Fall back to Buffer if available (e.g., during node-based tests)
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const BufferCtor = (globalThis as any).Buffer ?? require('buffer').Buffer;
-  return BufferCtor.from(value, 'utf8').toString('base64');
+  const bufferCtor = (globalThis as any).Buffer;
+  if (typeof bufferCtor?.from === 'function') {
+    return bufferCtor.from(value, 'utf8').toString('base64');
+  }
+  throw new Error('Base64 encoding is not supported in this environment');
 }

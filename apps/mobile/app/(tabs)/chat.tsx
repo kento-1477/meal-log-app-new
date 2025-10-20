@@ -95,6 +95,9 @@ export default function ChatScreen() {
   const setUsage = useSessionStore((state) => state.setUsage);
   const userPlan = useSessionStore((state) => state.user?.plan ?? 'FREE');
   const isAuthenticated = useSessionStore((state) => state.status === 'authenticated');
+  const hasUsage = Boolean(usage);
+  const usagePlan = usage?.plan;
+  const usageRemaining = usage?.remaining;
 
   const favoritesQuery = useQuery({
     queryKey: ['favorites'],
@@ -116,6 +119,9 @@ export default function ChatScreen() {
   });
 
   const streak = streakQuery.data;
+  const hasStreak = Boolean(streak);
+  const streakCurrent = streak?.current;
+  const streakLastLoggedAt = streak?.lastLoggedAt;
 
   const createFavoriteMutation = useMutation({
     mutationFn: (draft: FavoriteMealDraft) => createFavoriteMeal(draft),
@@ -133,7 +139,7 @@ export default function ChatScreen() {
   }, [favoritesVisible, favoritesQuery]);
 
   useEffect(() => {
-    if (!usage || usage.plan !== 'FREE' || usage.remaining > 0) {
+    if (!hasUsage || usagePlan !== 'FREE' || (usageRemaining ?? 0) > 0) {
       return;
     }
     let cancelled = false;
@@ -150,18 +156,18 @@ export default function ChatScreen() {
     return () => {
       cancelled = true;
     };
-  }, [usage?.plan, usage?.remaining]);
+  }, [hasUsage, usagePlan, usageRemaining]);
 
   useEffect(() => {
-    if (!streak || userPlan !== 'FREE') {
+    if (!hasStreak || userPlan !== 'FREE') {
       return;
     }
-    if ((streak.current ?? 0) < 30) {
+    if ((streakCurrent ?? 0) < 30) {
       return;
     }
 
     let cancelled = false;
-    const tokenSource = streak.lastLoggedAt ?? new Date().toISOString();
+    const tokenSource = streakLastLoggedAt ?? new Date().toISOString();
     const token = tokenSource.slice(0, 10);
 
     (async () => {
@@ -175,7 +181,7 @@ export default function ChatScreen() {
     return () => {
       cancelled = true;
     };
-  }, [streak?.current, streak?.lastLoggedAt, userPlan]);
+  }, [hasStreak, streakCurrent, streakLastLoggedAt, userPlan]);
 
   const timeline = useMemo<Array<TimelineItemMessage | TimelineItemCard>>(() => composeTimeline(messages), [messages]);
 
