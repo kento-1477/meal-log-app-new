@@ -10,6 +10,7 @@ export interface ChatState {
   setMessageText: (id: string, text: string) => void;
   updateMessageStatus: (id: string, status: ChatMessage['status']) => void;
   attachCardToMessage: (id: string, card: NutritionCardPayload) => void;
+  updateCardForLog: (logId: string, updates: Partial<NutritionCardPayload>) => void;
   setComposingImage: (uri: string | null) => void;
   reset: () => void;
 }
@@ -64,6 +65,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: get().messages.map((message) =>
         message.id === id ? { ...message, card, status: 'delivered' } : message,
       ),
+    });
+  },
+  updateCardForLog: (logId, updates) => {
+    set({
+      messages: get().messages.map((message) => {
+        if (!message.card || message.card.logId !== logId) {
+          return message;
+        }
+        const nextCard: NutritionCardPayload = {
+          ...message.card,
+          ...updates,
+        };
+        if (updates.totals) {
+          nextCard.totals = {
+            ...message.card.totals,
+            ...updates.totals,
+          };
+        }
+        if (updates.items) {
+          nextCard.items = updates.items;
+        }
+        return { ...message, card: nextCard };
+      }),
     });
   },
   setComposingImage: (uri) => set({ composingImageUri: uri }),
