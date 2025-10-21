@@ -83,7 +83,7 @@ test('log ingestion persists and appears in listing', async () => {
 
 test('meal period updates append history entries and details include time history', async () => {
   await loginAsDemo();
-  await prisma.mealLog.deleteMany();
+  await prisma.$executeRawUnsafe('TRUNCATE "MealLog" CASCADE');
 
   const form = new FormData();
   form.append('message', '朝のオムレツ 400kcal');
@@ -125,7 +125,7 @@ test('meal period updates append history entries and details include time histor
 
 test('logs range filter respects timezone windows', async () => {
   await loginAsDemo();
-  await prisma.mealLog.deleteMany();
+  await prisma.$executeRawUnsafe('TRUNCATE "MealLog" CASCADE');
 
   const tz = 'America/Los_Angeles';
   const form = new FormData();
@@ -162,7 +162,7 @@ test('logs range filter respects timezone windows', async () => {
 
 test('delete and restore keep period history intact', async () => {
   await loginAsDemo();
-  await prisma.mealLog.deleteMany();
+  await prisma.$executeRawUnsafe('TRUNCATE "MealLog" CASCADE');
 
   const form = new FormData();
   form.append('message', '夜のパスタ 600kcal');
