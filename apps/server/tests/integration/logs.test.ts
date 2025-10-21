@@ -99,20 +99,25 @@ test('meal period updates append history entries and details include time histor
   assert.equal(initialHistory.length, 1);
   assert.equal(initialHistory[0]?.source, 'auto');
 
+  const detailBefore = await fetchWithSession(`/api/log/${logId}`);
+  assert.equal(detailBefore.response.status, 200);
+  const previousPeriod = (detailBefore.body.item?.meal_period ?? null) as string | null;
+  const nextPeriod = previousPeriod === 'breakfast' ? 'dinner' : 'breakfast';
+
   const patch = await fetchWithSession(`/api/log/${logId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ meal_period: 'dinner' }),
+    body: JSON.stringify({ meal_period: nextPeriod }),
   });
 
   assert.equal(patch.response.status, 200);
   const detail = patch.body.item;
   assert.ok(Array.isArray(detail.time_history));
-  assert.equal(detail.time_history.length, 2);
+  assert.equal(detail.time_history.length, initialHistory.length + 1);
   assert.equal(detail.time_history[0]?.source, 'manual');
 
   const history = await prisma.mealLogPeriodHistory.findMany({ where: { mealLogId: logId }, orderBy: { createdAt: 'desc' } });
-  assert.equal(history.length, 2);
+  assert.equal(history.length, initialHistory.length + 1);
   assert.equal(history[0]?.source, 'manual');
 });
 
