@@ -1,12 +1,14 @@
 import { API_BASE_URL } from './config';
 import { getLocale } from '@/i18n';
+import { getDeviceTimezone } from '@/utils/timezone';
 import type { NutritionCardPayload } from '@/types/chat';
 import type {
   DashboardSummary,
   DashboardTargets,
   DashboardPeriod,
   MealLogDetail,
-  MealLogSummary,
+  MealLogRange,
+  MealLogListResponse,
   UpdateMealLogRequest,
   AiUsageSummary,
   UserPlan,
@@ -17,8 +19,16 @@ import type {
   FavoriteMealUpdateRequest,
   IapPurchaseRequest,
   IapPurchaseResponse,
+  UserProfile,
+  UpdateUserProfileRequest,
 } from '@meal-log/shared';
-import { DashboardSummarySchema, DashboardTargetsSchema } from '@meal-log/shared';
+import {
+  DashboardSummarySchema,
+  DashboardTargetsSchema,
+  MealLogListResponseSchema,
+  UserProfileResponseSchema,
+  UpdateUserProfileRequestSchema,
+} from '@meal-log/shared';
 
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
@@ -31,6 +41,10 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   const appLocale = getLocale();
   if (!headers.has('Accept-Language')) {
     headers.set('Accept-Language', appLocale);
+  }
+
+  if (!headers.has('X-Timezone')) {
+    headers.set('X-Timezone', getDeviceTimezone());
   }
 
   const response = await fetch(url, {
@@ -170,6 +184,7 @@ export async function postMealLog(params: { message: string; imageUri?: string |
   }
 
   form.append('locale', getLocale());
+  form.append('timezone', getDeviceTimezone());
 
   return apiFetch<MealLogResponse>('/log', {
     method: 'POST',
@@ -178,11 +193,57 @@ export async function postMealLog(params: { message: string; imageUri?: string |
   });
 }
 
-export async function getRecentLogs() {
+function buildLogsPath(params: { range?: MealLogRange; limit?: number; offset?: number }) {
+  const searchParams = new URLSearchParams();
+  if (params.range) {
+    searchParams.set('range', params.range);
+  }
+  if (typeof params.limit === 'number') {
+    searchParams.set('limit', String(params.limit));
+  }
+  if (typeof params.offset === 'number') {
+    searchParams.set('offset', String(params.offset));
+  }
+  const query = searchParams.toString();
+  return `/api/logs${query ? `?${query}` : ''}`;
+}
+
+export async function getMealLogs(options: { range?: MealLogRange; limit?: number; offset?: number } = {}) {
   const locale = getLocale();
-  return apiFetch<{ ok: boolean; items: MealLogSummary[] }>(appendLocale('/api/logs', locale), {
-    method: 'GET',
-  });
+  const path = buildLogsPath(options);
+  const raw = await apiFetch<unknown>(appendLocale(path, locale), { method: 'GET' });
+  const parsed = MealLogListResponseSchema.parse(raw);
+  return parsed as MealLogListResponse;
+}
+
+export async function getRecentLogs() {
+  return getMealLogs({ limit: 20 });
+}
+
+export async function getUserProfile() {
+  const response = await apiFetch<{ ok: boolean; profile: unknown }>(
+    '/api/profile',
+    { method: 'GET' },
+  );
+  const parsed = UserProfileResponseSchema.parse(response);
+  return parsed.profile as UserProfile;
+}
+
+export async function updateUserProfile(input: UpdateUserProfileRequest) {
+  const payload = UpdateUserProfileRequestSchema.parse(input);
+  const response = await apiFetch<{ ok: boolean; profile: unknown }>(
+    '/api/profile',
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    },
+  );
+  const parsed = UserProfileResponseSchema.parse(response);
+  return parsed.profile as UserProfile;
+}
+
+export async function deleteAccount() {
+  return apiFetch<{ ok: boolean }>('/api/account', { method: 'DELETE' });
 }
 
 export async function getDailySummary(days = 7) {

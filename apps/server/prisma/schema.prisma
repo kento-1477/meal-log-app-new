@@ -23,6 +23,7 @@ model User {
   favoriteMeals  FavoriteMeal[]
   usageCounters  AiUsageCounter[]
   iapReceipts    IapReceipt[]
+  profile        UserProfile?
 }
 
 model MealLog {
@@ -49,6 +50,7 @@ model MealLog {
   edits          MealLogEdit[]
   shareTokens    LogShareToken[]
   favoritedBy    FavoriteMeal[]  @relation("FavoriteMealSource")
+  periodHistory  MealLogPeriodHistory[]
 
   @@index([userId, createdAt])
 }
@@ -61,6 +63,18 @@ model MealLogEdit {
   userId     Int
   changes    Json
   createdAt  DateTime  @default(now())
+}
+
+model MealLogPeriodHistory {
+  id                Int         @id @default(autoincrement())
+  mealLog           MealLog     @relation(fields: [mealLogId], references: [id], onDelete: Cascade)
+  mealLogId         String
+  previousMealPeriod MealPeriod?
+  nextMealPeriod     MealPeriod?
+  source            String
+  createdAt         DateTime    @default(now())
+
+  @@index([mealLogId, createdAt])
 }
 
 model IngestRequest {
@@ -157,6 +171,21 @@ model IapReceipt {
   createdAt     DateTime     @default(now())
 
   @@index([userId])
+}
+
+model UserProfile {
+  id              Int      @id @default(autoincrement())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          Int      @unique
+  targetCalories  Int?
+  targetProteinG  Float?
+  targetFatG      Float?
+  targetCarbsG    Float?
+  bodyWeightKg    Float?
+  activityLevel   String?
+  language        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 enum MealPeriod {

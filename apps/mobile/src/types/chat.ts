@@ -34,4 +34,6 @@ export interface NutritionCardPayload {
   fallbackApplied?: boolean;
   translations?: Record<string, GeminiNutritionResponse>;
   favoriteCandidate?: FavoriteMealDraft;
+  mealPeriod?: string | null;
+  timezone?: string | null;
 }
