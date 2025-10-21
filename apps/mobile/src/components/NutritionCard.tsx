@@ -14,9 +14,10 @@ interface NutritionCardProps {
   sharing?: boolean;
   onAddFavorite?: (draft: FavoriteMealDraft) => void;
   addingFavorite?: boolean;
+  onEdit?: () => void;
 }
 
-export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, sharing, onAddFavorite, addingFavorite }) => {
+export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, sharing, onAddFavorite, addingFavorite, onEdit }) => {
   const { t } = useTranslation();
   const warnings = (payload.warnings ?? []).map((warning) =>
     warning.startsWith('zeroFloored') ? t('card.warnings.zeroFloored') : warning,
@@ -41,8 +42,19 @@ export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, 
           <Text style={styles.confidence}>
             {t('card.confidence', { value: Math.round(payload.confidence * 100) })}
           </Text>
+          {payload.mealPeriod ? (
+            <Text style={styles.meta}>
+              {t(`meal.${payload.mealPeriod}`)}
+              {payload.timezone ? ` · ${payload.timezone}` : ''}
+            </Text>
+          ) : null}
         </View>
         <View style={styles.headerActions}>
+          {onEdit ? (
+            <TouchableOpacity style={styles.editButton} onPress={onEdit}>
+              <Text style={styles.editLabel}>{t('card.edit')}</Text>
+            </TouchableOpacity>
+          ) : null}
           <View style={styles.kcalBadge}>
             <Text style={styles.kcalValue}>{Math.round(payload.totals.kcal)}</Text>
             <Text style={styles.kcalLabel}>{t('unit.kcal')}</Text>
@@ -153,6 +165,11 @@ const styles = StyleSheet.create({
     color: colors.accent,
     marginTop: 4,
   },
+  meta: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
   kcalBadge: {
     backgroundColor: colors.accent,
     borderRadius: 16,
@@ -187,6 +204,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  editButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   shareLabel: {
     ...textStyles.caption,
     color: colors.accent,
@@ -195,6 +221,11 @@ const styles = StyleSheet.create({
   favoriteLabel: {
     ...textStyles.caption,
     color: colors.accent,
+    fontWeight: '600',
+  },
+  editLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   divider: {

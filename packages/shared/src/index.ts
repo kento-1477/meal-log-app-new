@@ -203,6 +203,18 @@ export const MealLogSummarySchema = z.object({
 
 export type MealLogSummary = z.infer<typeof MealLogSummarySchema>;
 
+export const MealLogRangeSchema = z.enum(['today', 'week', 'twoWeeks', 'threeWeeks', 'month']);
+export type MealLogRange = z.infer<typeof MealLogRangeSchema>;
+
+export const MealLogListResponseSchema = z.object({
+  ok: z.literal(true),
+  items: z.array(MealLogSummarySchema),
+  range: MealLogRangeSchema.optional(),
+  timezone: z.string().optional(),
+});
+
+export type MealLogListResponse = z.infer<typeof MealLogListResponseSchema>;
+
 export const MealLogEditEntrySchema = z.object({
   id: z.number(),
   created_at: z.string(),
@@ -213,6 +225,16 @@ export const MealLogEditEntrySchema = z.object({
 });
 
 export type MealLogEditEntry = z.infer<typeof MealLogEditEntrySchema>;
+
+export const MealPeriodHistoryEntrySchema = z.object({
+  id: z.number().int(),
+  changed_at: z.string(),
+  previous: MealPeriodSchema.nullable(),
+  next: MealPeriodSchema.nullable(),
+  source: z.string(),
+});
+
+export type MealPeriodHistoryEntry = z.infer<typeof MealPeriodHistoryEntrySchema>;
 
 export const MealLogDetailSchema = z.object({
   id: z.string(),
@@ -230,6 +252,7 @@ export const MealLogDetailSchema = z.object({
   fallback_applied: z.boolean().optional(),
   favorite_meal_id: z.number().int().nullable().optional(),
   history: z.array(MealLogEditEntrySchema),
+  time_history: z.array(MealPeriodHistoryEntrySchema),
 });
 
 export type MealLogDetail = z.infer<typeof MealLogDetailSchema>;
@@ -335,3 +358,37 @@ export type DashboardSummary = z.infer<typeof DashboardSummarySchema>;
 
 export const DashboardTargetsSchema = MacroTotalsSchema;
 export type DashboardTargets = z.infer<typeof DashboardTargetsSchema>;
+
+export const UserProfileSchema = z.object({
+  target_calories: z.number().int().nonnegative().nullable().optional(),
+  target_protein_g: z.number().nonnegative().nullable().optional(),
+  target_fat_g: z.number().nonnegative().nullable().optional(),
+  target_carbs_g: z.number().nonnegative().nullable().optional(),
+  body_weight_kg: z.number().nonnegative().nullable().optional(),
+  activity_level: z.string().min(1).max(40).nullable().optional(),
+  language: LocaleSchema.nullable().optional(),
+  updated_at: z.string().optional(),
+});
+
+export type UserProfile = z.infer<typeof UserProfileSchema>;
+
+export const UserProfileResponseSchema = z.object({
+  ok: z.literal(true),
+  profile: UserProfileSchema,
+});
+
+export const UpdateUserProfileRequestSchema = z
+  .object({
+    target_calories: z.number().int().nonnegative().nullable().optional(),
+    target_protein_g: z.number().nonnegative().nullable().optional(),
+    target_fat_g: z.number().nonnegative().nullable().optional(),
+    target_carbs_g: z.number().nonnegative().nullable().optional(),
+    body_weight_kg: z.number().nonnegative().nullable().optional(),
+    activity_level: z.string().min(1).max(40).nullable().optional(),
+    language: LocaleSchema.nullable().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'At least one field must be provided',
+  });
+
+export type UpdateUserProfileRequest = z.infer<typeof UpdateUserProfileRequestSchema>;

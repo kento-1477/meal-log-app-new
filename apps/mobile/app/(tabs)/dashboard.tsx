@@ -31,7 +31,7 @@ import { cacheStreak } from '@/services/streak-storage';
 import { useTranslation } from '@/i18n';
 import { buildFavoriteDraftFromSummary } from '@/utils/favorites';
 
-const DEFAULT_PERIOD: DashboardPeriod = 'thisWeek';
+const DEFAULT_PERIOD: DashboardPeriod = 'today';
 
 const MACRO_ORDER: Array<MacroComparison['key']> = ['protein_g', 'carbs_g', 'fat_g'];
 const MACRO_LABEL_KEY: Record<MacroComparison['key'], string> = {

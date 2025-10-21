@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { StatusCodes } from 'http-status-codes';
+import { DateTime } from 'luxon';
 import { z } from 'zod';
-import { MealPeriod } from '@prisma/client';
+import { MealPeriod, Prisma } from '@prisma/client';
 import { UpdateMealLogRequestSchema, type GeminiNutritionResponse, type Locale } from '@meal-log/shared';
 import { prisma } from '../db/prisma.js';
 import { requireAuth } from '../middleware/require-auth.js';
@@ -9,6 +10,7 @@ import { updateMealLog, deleteMealLog, restoreMealLog } from '../services/log-se
 import { getMealLogSharePayload, getLogsForExport } from '../services/log-share-service.js';
 import { resolveRequestLocale } from '../utils/request-locale.js';
 import { resolveMealLogLocalization, type LocalizationResolution } from '../utils/locale.js';
+import { normalizeTimezone, resolveRequestTimezone } from '../utils/timezone.js';
 
 export const logsRouter = Router();
 
@@ -21,6 +23,48 @@ const mealPeriodLookup: Record<string, MealPeriod> = {
 
 const toMealPeriodLabel = (period: MealPeriod | null | undefined) =>
   period ? period.toLowerCase() : null;
+
+type LogsRangeKey = 'today' | 'week' | 'twoWeeks' | 'threeWeeks' | 'month';
+
+interface LogsRange {
+  key: LogsRangeKey;
+  from: Date;
+  to: Date;
+}
+
+function resolveLogsRange(key: string | undefined, timezone: string): LogsRange | null {
+  const normalizedKey = (key as LogsRangeKey | undefined) ?? 'today';
+  const zone = normalizeTimezone(timezone);
+  const now = DateTime.now().setZone(zone).startOf('day');
+
+  if (normalizedKey === 'today') {
+    return {
+      key: 'today',
+      from: now.toUTC().toJSDate(),
+      to: now.plus({ days: 1 }).toUTC().toJSDate(),
+    };
+  }
+
+  const durationMap: Record<Exclude<LogsRangeKey, 'today'>, number> = {
+    week: 7,
+    twoWeeks: 14,
+    threeWeeks: 21,
+    month: 30,
+  };
+
+  const days = durationMap[normalizedKey as Exclude<LogsRangeKey, 'today'>];
+  if (!days) {
+    return null;
+  }
+
+  const from = now.minus({ days: days - 1 });
+
+  return {
+    key: normalizedKey,
+    from: from.toUTC().toJSDate(),
+    to: now.plus({ days: 1 }).toUTC().toJSDate(),
+  };
+}
 
 const fetchMealLogDetail = async (logId: string, userId: number, locale: Locale) => {
   const item = await prisma.mealLog.findFirst({
@@ -42,6 +86,9 @@ const fetchMealLogDetail = async (logId: string, userId: number, locale: Locale)
         select: { id: true },
         take: 1,
       },
+      periodHistory: {
+        orderBy: { createdAt: 'desc' },
+      },
     },
   });
 
@@ -62,6 +109,14 @@ const fetchMealLogDetail = async (logId: string, userId: number, locale: Locale)
     changes: edit.changes ?? {},
   }));
 
+  const timeHistory = item.periodHistory.map((entry) => ({
+    id: entry.id,
+    previous: toMealPeriodLabel(entry.previousMealPeriod) ?? null,
+    next: toMealPeriodLabel(entry.nextMealPeriod) ?? null,
+    source: entry.source,
+    changed_at: entry.createdAt.toISOString(),
+  }));
+
   return {
     id: item.id,
     food_item: translation?.dish ?? item.foodItem,
@@ -78,6 +133,7 @@ const fetchMealLogDetail = async (logId: string, userId: number, locale: Locale)
     fallback_applied: localization.fallbackApplied,
     favorite_meal_id: item.favoritedBy[0]?.id ?? null,
     history,
+    time_history: timeHistory,
   };
 };
 
@@ -86,10 +142,28 @@ logsRouter.get('/logs', requireAuth, async (req, res, next) => {
     const limit = Math.min(Number(req.query.limit ?? 20), 100);
     const offset = Number(req.query.offset ?? 0);
     const locale = resolveRequestLocale(req);
+    const timezone = resolveRequestTimezone(req);
     req.session.locale = locale;
+    req.session.timezone = timezone;
+
+    const rangeKey = typeof req.query.range === 'string' ? req.query.range : undefined;
+    const range = resolveLogsRange(rangeKey, timezone);
+
+    const whereClause = {
+      userId: req.session.userId!,
+      deletedAt: null,
+      ...(range
+        ? {
+            createdAt: {
+              gte: range.from,
+              lt: range.to,
+            },
+          }
+        : {}),
+    } satisfies Prisma.MealLogWhereInput;
 
     const items = await prisma.mealLog.findMany({
-      where: { userId: req.session.userId!, deletedAt: null },
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
       take: limit,
       skip: offset,
@@ -123,7 +197,7 @@ logsRouter.get('/logs', requireAuth, async (req, res, next) => {
       };
     });
 
-    res.status(StatusCodes.OK).json({ ok: true, items: responseItems });
+    res.status(StatusCodes.OK).json({ ok: true, items: responseItems, range: range?.key ?? 'today', timezone });
   } catch (error) {
     next(error);
   }

@@ -1,5 +1,6 @@
 import type { Express } from 'express';
 import { StatusCodes } from 'http-status-codes';
+import { DateTime } from 'luxon';
 import { createHash } from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
 import type {
@@ -24,6 +25,7 @@ import { DEFAULT_LOCALE, resolveMealLogLocalization, normalizeLocale, parseMealL
 import type { LocalizationResolution } from '../utils/locale.js';
 import { maybeTranslateNutritionResponse } from './localization-service.js';
 import { buildFavoriteDraftFromAnalysis } from './favorite-service.js';
+import { normalizeTimezone } from '../utils/timezone.js';
 
 interface ProcessMealLogParams {
   userId: number;
@@ -31,6 +33,7 @@ interface ProcessMealLogParams {
   file?: Express.Multer.File;
   idempotencyKey?: string;
   locale?: Locale;
+  timezone?: string;
 }
 
 interface ProcessMealLogResult {
@@ -56,8 +59,12 @@ interface ProcessMealLogResult {
   favoriteCandidate: FavoriteMealDraft;
 }
 
-const inferMealPeriod = (date: Date): MealPeriod => {
-  const hour = date.getHours();
+const inferMealPeriod = (timezone: string | undefined, referenceDate: Date | undefined = undefined): MealPeriod => {
+  const zone = normalizeTimezone(timezone);
+  const dt = referenceDate
+    ? DateTime.fromJSDate(referenceDate).setZone(zone)
+    : DateTime.now().setZone(zone);
+  const hour = dt.hour;
   if (hour >= 5 && hour < 10) {
     return MealPeriod.BREAKFAST;
   }
@@ -73,6 +80,7 @@ const inferMealPeriod = (date: Date): MealPeriod => {
 export async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMealLogResult> {
   const requestKey = params.idempotencyKey ?? buildRequestKey(params);
   const requestedLocale = normalizeLocale(params.locale);
+  const timezone = normalizeTimezone(params.timezone);
 
   const existing = await prisma.ingestRequest.findUnique({
     where: { userId_requestKey: { userId: params.userId, requestKey } },
@@ -189,7 +197,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
   };
 
   const zeroFloored = Object.values(enrichedResponse.totals).some((value) => value === 0);
-  const mealPeriod = inferMealPeriod(new Date());
+  const mealPeriod = inferMealPeriod(timezone);
 
   const seededTranslations: Record<Locale, GeminiNutritionResponse> = {
     [DEFAULT_LOCALE]: cloneNutritionResponse(enrichedResponse),
@@ -219,20 +227,33 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
       warnings.push(`translation_fallback:${localization.resolvedLocale}`);
     }
   
-    const log = await prisma.mealLog.create({
-      data: {
-        userId: params.userId,
-        foodItem: translation.dish ?? params.message,
-        calories: enrichedResponse.totals.kcal,
-        proteinG: enrichedResponse.totals.protein_g,
-        fatG: enrichedResponse.totals.fat_g,
-        carbsG: enrichedResponse.totals.carbs_g,
-        aiRaw: aiPayload,
-        zeroFloored,
-        guardrailNotes: zeroFloored ? 'zeroFloored' : null,
-        landingType: enrichedResponse.landing_type ?? null,
-        mealPeriod,
-      },
+    const log = await prisma.$transaction(async (tx) => {
+      const created = await tx.mealLog.create({
+        data: {
+          userId: params.userId,
+          foodItem: translation.dish ?? params.message,
+          calories: enrichedResponse.totals.kcal,
+          proteinG: enrichedResponse.totals.protein_g,
+          fatG: enrichedResponse.totals.fat_g,
+          carbsG: enrichedResponse.totals.carbs_g,
+          aiRaw: aiPayload,
+          zeroFloored,
+          guardrailNotes: zeroFloored ? 'zeroFloored' : null,
+          landingType: enrichedResponse.landing_type ?? null,
+          mealPeriod,
+        },
+      });
+
+      await tx.mealLogPeriodHistory.create({
+        data: {
+          mealLogId: created.id,
+          previousMealPeriod: null,
+          nextMealPeriod: mealPeriod,
+          source: 'auto',
+        },
+      });
+
+      return created;
     });
   
     const favoriteCandidate = buildFavoriteDraftPayload({
@@ -278,6 +299,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
     imageUrl,
     fallback_model_used: analysis.meta.model === 'models/gemini-2.5-pro',
     mealPeriod,
+    timezone,
     localization: buildLocalizationMeta({ ...localization, translations: responseTranslations }),
   };
 
@@ -419,6 +441,8 @@ export async function updateMealLog({ logId, userId, updates }: UpdateMealLogPar
     };
   }
 
+  const previousMealPeriod = log.mealPeriod ?? null;
+
   const updatedLog = await prisma.$transaction(async (tx) => {
     const saved = await tx.mealLog.update({
       where: { id: log.id },
@@ -427,6 +451,17 @@ export async function updateMealLog({ logId, userId, updates }: UpdateMealLogPar
         aiRaw: updatedAiRaw ?? log.aiRaw,
       },
     });
+
+    if (typeof updates.mealPeriod !== 'undefined' && updates.mealPeriod !== previousMealPeriod) {
+      await tx.mealLogPeriodHistory.create({
+        data: {
+          mealLogId: log.id,
+          previousMealPeriod,
+          nextMealPeriod: updates.mealPeriod,
+          source: 'manual',
+        },
+      });
+    }
 
     await tx.mealLogEdit.create({
       data: {

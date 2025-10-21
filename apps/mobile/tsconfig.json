@@ -15,7 +15,8 @@
       "@/features/*": ["features/*"],
       "@/i18n": ["i18n"],
       "@/i18n/*": ["i18n/*"],
-      "@/utils/*": ["utils/*"]
+      "@/utils/*": ["utils/*"],
+      "@/config/*": ["config/*"]
     }
   },
   "include": ["src", "App.tsx", "app.d.ts"]

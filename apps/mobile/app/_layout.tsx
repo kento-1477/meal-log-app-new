@@ -21,6 +21,8 @@ export default function RootLayout() {
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="login" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="register" options={{ headerShown: true, title: '新規登録', presentation: 'modal' }} />
+            <Stack.Screen name="log/index" options={{ headerShown: true, title: '食事履歴' }} />
             <Stack.Screen name="log/[id]" options={{ headerShown: true, title: '食事ログの編集' }} />
           </Stack>
         </QueryClientProvider>

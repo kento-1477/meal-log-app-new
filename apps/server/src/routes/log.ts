@@ -5,6 +5,7 @@ import { SlotSelectionRequestSchema } from '@meal-log/shared';
 import { requireAuth } from '../middleware/require-auth.js';
 import { processMealLog, chooseSlot } from '../services/log-service.js';
 import { resolveRequestLocale } from '../utils/request-locale.js';
+import { resolveRequestTimezone } from '../utils/timezone.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -18,6 +19,7 @@ logRouter.post('/log', requireAuth, upload.single('image'), async (req, res, nex
     }
 
     const locale = resolveRequestLocale(req, { bodyField: 'locale' });
+    const timezone = resolveRequestTimezone(req, { bodyField: 'timezone' });
 
     const idempotencyKey = (req.get('Idempotency-Key') ?? undefined) as string | undefined;
     const result = await processMealLog({
@@ -26,6 +28,7 @@ logRouter.post('/log', requireAuth, upload.single('image'), async (req, res, nex
       file: req.file ?? undefined,
       idempotencyKey,
       locale,
+      timezone,
     });
 
     if (result.usage) {
@@ -34,6 +37,7 @@ logRouter.post('/log', requireAuth, upload.single('image'), async (req, res, nex
     }
 
     req.session.locale = result.requestLocale;
+    req.session.timezone = timezone;
 
     return res.status(StatusCodes.OK).json(result);
   } catch (error) {

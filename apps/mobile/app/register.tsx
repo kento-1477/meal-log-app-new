@@ -3,37 +3,47 @@ import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableO
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { GlassCard } from '@/components/GlassCard';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
-import { GlassCard } from '@/components/GlassCard';
-import { login } from '@/services/api';
+import { registerUser } from '@/services/api';
 import { useSessionStore } from '@/store/session';
 import { useTranslation } from '@/i18n';
 
-export default function LoginScreen() {
+export default function RegisterScreen() {
   const router = useRouter();
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
   const setUsage = useSessionStore((state) => state.setUsage);
   const { t } = useTranslation();
 
-  const [email, setEmail] = useState('demo@example.com');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = async () => {
+  const handleRegister = async () => {
+    if (!email.trim() || !password.trim()) {
+      setError(t('register.validation.missing')); 
+      return;
+    }
     try {
       setLoading(true);
       setStatus('loading');
       setError(null);
-      const response = await login({ email, password });
-      setUser(response?.user ?? null);
-      setUsage(response?.usage ?? null);
+      const response = await registerUser({
+        email: email.trim(),
+        password: password.trim(),
+        username: username.trim() ? username.trim() : undefined,
+      });
+      setUser(response.user);
+      setUsage(response.usage);
       setStatus('authenticated');
       router.replace('/(tabs)/chat');
     } catch (err) {
-      setError((err as Error).message ?? t('login.error.generic'));
+      const message = err instanceof Error ? err.message : t('register.error.generic');
+      setError(message);
       setStatus('error');
     } finally {
       setLoading(false);
@@ -43,38 +53,49 @@ export default function LoginScreen() {
   return (
     <LinearGradient colors={[colors.background, '#ffffff']} style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.inner}>
-        <View style={styles.header}> 
-          <Text style={styles.title}>{t('login.title')}</Text>
-          <Text style={styles.subtitle}>{t('login.subtitle')}</Text>
+        <View style={styles.header}>
+          <Text style={styles.title}>{t('register.title')}</Text>
+          <Text style={styles.subtitle}>{t('register.subtitle')}</Text>
         </View>
         <GlassCard>
           <View style={styles.formGroup}>
-            <Text style={styles.label}>{t('login.emailLabel')}</Text>
+            <Text style={styles.label}>{t('register.emailLabel')}</Text>
             <TextInput
               value={email}
               onChangeText={setEmail}
               inputMode="email"
               autoCapitalize="none"
+              autoCorrect={false}
               style={styles.input}
-              placeholder={t('login.emailPlaceholder')}
+              placeholder={t('register.emailPlaceholder')}
             />
           </View>
           <View style={styles.formGroup}>
-            <Text style={styles.label}>{t('login.passwordLabel')}</Text>
+            <Text style={styles.label}>{t('register.passwordLabel')}</Text>
             <TextInput
               value={password}
               onChangeText={setPassword}
               secureTextEntry
               style={styles.input}
-              placeholder={t('login.passwordPlaceholder')}
+              placeholder={t('register.passwordPlaceholder')}
+            />
+          </View>
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>{t('register.usernameLabel')}</Text>
+            <TextInput
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize="words"
+              style={styles.input}
+              placeholder={t('register.usernamePlaceholder')}
             />
           </View>
           {error ? <Text style={styles.error}>⚠️ {error}</Text> : null}
           <View style={{ marginTop: 24 }}>
-            <PrimaryButton label={t('login.submit')} onPress={handleLogin} loading={loading} />
+            <PrimaryButton label={t('register.submit')} onPress={handleRegister} loading={loading} />
           </View>
-          <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/register')}>
-            <Text style={styles.secondaryButtonLabel}>{t('login.register')}</Text>
+          <TouchableOpacity style={styles.secondaryButton} onPress={() => router.replace('/login')}>
+            <Text style={styles.secondaryButtonLabel}>{t('register.backToLogin')}</Text>
           </TouchableOpacity>
         </GlassCard>
       </KeyboardAvoidingView>
@@ -96,7 +117,7 @@ const styles = StyleSheet.create({
   },
   title: {
     ...textStyles.titleLarge,
-    fontSize: 36,
+    fontSize: 32,
     color: colors.textPrimary,
   },
   subtitle: {

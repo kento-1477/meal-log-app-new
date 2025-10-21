@@ -69,6 +69,9 @@ export function RecentLogsList({ logs, onToggleFavorite, togglingId }: Props) {
       <View style={styles.headerRow}>
         <Text style={styles.heading}>{t('recentLogs.heading')}</Text>
         <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => router.push('/log')}>
+            <Text style={styles.secondaryCta}>{t('recentLogs.viewAll')}</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => setExportVisible(true)}>
             <Text style={styles.secondaryCta}>CSV / PDF</Text>
           </TouchableOpacity>
