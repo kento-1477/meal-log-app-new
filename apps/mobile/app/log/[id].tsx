@@ -28,6 +28,7 @@ import { textStyles } from '@/theme/typography';
 import { buildFavoriteDraftFromDetail } from '@/utils/favorites';
 import { useTranslation } from '@/i18n';
 import { describeLocale } from '@/utils/locale';
+import { useChatStore } from '@/store/chat';
 
 const mealPeriodOptions = [
   { value: 'breakfast', label: '朝食' },
@@ -64,6 +65,7 @@ export default function MealLogDetailScreen() {
   const [sharing, setSharing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const { locale, t } = useTranslation();
+  const updateCardForLog = useChatStore((state) => state.updateCardForLog);
 
   const logId = params.id ?? '';
 
@@ -99,10 +101,22 @@ export default function MealLogDetailScreen() {
         meal_period: fields.mealPeriod ?? undefined,
       });
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['logDetail', logId] });
       queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
       queryClient.invalidateQueries({ queryKey: ['dailySummary'] });
+      if (result?.item && logId) {
+        updateCardForLog(logId, {
+          dish: result.item.food_item,
+          mealPeriod: result.item.meal_period ?? null,
+          totals: {
+            kcal: result.item.calories,
+            protein_g: result.item.protein_g,
+            fat_g: result.item.fat_g,
+            carbs_g: result.item.carbs_g,
+          },
+        });
+      }
       Alert.alert('保存しました');
     },
     onError: (error) => {
@@ -149,6 +163,7 @@ export default function MealLogDetailScreen() {
   };
 
   const historyEntries = detail?.history ?? [];
+  const timeHistoryEntries = detail?.time_history ?? [];
 
   const handleShare = async () => {
     if (!logId) return;
@@ -362,6 +377,31 @@ export default function MealLogDetailScreen() {
               ))
             )}
           </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>時間帯履歴</Text>
+            {timeHistoryEntries.length === 0 ? (
+              <Text style={styles.placeholder}>{t('history.timeHistory.empty')}</Text>
+            ) : (
+              timeHistoryEntries.map((entry) => (
+                <View key={entry.id} style={styles.historyCard}>
+                  {(() => {
+                    const sourceLabel = describeHistorySource(entry.source, t);
+                    const previousLabel = describeMealPeriod(entry.previous, t);
+                    const nextLabel = describeMealPeriod(entry.next, t);
+                    return (
+                      <>
+                        <Text style={styles.historyTitle}>
+                          {formatTimestamp(entry.changed_at)} · {sourceLabel}
+                        </Text>
+                        <Text style={styles.historyChange}>{`${previousLabel} → ${nextLabel}`}</Text>
+                      </>
+                    );
+                  })()}
+                </View>
+              ))
+            )}
+          </View>
         </ScrollView>
       )}
     </View>
@@ -402,6 +442,22 @@ function formatTimestamp(iso: string) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+type Translator = (key: string, params?: Record<string, string | number>) => string;
+
+function describeHistorySource(source: string | null | undefined, t: Translator) {
+  if (source === 'manual') {
+    return t('history.timeHistory.source.manual');
+  }
+  return t('history.timeHistory.source.auto');
+}
+
+function describeMealPeriod(value: string | null | undefined, t: Translator) {
+  if (!value) {
+    return t('history.timeHistory.none');
+  }
+  return t(`meal.${value}`);
 }
 
 function formatFieldLabel(field: string) {

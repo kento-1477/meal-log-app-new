@@ -90,7 +90,16 @@ export default function ChatScreen() {
   const [streakModalVisible, setStreakModalVisible] = useState(false);
   const [iapLoading, setIapLoading] = useState(false);
 
-  const { messages, addUserMessage, addAssistantMessage, setMessageText, updateMessageStatus, attachCardToMessage, composingImageUri, setComposingImage } = useChatStore();
+  const {
+    messages,
+    addUserMessage,
+    addAssistantMessage,
+    setMessageText,
+    updateMessageStatus,
+    attachCardToMessage,
+    composingImageUri,
+    setComposingImage,
+  } = useChatStore();
   const usage = useSessionStore((state) => state.usage);
   const setUsage = useSessionStore((state) => state.setUsage);
   const userPlan = useSessionStore((state) => state.user?.plan ?? 'FREE');
@@ -198,6 +207,10 @@ export default function ChatScreen() {
     setComposingImage(null);
   };
 
+  const handleEditLog = (logId: string) => {
+    router.push(`/log/${logId}`);
+  };
+
   const submitMeal = async (
     rawMessage: string,
     options: {
@@ -238,6 +251,10 @@ export default function ChatScreen() {
 
       const summaryText = buildAssistantSummary(response);
       updateMessageStatus(assistantPlaceholder.id, 'delivered');
+      const meta = (response.meta ?? {}) as { mealPeriod?: string | null; timezone?: string | null };
+      const rawMealPeriod = meta.mealPeriod ?? response.meal_period ?? null;
+      const mealPeriod = typeof rawMealPeriod === 'string' ? rawMealPeriod.toLowerCase() : null;
+      const timezone = meta.timezone ?? null;
       attachCardToMessage(assistantPlaceholder.id, {
         logId: response.logId,
         dish: response.dish,
@@ -250,6 +267,8 @@ export default function ChatScreen() {
         fallbackApplied: response.fallbackApplied,
         translations: response.translations,
         favoriteCandidate: response.favoriteCandidate,
+        mealPeriod,
+        timezone,
       });
       setMessageText(assistantPlaceholder.id, summaryText);
       if (response.usage) {
@@ -387,7 +406,7 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <Text style={styles.headerTitle}>{t('chat.header')}</Text>
+      <Text style={[styles.headerTitle, { paddingHorizontal: 16, marginBottom: 16 }]}>{t('chat.header')}</Text>
       <DevResetStreak />
       {usage ? (
         <View style={styles.usageBanner}>
@@ -432,6 +451,7 @@ export default function ChatScreen() {
                 sharing={sharingId === item.id}
                 onAddFavorite={item.payload.favoriteCandidate ? (draft) => handleAddFavoriteFromCard(item.id, draft) : undefined}
                 addingFavorite={addingFavoriteId === item.id}
+                onEdit={item.payload.logId ? () => handleEditLog(item.payload.logId) : undefined}
               />
             )
           }
@@ -626,8 +646,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     ...textStyles.titleLarge,
-    marginBottom: 16,
-    paddingHorizontal: 16,
+    color: colors.textPrimary,
   },
   usageBanner: {
     flexDirection: 'row',
