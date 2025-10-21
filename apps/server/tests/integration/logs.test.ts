@@ -2,7 +2,6 @@ import '../test-env.ts';
 
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
-import argon2 from 'argon2';
 import { prisma } from '../../src/db/prisma.ts';
 import { createApp } from '../../src/app.ts';
 
@@ -44,14 +43,17 @@ before(async () => {
   await prisma.$executeRawUnsafe('TRUNCATE "FavoriteMealItem" CASCADE');
   await prisma.$executeRawUnsafe('TRUNCATE "FavoriteMeal" CASCADE');
   await prisma.$executeRawUnsafe('TRUNCATE "User" CASCADE');
-  const passwordHash = await argon2.hash('password123');
-  await prisma.user.create({
-    data: {
-      email: 'demo@example.com',
-      username: 'Demo',
-      passwordHash,
-    },
+
+  const response = await fetch(`${baseUrl}/api/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'demo@example.com', username: 'Demo', password: 'password123' }),
   });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Failed to seed demo user via API: ${response.status} ${body}`);
+  }
 });
 
 after(async () => {
