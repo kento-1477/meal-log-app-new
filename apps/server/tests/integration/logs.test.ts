@@ -6,6 +6,8 @@ import argon2 from 'argon2';
 import { prisma } from '../../src/db/prisma.ts';
 import { createApp } from '../../src/app.ts';
 
+process.env.USER_PLAN_OVERRIDE = 'STANDARD';
+
 const app = createApp();
 const server = app.listen(0);
 const address = server.address();
