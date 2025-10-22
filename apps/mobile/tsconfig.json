@@ -16,7 +16,8 @@
       "@/i18n": ["i18n"],
       "@/i18n/*": ["i18n/*"],
       "@/utils/*": ["utils/*"],
-      "@/config/*": ["config/*"]
+      "@/config/*": ["config/*"],
+      "@/screen-components/*": ["screen-components/*"]
     }
   },
   "include": ["src", "App.tsx", "app.d.ts"]
