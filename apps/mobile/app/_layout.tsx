@@ -24,6 +24,10 @@ export default function RootLayout() {
             <Stack.Screen name="register" options={{ headerShown: true, title: '新規登録', presentation: 'modal' }} />
             <Stack.Screen name="log/index" options={{ headerShown: true, title: '食事履歴' }} />
             <Stack.Screen name="log/[id]" options={{ headerShown: true, title: '食事ログの編集' }} />
+            <Stack.Screen name="settings/account" options={{ headerShown: true, title: 'アカウント管理' }} />
+            <Stack.Screen name="settings/profile" options={{ headerShown: true, title: 'プロフィールと目標' }} />
+            <Stack.Screen name="settings/notifications" options={{ headerShown: true, title: '通知設定' }} />
+            <Stack.Screen name="settings/language" options={{ headerShown: true, title: '表示言語' }} />
           </Stack>
         </QueryClientProvider>
       </SafeAreaProvider>
