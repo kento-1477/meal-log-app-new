@@ -80,24 +80,24 @@ test('restoreMealLog clears deletedAt flag', async () => {
 });
 
 test('purgeExpiredMealLogs deletes soft-deleted and expired free logs', async () => {
-  let firstCallArgs = null;
-  let secondCallArgs = null;
+  const calls = [];
+
+  prismaAny.premiumGrant.findMany = async () => [];
 
   prismaAny.mealLog.deleteMany = async (args) => {
-    if (!firstCallArgs) {
-      firstCallArgs = args;
-      return { count: 2 };
-    }
-    secondCallArgs = args;
-    return { count: 3 };
+    calls.push(args);
+    return { count: calls.length };
   };
 
   const referenceDate = new Date('2025-02-01T00:00:00Z');
   const result = await purgeExpiredMealLogs(referenceDate);
 
-  assert.equal(result.softDeleted, 2);
-  assert.equal(result.freeExpired, 3);
-  assert.deepEqual(firstCallArgs, {
+  assert.equal(result.softDeleted, 1);
+  assert.equal(result.freeExpired, 2);
+  assert.equal(result.premiumExpired, 3);
+  
+  // First call: soft deleted logs
+  assert.deepEqual(calls[0], {
     where: {
       deletedAt: {
         not: null,
@@ -105,11 +105,22 @@ test('purgeExpiredMealLogs deletes soft-deleted and expired free logs', async ()
       },
     },
   });
-  assert.deepEqual(secondCallArgs, {
+  
+  // Second call: free user expired logs
+  assert.deepEqual(calls[1], {
     where: {
       deletedAt: null,
       createdAt: { lt: new Date('2025-01-02T00:00:00.000Z') },
-      user: { plan: 'FREE' },
+      userId: { notIn: [] },
+    },
+  });
+  
+  // Third call: premium user expired logs (90 days)
+  assert.deepEqual(calls[2], {
+    where: {
+      deletedAt: null,
+      createdAt: { lt: new Date('2024-11-03T00:00:00.000Z') },
+      userId: { in: [] },
     },
   });
 });
