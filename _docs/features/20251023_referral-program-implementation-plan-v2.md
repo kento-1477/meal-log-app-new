@@ -403,7 +403,10 @@ export async function grantPremiumDays(params: {
 - [x] `isPremium()` 実装
 - [x] `getPremiumStatus()` 実装
 - [x] `grantPremiumDays()` 実装
-- [ ] ユニットテスト作成
+- [x] `getAllPremiumGrants()` 実装
+- [x] `filterPremiumUserIds()` 実装
+- [x] `getAllPremiumUserIds()` 実装
+- [ ] ユニットテスト作成（優先度: 中）
 
 ### 3.2 AI使用制限サービスの修正
 
@@ -448,8 +451,8 @@ export async function evaluateAiUsage(userId: number): Promise<AiUsageStatus> {
 - [x] `isPremium()` を使ってプレミアム判定
 - [x] `DAILY_LIMITS` の型を変更
 - [x] `resolveTierOverride()` に変更（USER_TIER_OVERRIDE環境変数を使用）
-- [ ] ユニットテスト修正
-- [ ] 統合テスト実行
+- [x] ユニットテスト修正
+- [x] 統合テスト実行（CI通過）
 
 ### 3.3 ログクリーンアップジョブの修正
 
@@ -530,8 +533,8 @@ export async function purgeExpiredMealLogs(referenceDate: Date = new Date()) {
 - [x] プレミアムユーザーID取得ロジック追加
 - [x] 無料/プレミアム別の削除処理実装
 - [x] `PREMIUM_RETENTION_DAYS = 90` を追加
-- [ ] ユニットテスト修正
-- [ ] 統合テスト実行
+- [x] ユニットテスト修正
+- [x] 統合テスト実行（CI通過）
 
 ### 3.4 課金購入サービスの修正
 
@@ -586,8 +589,8 @@ export async function processIapPurchase(params: ProcessPurchaseParams): Promise
 
 - [x] PremiumGrant作成（1年間、365日）
 - [x] `User.plan` 更新処理を削除
-- [ ] ユニットテスト修正
-- [ ] 統合テスト実行
+- [x] ユニットテスト修正
+- [x] 統合テスト実行（CI通過）
 
 ### 3.5 認証サービスの修正
 
@@ -636,7 +639,7 @@ function serializeUser(user: {
 - [x] `resolvePlanOverride()` 関数を削除
 - [x] `withPlanOverride()` 関数を削除
 - [x] セッションから `userPlan` を削除（`types/express-session.d.ts`）
-- [ ] ユニットテスト修正
+- [x] ユニットテスト修正
 
 ### 3.6 セッション型定義の修正
 
@@ -696,6 +699,8 @@ declare module 'express-session' {
 - [x] `ReferralInviteLink` テーブルに保存（既存なら再利用）
 - [x] ディープリンク + Webランディングページ両方のURLを返却
 - [x] 認証必須（セッションチェック）
+- [x] referral-service.ts実装完了
+- [x] CI通過
 
 ### 4.2 招待コード検証・紐付けAPI
 
@@ -724,11 +729,13 @@ declare module 'express-session' {
 - [x] 招待コードの存在確認
 - [x] 重複防止チェック（同一ユーザーが複数回使用不可）
 - [x] 自己紹介防止（referrerUserId ≠ referredUserId）
-- [x] デバイス指紋生成・記録
+- [x] デバイス指紋生成・記録（SHA256ハッシュ）
 - [x] `Referral` レコード作成（status: PENDING）
 - [x] **友だちに14日プレミアム付与**（PremiumGrant作成）
 - [x] `ReferralInviteLink` の `signupCount` をインクリメント
 - [x] 認証必須
+- [x] referral-service.ts実装完了
+- [x] CI通過
 
 ### 4.3 プレミアム状態取得API
 
@@ -757,6 +764,8 @@ declare module 'express-session' {
 - [x] `getPremiumStatus()` を使ってプレミアム状態取得
 - [x] ユーザーの全 `PremiumGrant` を取得
 - [x] 認証必須
+- [x] routes/account.ts実装完了
+- [x] CI通過
 
 ### 4.4 紹介状況取得API
 
@@ -792,6 +801,8 @@ declare module 'express-session' {
 - [x] 統計情報を計算（total, completed, pending, days earned）
 - [x] 最新5件の紹介状況を返却
 - [x] 認証必須
+- [x] referral-service.ts実装完了
+- [x] CI通過
 
 ### 4.5 3日連続ログチェックジョブ
 
@@ -815,8 +826,9 @@ declare module 'express-session' {
 - [x] 3日連続ログ判定ロジック実装（referral-service.ts内）
 - [x] PremiumGrant作成で30日付与
 - [x] 30日期限切れチェック実装（expireOldReferrals）
-- [x] index.tsにスケジューリング追加
+- [x] index.tsにスケジューリング追加（毎日3時JST実行）
 - [x] ログ出力（Pino）
+- [x] CI通過
 
 ---
 
@@ -827,29 +839,30 @@ declare module 'express-session' {
 #### ✅ 実装箇所: `apps/mobile/app/(tabs)/settings.tsx`
 
 **変更内容**:
-- [ ] `handleInvite` 関数を実装
+- [x] `handleInvite` 関数を実装
   - API `/api/referral/invite-link` を呼び出し
   - 招待リンクを取得
   - `Share.share()` で共有メニューを表示
     - タイトル: 「Meal Logを一緒に使いませんか？」
     - メッセージ: 「紹介リンクから登録すると14日間プレミアム無料！友だちを紹介すると30日延長も！ {inviteLink}」
-- [ ] 共有チャネルボタン追加（**LINEをプライマリ**、他をセカンダリ）
+- [ ] 共有チャネルボタン追加（**LINEをプライマリ**、他をセカンダリ）（優先度: 低、将来実装）
   - **LINE**: `line://msg/text/{message}` - **大きく目立つボタン**
   - Instagram: DM不可、ストーリー投稿のみ（`instagram://story-camera`）- 小さめボタン
   - X: `twitter://post?message={message}` - 小さめボタン
   - WhatsApp: `whatsapp://send?text={message}` - 小さめボタン
-- [ ] エラーハンドリング（ネットワークエラー、APIエラー）
-- [ ] ローディング状態表示
+- [x] エラーハンドリング（ネットワークエラー、APIエラー）
+- [x] ローディング状態表示
 
 #### ✅ 翻訳追加: `apps/mobile/src/i18n/index.ts`
 
-- [ ] `referral.share.title`: 「Meal Logを一緒に使いませんか？」
-- [ ] `referral.share.message`: 「このリンクから登録すると14日間プレミアム無料！友だちを紹介すると30日延長も！ {{link}}」
-- [ ] `referral.invite.rewardText`: 「友だち1人で30日延長」
-- [ ] `referral.friend.rewardText`: 「紹介なら14日間プレミアム無料」
-- [ ] `referral.error.loadFailed`: 「招待リンクの取得に失敗しました」
-- [ ] `referral.error.shareFailed`: 「共有に失敗しました」
-- [ ] 英語版も追加
+- [x] `referral.share.title`: 「Meal Logを一緒に使いませんか？」
+- [x] `referral.share.message`: 「このリンクから登録すると14日間プレミアム無料！友だちを紹介すると30日延長も！ {{link}}」
+- [x] `referral.invite.rewardText`: 「友だち1人で30日延長」
+- [x] `referral.friend.rewardText`: 「紹介なら14日間プレミアム無料」
+- [x] `referral.error.loadFailed`: 「招待リンクの取得に失敗しました」
+- [x] `referral.error.shareFailed`: 「共有に失敗しました」
+- [x] 紹介状況画面用の翻訳も追加
+- [x] 英語版も追加
 
 ### 5.2 ディープリンク受信・処理
 
