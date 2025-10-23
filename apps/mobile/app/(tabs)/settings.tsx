@@ -9,6 +9,7 @@ import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import { useSessionStore } from '@/store/session';
+import { usePremiumStatus } from '@/hooks/usePremiumStatus';
 import { SUPPORT_EMAIL } from '@/config/legal';
 import { generateInviteLink } from '@/services/api';
 import appManifest from '../../app.json';
@@ -17,6 +18,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const user = useSessionStore((state) => state.user);
+  const { status: premiumStatus } = usePremiumStatus();
   const versionLabel = appManifest?.expo?.version ?? '1.0.0';
   const [isLoadingInvite, setIsLoadingInvite] = useState(false);
 
@@ -96,8 +98,20 @@ export default function SettingsScreen() {
               <Feather name="user" size={24} color={colors.accent} />
             </View>
             <View style={styles.profileTextContainer}>
-              <Text style={styles.profileName}>{user?.username ?? t('settings.profile.namePlaceholder')}</Text>
-              <Text style={styles.profileSubtitle}>{t('settings.profile.subtitle')}</Text>
+              <View style={styles.profileNameRow}>
+                <Text style={styles.profileName}>{user?.username ?? t('settings.profile.namePlaceholder')}</Text>
+                {premiumStatus?.isPremium && (
+                  <View style={styles.premiumBadge}>
+                    <Feather name="star" size={12} color="#fff" />
+                    <Text style={styles.premiumBadgeText}>{t('premium.badge')}</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.profileSubtitle}>
+                {premiumStatus?.isPremium
+                  ? t('premium.daysRemaining', { days: premiumStatus.daysRemaining })
+                  : t('settings.profile.subtitle')}
+              </Text>
             </View>
             <Feather name="chevron-right" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
@@ -199,9 +213,29 @@ const styles = StyleSheet.create({
   profileTextContainer: {
     flex: 1,
   },
+  profileNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   profileName: {
     ...textStyles.titleMedium,
     color: colors.textPrimary,
+  },
+  premiumBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 12,
+    gap: 4,
+  },
+  premiumBadgeText: {
+    ...textStyles.caption,
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 10,
   },
   profileSubtitle: {
     ...textStyles.caption,

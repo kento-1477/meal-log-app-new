@@ -920,20 +920,22 @@ declare module 'express-session' {
 #### ✅ 実装箇所: ダッシュボード、設定画面
 
 **変更内容**:
-- [ ] API `/api/user/premium-status` を呼び出し
-- [ ] プレミアム状態を Zustand store に保存
-- [ ] ダッシュボードにプレミアムバッジ表示
+- [x] API `/api/user/premium-status` を呼び出し
+- [x] プレミアム状態を Zustand store に保存
+- [ ] ダッシュボードにプレミアムバッジ表示（優先度: 中、将来実装）
   - アイコン: ⭐️ or 👑
   - テキスト: 「プレミアム会員（残り12日）」
-- [ ] 設定画面のプロフィールカードにバッジ追加
-- [ ] プレミアム限定機能に鍵アイコン表示（無料ユーザー）
+- [x] 設定画面のプロフィールカードにバッジ追加
+- [ ] プレミアム限定機能に鍵アイコン表示（無料ユーザー）（優先度: 低、将来実装）
 
 **実装タスク**:
-- [ ] `apps/mobile/src/store/premium.ts` 作成（Zustand）
-- [ ] `/api/user/premium-status` 統合
-- [ ] ダッシュボードにバッジ表示
-- [ ] 設定画面にバッジ表示
-- [ ] プレミアム限定機能のペイウォール実装
+- [x] `apps/mobile/src/store/premium.ts` 作成（Zustand）
+- [x] `apps/mobile/src/hooks/usePremiumStatus.ts` 作成
+- [x] `/api/user/premium-status` 統合（services/api.ts）
+- [x] 翻訳追加（premium.badge, premium.daysRemaining, premium.free）
+- [ ] ダッシュボードにバッジ表示（優先度: 中、将来実装）
+- [x] 設定画面にバッジ表示（完了）
+- [ ] プレミアム限定機能のペイウォール実装（優先度: 低、将来実装）
 
 ---
 
