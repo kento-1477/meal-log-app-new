@@ -208,7 +208,7 @@ model IapReceipt {
 
 #### ✅ チェックリスト: データ移行
 
-- [x] `apps/server/prisma/migrations/manual/migrate_user_plan_to_premium_grant.ts` 作成
+- [x] `apps/server/scripts/migrate_user_plan_to_premium_grant.ts` 作成
 - [x] 既存の `User.plan = STANDARD` ユーザーを抽出
 - [x] 各ユーザーに `PremiumGrant` レコードを作成
   - source: `PURCHASE`
@@ -222,7 +222,7 @@ model IapReceipt {
 #### マイグレーションスクリプト例
 
 ```typescript
-// prisma/migrations/manual/migrate_user_plan_to_premium_grant.ts
+// apps/server/scripts/migrate_user_plan_to_premium_grant.ts
 import { PrismaClient, UserPlan, PremiumSource } from '@prisma/client';
 import { DateTime } from 'luxon';
 
