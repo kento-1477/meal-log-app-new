@@ -54,6 +54,10 @@ test('evaluateAiUsage allows credit consumption when limit reached', async () =>
 
 test('recordAiUsage increments counters and decrements credits when needed', async () => {
   const usageDate = DateTime.fromISO('2025-05-01T00:00:00Z').toJSDate();
+  
+  // Mock premiumGrant.findFirst for isPremium() call outside transaction
+  prismaAny.premiumGrant.findFirst = async () => ({ userId: 99, source: 'PURCHASE', endDate: new Date('2026-01-01') });
+  
   prismaAny.$transaction = async (fn) =>
     fn({
       user: {
