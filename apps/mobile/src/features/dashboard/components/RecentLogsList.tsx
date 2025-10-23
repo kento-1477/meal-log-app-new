@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import type { MealLogSummary } from '@meal-log/shared';
+import type { MealLogSummary, MealLogRange } from '@meal-log/shared';
 import { useRouter } from 'expo-router';
 import { cacheDirectory, deleteAsync, EncodingType, writeAsStringAsync } from 'expo-file-system';
 import * as Print from 'expo-print';
@@ -31,13 +31,23 @@ import { buildCsv, buildPdfHtml, type ExportItem } from '@/utils/logExport';
 import { describeLocale } from '@/utils/locale';
 import { useSessionStore } from '@/store/session';
 
+const RANGE_OPTIONS: Array<{ value: MealLogRange; labelKey: string }> = [
+  { value: 'today', labelKey: 'history.range.today' },
+  { value: 'week', labelKey: 'history.range.week' },
+  { value: 'twoWeeks', labelKey: 'history.range.twoWeeks' },
+  { value: 'threeWeeks', labelKey: 'history.range.threeWeeks' },
+  { value: 'month', labelKey: 'history.range.month' },
+];
+
 interface Props {
   logs: MealLogSummary[];
+  range?: MealLogRange;
+  onRangeChange?: (range: MealLogRange) => void;
   onToggleFavorite?: (log: MealLogSummary, targetState: boolean) => void;
   togglingId?: string | null;
 }
 
-export function RecentLogsList({ logs, onToggleFavorite, togglingId }: Props) {
+export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleFavorite, togglingId }: Props) {
   const router = useRouter();
   const { t, locale } = useTranslation();
   const [sharingId, setSharingId] = useState<string | null>(null);
@@ -69,9 +79,6 @@ export function RecentLogsList({ logs, onToggleFavorite, togglingId }: Props) {
       <View style={styles.headerRow}>
         <Text style={styles.heading}>{t('recentLogs.heading')}</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => router.push('/log')}>
-            <Text style={styles.secondaryCta}>{t('recentLogs.viewAll')}</Text>
-          </TouchableOpacity>
           <TouchableOpacity onPress={() => setExportVisible(true)}>
             <Text style={styles.secondaryCta}>CSV / PDF</Text>
           </TouchableOpacity>
@@ -80,6 +87,24 @@ export function RecentLogsList({ logs, onToggleFavorite, togglingId }: Props) {
           </TouchableOpacity>
         </View>
       </View>
+      {onRangeChange && (
+        <View style={styles.rangeRow}>
+          {RANGE_OPTIONS.map((option) => {
+            const isActive = option.value === range;
+            return (
+              <TouchableOpacity
+                key={option.value}
+                style={[styles.rangeChip, isActive && styles.rangeChipActive]}
+                onPress={() => onRangeChange(option.value)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+              >
+                <Text style={[styles.rangeLabel, isActive && styles.rangeLabelActive]}>{t(option.labelKey)}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
       <View style={styles.list}>
         {logs.map((log) => (
           <TouchableOpacity key={log.id} style={styles.item} onPress={() => router.push(`/log/${log.id}`)}>
@@ -374,6 +399,31 @@ const styles = StyleSheet.create({
     ...textStyles.body,
     fontWeight: '600',
     color: colors.textPrimary,
+  },
+  rangeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  rangeChip: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.surface,
+  },
+  rangeChipActive: {
+    borderColor: colors.accent,
+    backgroundColor: `${colors.accent}11`,
+  },
+  rangeLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  rangeLabelActive: {
+    color: colors.accent,
+    fontWeight: '600',
   },
   list: {
     gap: spacing.sm,
