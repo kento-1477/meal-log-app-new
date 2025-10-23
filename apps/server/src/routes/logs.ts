@@ -351,20 +351,22 @@ logsRouter.get('/logs/export', requireAuth, async (req, res, next) => {
   }
 });
 
-function buildAiRawPayload(localization: LocalizationResolution) {
+type SerializedAiRaw = Partial<GeminiNutritionResponse> & {
+  locale: Locale;
+  translations: Record<Locale, GeminiNutritionResponse>;
+};
+
+function buildAiRawPayload(localization: LocalizationResolution): SerializedAiRaw | undefined {
   const translation = localization.translation;
   if (!translation) {
-    return null;
+    return undefined;
   }
 
   return {
     ...cloneResponse(translation),
     locale: localization.resolvedLocale,
     translations: cloneTranslations(localization.translations),
-  } satisfies Partial<GeminiNutritionResponse> & {
-    locale: Locale;
-    translations: Record<Locale, GeminiNutritionResponse>;
-  };
+  } satisfies SerializedAiRaw;
 }
 
 function cloneResponse(payload: GeminiNutritionResponse): GeminiNutritionResponse {

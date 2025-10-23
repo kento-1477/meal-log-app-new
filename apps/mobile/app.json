@@ -42,6 +42,14 @@
         {
           "faceIDPermission": "Allow Meal Log to use Face ID to unlock your account"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "食事の写真を添付するためにフォトライブラリへアクセスします。",
+          "savePhotosPermission": "食事の写真を保存するためにフォトライブラリへアクセスします。",
+          "cameraPermission": "料理を撮影して記録に追加するためにカメラを利用します。"
+        }
       ]
     ],
     "extra": {

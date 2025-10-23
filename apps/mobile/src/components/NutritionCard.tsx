@@ -19,18 +19,20 @@ interface NutritionCardProps {
 
 export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, sharing, onAddFavorite, addingFavorite, onEdit }) => {
   const { t } = useTranslation();
-  const warnings = (payload.warnings ?? []).map((warning) =>
+  const baseWarnings = (payload.warnings ?? []).map((warning) =>
     warning.startsWith('zeroFloored') ? t('card.warnings.zeroFloored') : warning,
   );
 
   if (payload.fallbackApplied && payload.requestedLocale && payload.locale && payload.requestedLocale !== payload.locale) {
-    warnings.push(
+    baseWarnings.push(
       t('card.languageFallback', {
         requested: describeLocale(payload.requestedLocale),
         resolved: describeLocale(payload.locale),
       }),
     );
   }
+
+  const warnings = Array.from(new Set(baseWarnings));
 
   const canAddFavorite = Boolean(onAddFavorite && payload.favoriteCandidate);
 
@@ -106,8 +108,8 @@ export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, 
       </View>
       {payload.items?.length ? (
         <View style={styles.itemsBlock}>
-          {payload.items.slice(0, 3).map((item) => (
-            <View key={item.name} style={styles.itemRow}>
+          {payload.items.slice(0, 3).map((item, index) => (
+            <View key={`${item.name ?? 'item'}-${index}`} style={styles.itemRow}>
               <Text style={styles.itemName}>{item.name}</Text>
               <Text style={styles.itemAmount}>{Math.round(item.grams)} g</Text>
             </View>
@@ -116,8 +118,8 @@ export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, 
       ) : null}
       {warnings.length ? (
         <View style={styles.warningBlock}>
-          {warnings.map((warning) => (
-            <Text key={warning} style={styles.warningText}>
+          {warnings.map((warning, index) => (
+            <Text key={`${warning}-${index}`} style={styles.warningText}>
               ⚠️ {warning}
             </Text>
           ))}

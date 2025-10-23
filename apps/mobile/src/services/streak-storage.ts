@@ -15,7 +15,8 @@ export async function cacheStreak(streak: StreakPayload) {
   };
   await AsyncStorage.setItem(STREAK_CACHE_KEY, JSON.stringify(payload));
   try {
-    await setWidgetData('widget:streak', payload);
+    const serialized = JSON.stringify({ widget: 'widget:streak', data: payload });
+    await setWidgetData(serialized);
   } catch (error) {
     console.warn('Failed to set widget data', error);
   }

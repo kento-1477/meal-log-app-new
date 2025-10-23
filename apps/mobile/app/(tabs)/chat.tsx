@@ -43,7 +43,6 @@ import { describeLocale } from '@/utils/locale';
 import type { NutritionCardPayload } from '@/types/chat';
 import type { AiUsageSummary, FavoriteMeal, FavoriteMealDraft } from '@meal-log/shared';
 import { useTranslation } from '@/i18n';
-import { DevResetStreak } from '@/components/DevResetStreak';
 
 interface TimelineItemMessage {
   type: 'message';
@@ -107,6 +106,8 @@ export default function ChatScreen() {
   const hasUsage = Boolean(usage);
   const usagePlan = usage?.plan;
   const usageRemaining = usage?.remaining;
+
+  const [mediaPermission, requestMediaPermission] = ImagePicker.useMediaLibraryPermissions();
 
   const favoritesQuery = useQuery({
     queryKey: ['favorites'],
@@ -348,15 +349,46 @@ export default function ChatScreen() {
     }
   };
 
-  const handleAttach = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setError('写真ライブラリへのアクセスを許可してください。');
-      return;
+  const ensureMediaLibraryPermission = async () => {
+    const current = mediaPermission ?? (await ImagePicker.getMediaLibraryPermissionsAsync());
+    if (current?.granted) {
+      return current;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images });
-    if (!result.canceled && result.assets?.length) {
-      setComposingImage(result.assets[0].uri);
+    if (current?.canAskAgain) {
+      const updated = await requestMediaPermission();
+      return updated ?? current;
+    }
+    return current;
+  };
+
+  const handleAttach = async () => {
+    try {
+      const permission = await ensureMediaLibraryPermission();
+      if (!permission?.granted) {
+        setError('写真ライブラリへのアクセスを許可してください。設定アプリから変更できます。');
+        if (permission && !permission.canAskAgain) {
+          Alert.alert('ライブラリにアクセスできません', '設定アプリで Meal Log の写真アクセスを許可してください。');
+        }
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.8,
+        exif: false,
+        selectionLimit: 1,
+      });
+
+      if (!result.canceled) {
+        const uri = result.assets?.[0]?.uri ?? null;
+        if (uri) {
+          setComposingImage(uri);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to open media library', error);
+      setError('写真の読み込みに失敗しました。もう一度お試しください。');
     }
   };
 
@@ -407,7 +439,6 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <Text style={[styles.headerTitle, { paddingHorizontal: 16, marginBottom: 16 }]}>{t('chat.header')}</Text>
-      <DevResetStreak />
       {usage ? (
         <View style={styles.usageBanner}>
           <View style={styles.usageBannerText}>

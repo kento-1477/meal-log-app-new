@@ -2,7 +2,6 @@ import '../test-env.ts';
 
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
-import argon2 from 'argon2';
 import { prisma } from '../../src/db/prisma.ts';
 import { createApp } from '../../src/app.ts';
 
@@ -42,14 +41,18 @@ before(async () => {
   await prisma.$executeRawUnsafe('TRUNCATE "IngestRequest" CASCADE');
   await prisma.$executeRawUnsafe('TRUNCATE "User" CASCADE');
 
-  const passwordHash = await argon2.hash('password123');
-  await prisma.user.create({
-    data: {
+  const registerResponse = await fetch(`${baseUrl}/api/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
       email: 'favorites@example.com',
+      password: 'password123',
       username: 'Favorite Tester',
-      passwordHash,
-    },
+    }),
   });
+
+  assert.equal(registerResponse.status, 201);
+  sessionCookie = '';
 });
 
 after(async () => {
