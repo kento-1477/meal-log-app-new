@@ -30,6 +30,14 @@ import {
   UpdateUserProfileRequestSchema,
 } from '@meal-log/shared';
 
+const responseCache = new Map<string, unknown>();
+
+function buildCacheKey(url: string, headers: Headers) {
+  const locale = headers.get('Accept-Language') ?? '';
+  const timezone = headers.get('X-Timezone') ?? '';
+  return `${url}::${locale}::${timezone}`;
+}
+
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
   const headers = new Headers(options.headers ?? {});
@@ -52,6 +60,16 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     headers,
     credentials: 'include',
   });
+
+  const method = (options.method ?? 'GET').toUpperCase();
+  const cacheKey = buildCacheKey(url, headers);
+
+  if (response.status === 304 && method === 'GET') {
+    if (responseCache.has(cacheKey)) {
+      return responseCache.get(cacheKey) as T;
+    }
+    return null as T;
+  }
 
   if (!response.ok) {
     let message = response.statusText;
@@ -76,11 +94,22 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   }
 
   if (response.status === 204) {
+    if (method !== 'GET') {
+      responseCache.delete(cacheKey);
+    }
     return null as T;
   }
 
   const text = await response.text();
-  return text ? (JSON.parse(text) as T) : (null as T);
+  const parsed = text ? (JSON.parse(text) as T) : (null as T);
+
+  if (method === 'GET') {
+    responseCache.set(cacheKey, parsed);
+  } else {
+    responseCache.delete(cacheKey);
+  }
+
+  return parsed;
 }
 
 function appendLocale(path: string, locale: string): string {
