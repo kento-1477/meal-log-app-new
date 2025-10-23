@@ -450,3 +450,21 @@ export async function generateInviteLink(): Promise<ReferralInviteLinkResponse> 
     body: JSON.stringify({ timezone: getDeviceTimezone() }),
   });
 }
+
+// Premium Status API
+export interface PremiumStatusResponse {
+  isPremium: boolean;
+  source: 'REFERRAL_FRIEND' | 'REFERRAL_REFERRER' | 'PURCHASE' | 'ADMIN_GRANT' | null;
+  daysRemaining: number;
+  expiresAt: string | null;
+  grants: Array<{
+    source: 'REFERRAL_FRIEND' | 'REFERRAL_REFERRER' | 'PURCHASE' | 'ADMIN_GRANT';
+    days: number;
+    startDate: string;
+    endDate: string;
+  }>;
+}
+
+export async function getPremiumStatus(): Promise<PremiumStatusResponse> {
+  return apiFetch('/api/user/premium-status', { method: 'GET' });
+}
