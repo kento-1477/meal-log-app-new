@@ -15,7 +15,6 @@ import { ReferralStatus } from '@prisma/client';
 import { DateTime } from 'luxon';
 import { StatusCodes } from 'http-status-codes';
 import crypto from 'crypto';
-import { grantPremiumDays } from './premium-service.js';
 
 const INVITE_CODE_LENGTH = 6;
 const FRIEND_PREMIUM_DAYS = 14;
