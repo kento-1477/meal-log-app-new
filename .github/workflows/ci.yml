@@ -30,6 +30,7 @@ jobs:
       SESSION_SECRET: test-session-secret
       PORT: 4000
       NODE_ENV: test
+      USER_TIER_OVERRIDE: PREMIUM
       # CI does not provide GEMINI_API_KEY; server falls back to mock responses.
     steps:
       - name: Checkout
