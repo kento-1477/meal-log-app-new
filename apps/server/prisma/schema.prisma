@@ -12,7 +12,6 @@ model User {
   email          String           @unique
   username       String?
   passwordHash   String
-  plan           UserPlan         @default(FREE)
   aiCredits      Int              @default(0)
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
@@ -24,6 +23,10 @@ model User {
   usageCounters  AiUsageCounter[]
   iapReceipts    IapReceipt[]
   profile        UserProfile?
+  premiumGrants  PremiumGrant[]
+  referralsMade  Referral[]       @relation("ReferrerRelation")
+  referredBy     Referral?        @relation("ReferredRelation")
+  inviteLinks    ReferralInviteLink[]
 }
 
 model MealLog {
@@ -169,6 +172,7 @@ model IapReceipt {
   purchasedAt   DateTime
   verifiedAt    DateTime     @default(now())
   createdAt     DateTime     @default(now())
+  premiumGrants PremiumGrant[]
 
   @@index([userId])
 }
@@ -188,6 +192,60 @@ model UserProfile {
   updatedAt       DateTime @updatedAt
 }
 
+model PremiumGrant {
+  id          Int             @id @default(autoincrement())
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      Int
+  source      PremiumSource
+  days        Int
+  startDate   DateTime
+  endDate     DateTime
+  referral    Referral?       @relation(fields: [referralId], references: [id])
+  referralId  Int?
+  iapReceipt  IapReceipt?     @relation(fields: [iapReceiptId], references: [id])
+  iapReceiptId Int?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([userId, endDate])
+  @@index([source])
+}
+
+model Referral {
+  id                Int       @id @default(autoincrement())
+  referrerUser      User      @relation("ReferrerRelation", fields: [referrerUserId], references: [id], onDelete: Cascade)
+  referrerUserId    Int
+  referredUser      User      @relation("ReferredRelation", fields: [referredUserId], references: [id], onDelete: Cascade)
+  referredUserId    Int       @unique
+  status            ReferralStatus  @default(PENDING)
+  friendPremiumGranted Boolean @default(false)
+  referrerPremiumGranted Boolean @default(false)
+  consecutiveDaysAchieved Int   @default(0)
+  deviceFingerprint String?
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  premiumGrants     PremiumGrant[]
+
+  @@index([referrerUserId])
+  @@index([status])
+  @@index([deviceFingerprint])
+}
+
+model ReferralInviteLink {
+  id          Int       @id @default(autoincrement())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      Int
+  code        String    @unique
+  clickCount  Int       @default(0)
+  signupCount Int       @default(0)
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime?
+
+  @@index([userId])
+  @@index([code])
+}
+
 enum MealPeriod {
   BREAKFAST
   LUNCH
@@ -195,12 +253,21 @@ enum MealPeriod {
   SNACK
 }
 
-enum UserPlan {
-  FREE
-  STANDARD
-}
-
 enum IapPlatform {
   APP_STORE
   GOOGLE_PLAY
+}
+
+enum PremiumSource {
+  REFERRAL_FRIEND
+  REFERRAL_REFERRER
+  PURCHASE
+  ADMIN_GRANT
+}
+
+enum ReferralStatus {
+  PENDING
+  COMPLETED
+  EXPIRED
+  FRAUD
 }
