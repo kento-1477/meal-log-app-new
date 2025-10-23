@@ -1,4 +1,4 @@
-package com.meallog
+package com.meallog.app
 
 import android.os.Build
 import android.os.Bundle
