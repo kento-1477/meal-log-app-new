@@ -218,6 +218,7 @@ export default function ChatScreen() {
       imageUri?: string | null;
       onSuccess?: (response: MealLogResponse) => void;
       request?: () => Promise<MealLogResponse>;
+      allowWithoutUsage?: boolean;
     } = {},
   ) => {
     const trimmedMessage = rawMessage.trim();
@@ -225,7 +226,7 @@ export default function ChatScreen() {
     if (!trimmedMessage && !hasImage) {
       return null;
     }
-    if (usage && !canSend) {
+    if (usage && !canSend && !options.allowWithoutUsage) {
       setError('本日の無料利用回数が上限に達しました。');
       return null;
     }
@@ -250,28 +251,8 @@ export default function ChatScreen() {
       const response = await requestFn();
       updateMessageStatus(userMessage.id, 'delivered');
 
-      const summaryText = buildAssistantSummary(response);
       updateMessageStatus(assistantPlaceholder.id, 'delivered');
-      const meta = (response.meta ?? {}) as { mealPeriod?: string | null; timezone?: string | null };
-      const rawMealPeriod = meta.mealPeriod ?? response.meal_period ?? null;
-      const mealPeriod = typeof rawMealPeriod === 'string' ? rawMealPeriod.toLowerCase() : null;
-      const timezone = meta.timezone ?? null;
-      attachCardToMessage(assistantPlaceholder.id, {
-        logId: response.logId,
-        dish: response.dish,
-        confidence: response.confidence,
-        totals: response.totals,
-        items: response.items,
-        warnings: response.breakdown.warnings,
-        locale: response.locale,
-        requestedLocale: response.requestLocale,
-        fallbackApplied: response.fallbackApplied,
-        translations: response.translations,
-        favoriteCandidate: response.favoriteCandidate,
-        mealPeriod,
-        timezone,
-      });
-      setMessageText(assistantPlaceholder.id, summaryText);
+      renderMealLogResult(response, assistantPlaceholder.id);
       if (response.usage) {
         setUsage(response.usage);
       }
@@ -300,6 +281,30 @@ export default function ChatScreen() {
       setSending(false);
       scrollToEnd();
     }
+  };
+
+  const renderMealLogResult = (response: MealLogResponse, placeholderId: string) => {
+    const meta = (response.meta ?? {}) as { mealPeriod?: string | null; timezone?: string | null };
+    const rawMealPeriod = meta.mealPeriod ?? response.meal_period ?? null;
+    const mealPeriod = typeof rawMealPeriod === 'string' ? rawMealPeriod.toLowerCase() : null;
+    const timezone = meta.timezone ?? null;
+
+    attachCardToMessage(placeholderId, {
+      logId: response.logId,
+      dish: response.dish,
+      confidence: response.confidence,
+      totals: response.totals,
+      items: response.items,
+      warnings: response.breakdown.warnings,
+      locale: response.locale,
+      requestedLocale: response.requestLocale,
+      fallbackApplied: response.fallbackApplied,
+      translations: response.translations,
+      favoriteCandidate: response.favoriteCandidate,
+      mealPeriod,
+      timezone,
+    });
+    setMessageText(placeholderId, buildAssistantSummary(response));
   };
 
   const handleAddFavoriteFromCard = async (cardId: string, draft: FavoriteMealDraft) => {
@@ -332,11 +337,37 @@ export default function ChatScreen() {
       return;
     }
     setFavoritesVisible(false);
+    setSending(true);
+    setError(null);
+
     const message = buildMessageFromFavorite(favorite);
-    await submitMeal(message, {
-      onSuccess: resetComposer,
-      request: () => createLogFromFavorite(favorite.id),
-    });
+    const userMessage = addUserMessage(message);
+    const assistantPlaceholder = addAssistantMessage('お気に入りを記録しています…', { status: 'sending' });
+    scrollToEnd();
+
+    try {
+      const response = await createLogFromFavorite(favorite.id);
+      updateMessageStatus(userMessage.id, 'delivered');
+      updateMessageStatus(assistantPlaceholder.id, 'delivered');
+      renderMealLogResult(response, assistantPlaceholder.id);
+      if (response.usage) {
+        setUsage(response.usage);
+      }
+      queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
+      queryClient.invalidateQueries({ queryKey: ['streak'] });
+      queryClient.invalidateQueries({ queryKey: ['favorites'] });
+      resetComposer();
+    } catch (error) {
+      updateMessageStatus(userMessage.id, 'error');
+      updateMessageStatus(assistantPlaceholder.id, 'error');
+      const messageText = error instanceof Error ? error.message : 'お気に入りからの記録に失敗しました';
+      setError(messageText);
+      Alert.alert('記録に失敗しました', messageText);
+    } finally {
+      setSending(false);
+      scrollToEnd();
+    }
   };
 
   const handleSend = async () => {
