@@ -32,7 +32,6 @@ logRouter.post('/log', requireAuth, upload.single('image'), async (req, res, nex
     });
 
     if (result.usage) {
-      req.session.userPlan = result.usage.plan;
       req.session.aiCredits = result.usage.credits;
     }
 

@@ -59,6 +59,8 @@ jobs:
         run: npm test --if-present
       - name: Run integration tests
         run: npm run test:integration
+        env:
+          USER_TIER_OVERRIDE: PREMIUM
 
       - name: Run golem regression tests
         run: npm run test:golem

@@ -6,6 +6,7 @@ import { prisma } from '../db/prisma.js';
 import { env } from '../env.js';
 import { evaluateAiUsage, summarizeUsageStatus } from './ai-usage-service.js';
 import { logger } from '../logger.js';
+import { DateTime } from 'luxon';
 
 interface ProcessPurchaseParams extends IapPurchaseRequest {
   userId: number;
@@ -66,7 +67,7 @@ export async function processIapPurchase(params: ProcessPurchaseParams): Promise
   }
 
   await prisma.$transaction(async (tx) => {
-    await tx.iapReceipt.create({
+    const receipt = await tx.iapReceipt.create({
       data: {
         userId: params.userId,
         platform,
@@ -84,6 +85,19 @@ export async function processIapPurchase(params: ProcessPurchaseParams): Promise
     await tx.user.update({
       where: { id: params.userId },
       data: { aiCredits: { increment: creditsGranted } },
+    });
+
+    const now = new Date();
+    const endDate = DateTime.fromJSDate(now).plus({ days: 365 }).toJSDate();
+    await tx.premiumGrant.create({
+      data: {
+        userId: params.userId,
+        source: 'PURCHASE',
+        days: 365,
+        startDate: now,
+        endDate,
+        iapReceiptId: receipt.id,
+      },
     });
   });
 

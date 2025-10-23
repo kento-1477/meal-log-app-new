@@ -2,8 +2,39 @@ import { Router } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { prisma } from '../db/prisma.js';
 import { requireAuth } from '../middleware/require-auth.js';
+import { getPremiumStatus, getAllPremiumGrants } from '../services/premium-service.js';
 
 export const accountRouter = Router();
+
+/**
+ * GET /api/user/premium-status
+ * プレミアムステータスを取得
+ */
+accountRouter.get('/premium-status', requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.session.userId!;
+    
+    const status = await getPremiumStatus(userId);
+    const grants = await getAllPremiumGrants(userId);
+
+    res.status(StatusCodes.OK).json({
+      ok: true,
+      isPremium: status.isPremium,
+      source: status.source,
+      daysRemaining: status.daysRemaining,
+      expiresAt: status.expiresAt?.toISOString() ?? null,
+      grants: grants.map((grant) => ({
+        source: grant.source,
+        days: grant.days,
+        startDate: grant.startDate.toISOString(),
+        endDate: grant.endDate.toISOString(),
+        createdAt: grant.createdAt.toISOString(),
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 accountRouter.delete('/account', requireAuth, async (req, res, next) => {
   try {

@@ -16,6 +16,7 @@ import { profileRouter } from './routes/profile.js';
 import { accountRouter } from './routes/account.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { iapRouter } from './routes/iap.js';
+import referralRouter from './routes/referral.js';
 
 export function createApp() {
   const app = express();
@@ -66,8 +67,9 @@ export function createApp() {
   app.use('/api', streakRouter);
   app.use('/api', favoritesRouter);
   app.use('/api', profileRouter);
-  app.use('/api', accountRouter);
+  app.use('/api/user', accountRouter);
   app.use('/api', iapRouter);
+  app.use('/api/referral', referralRouter);
   app.use('/debug', debugRouter);
 
   app.use(errorHandler);

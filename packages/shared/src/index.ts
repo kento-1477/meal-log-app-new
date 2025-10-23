@@ -121,9 +121,6 @@ export type MealLogAiRaw = z.infer<typeof MealLogAiRawSchema>;
 export const MealPeriodSchema = z.enum(['breakfast', 'lunch', 'dinner', 'snack']);
 export type MealPeriod = z.infer<typeof MealPeriodSchema>;
 
-export const UserPlanSchema = z.enum(['FREE', 'STANDARD']);
-export type UserPlan = z.infer<typeof UserPlanSchema>;
-
 export const IapPlatformSchema = z.enum(['APP_STORE', 'GOOGLE_PLAY']);
 export type IapPlatform = z.infer<typeof IapPlatformSchema>;
 
@@ -141,8 +138,23 @@ export function resolveCreditsForProduct(productId: string): number | null {
   return entry ? entry.credits : null;
 }
 
+export const UserTierSchema = z.enum(['FREE', 'PREMIUM']);
+export type UserTier = z.infer<typeof UserTierSchema>;
+
+export const PremiumSourceSchema = z.enum(['REFERRAL_FRIEND', 'REFERRAL_REFERRER', 'PURCHASE', 'ADMIN_GRANT']);
+export type PremiumSource = z.infer<typeof PremiumSourceSchema>;
+
+export const PremiumStatusSchema = z.object({
+  isPremium: z.boolean(),
+  source: PremiumSourceSchema.nullable(),
+  daysRemaining: z.number().int().nonnegative(),
+  expiresAt: z.string().nullable(),
+});
+
+export type PremiumStatus = z.infer<typeof PremiumStatusSchema>;
+
 export const AiUsageSummarySchema = z.object({
-  plan: UserPlanSchema,
+  plan: UserTierSchema,
   limit: z.number().nonnegative(),
   used: z.number().nonnegative(),
   remaining: z.number().nonnegative(),

@@ -30,16 +30,20 @@ test('processIapPurchase grants credits in test mode', async () => {
       iapReceipt: {
         create: async ({ data }) => {
           createdReceipt = data;
-          return data;
+          return { ...data, id: 1 };
         },
       },
       user: {
         update: async () => ({ aiCredits: 150 }),
       },
+      premiumGrant: {
+        create: async () => ({}),
+      },
     });
 
-  prismaAny.user.findUnique = async () => ({ plan: 'FREE', aiCredits: 150 });
+  prismaAny.user.findUnique = async () => ({ aiCredits: 150 });
   prismaAny.aiUsageCounter.findUnique = async () => ({ count: 0 });
+  prismaAny.premiumGrant.findFirst = async () => null;
 
   const receiptPayload = {
     transactionId: 'txn-123',

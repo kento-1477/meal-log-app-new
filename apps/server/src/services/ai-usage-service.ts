@@ -1,23 +1,24 @@
 import { DateTime } from 'luxon';
 import { StatusCodes } from 'http-status-codes';
 import { prisma } from '../db/prisma.js';
-import { UserPlan } from '@prisma/client';
+import type { UserTier } from '@meal-log/shared';
+import { isPremium } from './premium-service.js';
 
-const DAILY_LIMITS: Record<UserPlan, number> = {
+const DAILY_LIMITS: Record<UserTier, number> = {
   FREE: 3,
-  STANDARD: 20,
+  PREMIUM: 20,
 };
 
 const USAGE_TIMEZONE = 'Asia/Tokyo';
 
-function resolvePlanOverride(): UserPlan | null {
-  const value = process.env.USER_PLAN_OVERRIDE;
-  return value === 'FREE' || value === 'STANDARD' ? value : null;
+function resolveTierOverride(): UserTier | null {
+  const value = process.env.USER_TIER_OVERRIDE;
+  return value === 'FREE' || value === 'PREMIUM' ? value : null;
 }
 
 export interface AiUsageStatus {
   allowed: boolean;
-  plan: UserPlan;
+  plan: UserTier;
   limit: number;
   used: number;
   remaining: number;
@@ -27,7 +28,7 @@ export interface AiUsageStatus {
 }
 
 export interface AiUsageSummary {
-  plan: UserPlan;
+  plan: UserTier;
   limit: number;
   used: number;
   remaining: number;
@@ -43,7 +44,7 @@ function startOfUsageDay(now: Date = new Date()) {
 export async function evaluateAiUsage(userId: number): Promise<AiUsageStatus> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { plan: true, aiCredits: true },
+    select: { aiCredits: true },
   });
 
   if (!user) {
@@ -54,8 +55,10 @@ export async function evaluateAiUsage(userId: number): Promise<AiUsageStatus> {
 
   const usageDay = startOfUsageDay();
   const usageDate = usageDay.toJSDate();
-  const plan = resolvePlanOverride() ?? user.plan;
-  const limit = DAILY_LIMITS[plan];
+  
+  const premiumUser = await isPremium(userId);
+  const tier: UserTier = resolveTierOverride() ?? (premiumUser ? 'PREMIUM' : 'FREE');
+  const limit = DAILY_LIMITS[tier];
   const credits = user.aiCredits ?? 0;
 
   const counter = await prisma.aiUsageCounter.findUnique({
@@ -74,7 +77,7 @@ export async function evaluateAiUsage(userId: number): Promise<AiUsageStatus> {
 
   return {
     allowed,
-    plan,
+    plan: tier,
     limit,
     used,
     remaining,
@@ -91,7 +94,7 @@ export async function recordAiUsage(params: { userId: number; usageDate: Date; c
   const summary = await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUnique({
       where: { id: params.userId },
-      select: { plan: true, aiCredits: true },
+      select: { aiCredits: true },
     });
     if (!user) {
       const error = new Error('AI 利用記録の対象ユーザーが見つかりませんでした');
@@ -129,13 +132,14 @@ export async function recordAiUsage(params: { userId: number; usageDate: Date; c
       consumedCredit = true;
     }
 
-    const plan = resolvePlanOverride() ?? user.plan;
-    const limit = DAILY_LIMITS[plan];
+    const premiumUser = await isPremium(params.userId);
+    const tier: UserTier = resolveTierOverride() ?? (premiumUser ? 'PREMIUM' : 'FREE');
+    const limit = DAILY_LIMITS[tier];
     const used = updatedCounter.count;
     const remaining = Math.max(limit - used, 0);
 
     return {
-      plan,
+      plan: tier,
       limit,
       used,
       remaining,
