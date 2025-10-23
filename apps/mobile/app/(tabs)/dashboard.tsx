@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { DashboardPeriod, MealLogSummary } from '@meal-log/shared';
+import type { DashboardPeriod, MealLogSummary, MealLogRange } from '@meal-log/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDashboardSummary, type MacroComparison } from '@/features/dashboard/useDashboardSummary';
 import { PeriodSelector } from '@/features/dashboard/components/PeriodSelector';
@@ -26,7 +26,7 @@ import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import { useSessionStore } from '@/store/session';
-import { logout, getRecentLogs, getStreak, createFavoriteMeal, deleteFavoriteMeal } from '@/services/api';
+import { logout, getMealLogs, getStreak, createFavoriteMeal, deleteFavoriteMeal } from '@/services/api';
 import { cacheStreak } from '@/services/streak-storage';
 import { useTranslation } from '@/i18n';
 import { buildFavoriteDraftFromSummary } from '@/utils/favorites';
@@ -48,6 +48,7 @@ const MACRO_COLOR_TOKEN: Record<MacroComparison['key'], RingColorToken> = {
 export default function DashboardScreen() {
   const [period, setPeriod] = useState<DashboardPeriod>(DEFAULT_PERIOD);
   const [activeTab, setActiveTab] = useState<TabKey>('calories');
+  const [logsRange, setLogsRange] = useState<MealLogRange>('today');
   const status = useSessionStore((state) => state.status);
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
@@ -62,12 +63,9 @@ export default function DashboardScreen() {
   const showEmpty = data ? !data.calories.hasData : false;
   const emptyMessage = period === 'thisWeek' ? t('dashboard.empty.week') : t('dashboard.empty.generic');
 
-  const recentLogsQuery = useQuery({
-    queryKey: ['recentLogs', locale],
-    queryFn: async () => {
-      const result = await getRecentLogs();
-      return result.items ?? [];
-    },
+  const logsQuery = useQuery({
+    queryKey: ['mealLogs', logsRange, locale],
+    queryFn: () => getMealLogs({ range: logsRange, limit: 100 }),
     enabled: isAuthenticated,
   });
 
@@ -82,37 +80,37 @@ const streakQuery = useQuery({
   staleTime: 1000 * 60 * 15,
 });
 
-const queryClient = useQueryClient();
-const [favoriteToggleId, setFavoriteToggleId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [favoriteToggleId, setFavoriteToggleId] = useState<string | null>(null);
 
-const toggleFavoriteMutation = useMutation({
-  mutationFn: async ({ log, targetState }: { log: MealLogSummary; targetState: boolean }) => {
-    if (targetState) {
-      const draft = buildFavoriteDraftFromSummary(log);
-      await createFavoriteMeal(draft);
-    } else if (log.favorite_meal_id) {
-      await deleteFavoriteMeal(log.favorite_meal_id);
-    }
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ['recentLogs', locale] });
-    queryClient.invalidateQueries({ queryKey: ['dashboardSummary', period, locale] });
-  },
-  onError: (error: unknown) => {
-    const message = error instanceof Error ? error.message : 'お気に入りの更新に失敗しました。';
-    Alert.alert('お気に入りの更新に失敗しました', message);
-  },
-  onSettled: () => {
-    setFavoriteToggleId(null);
-  },
-});
+  const toggleFavoriteMutation = useMutation({
+    mutationFn: async ({ log, targetState }: { log: MealLogSummary; targetState: boolean }) => {
+      if (targetState) {
+        const draft = buildFavoriteDraftFromSummary(log);
+        await createFavoriteMeal(draft);
+      } else if (log.favorite_meal_id) {
+        await deleteFavoriteMeal(log.favorite_meal_id);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mealLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboardSummary', period, locale] });
+    },
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : 'お気に入りの更新に失敗しました。';
+      Alert.alert('お気に入りの更新に失敗しました', message);
+    },
+    onSettled: () => {
+      setFavoriteToggleId(null);
+    },
+  });
 
-const recentLogs = useMemo(() => (recentLogsQuery.data ?? []).slice(0, 5), [recentLogsQuery.data]);
+  const logs = logsQuery.data?.items ?? [];
 
-const handleToggleFavorite = (log: MealLogSummary, targetState: boolean) => {
-  setFavoriteToggleId(log.id);
-  toggleFavoriteMutation.mutate({ log, targetState });
-};
+  const handleToggleFavorite = (log: MealLogSummary, targetState: boolean) => {
+    setFavoriteToggleId(log.id);
+    toggleFavoriteMutation.mutate({ log, targetState });
+  };
 
   const ringData = useMemo(() => {
     if (!data?.comparison) {
@@ -226,11 +224,13 @@ const handleToggleFavorite = (log: MealLogSummary, targetState: boolean) => {
             
 
             <View style={styles.section}>
-              {recentLogsQuery.isLoading ? (
+              {logsQuery.isLoading ? (
                 <ActivityIndicator size="small" color={colors.accent} />
               ) : (
                 <RecentLogsList
-                  logs={recentLogs}
+                  logs={logs}
+                  range={logsRange}
+                  onRangeChange={setLogsRange}
                   onToggleFavorite={handleToggleFavorite}
                   togglingId={favoriteToggleId}
                 />
