@@ -468,3 +468,26 @@ export interface PremiumStatusResponse {
 export async function getPremiumStatus(): Promise<PremiumStatusResponse> {
   return apiFetch('/api/user/premium-status', { method: 'GET' });
 }
+
+// Referral Status API
+export interface ReferralStatusResponse {
+  inviteCode: string;
+  inviteLink: string;
+  stats: {
+    totalReferred: number;
+    completedReferred: number;
+    pendingReferred: number;
+    totalPremiumDaysEarned: number;
+  };
+  recentReferrals: Array<{
+    friendUsername: string;
+    status: 'PENDING' | 'COMPLETED' | 'EXPIRED';
+    consecutiveDays: number;
+    createdAt: string;
+    completedAt?: string;
+  }>;
+}
+
+export async function getReferralStatus(): Promise<ReferralStatusResponse> {
+  return apiFetch('/api/referral/my-status', { method: 'GET' });
+}

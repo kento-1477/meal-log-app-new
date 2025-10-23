@@ -116,7 +116,7 @@ export default function SettingsScreen() {
             <Feather name="chevron-right" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.inviteCard} activeOpacity={0.9} onPress={handleInvite} disabled={isLoadingInvite}>
+          <TouchableOpacity style={styles.inviteCard} activeOpacity={0.9} onPress={() => router.push('/referral-status')}>
             <LinearGradient colors={['#fbe4ff', '#ffecef']} style={styles.inviteGradient}>
               <View style={styles.inviteHeader}>
                 <Feather name="users" size={18} color={colors.textPrimary} />
@@ -127,11 +127,8 @@ export default function SettingsScreen() {
                 <Text style={styles.inviteSubtitle}>{t('referral.invite.rewardText')}</Text>
               </View>
               <View style={styles.inviteButton}>
-                {isLoadingInvite ? (
-                  <ActivityIndicator size="small" color={colors.accent} />
-                ) : (
-                  <Text style={styles.inviteButtonLabel}>{t('settings.invite.cta')}</Text>
-                )}
+                <Text style={styles.inviteButtonLabel}>詳細を見る</Text>
+                <Feather name="chevron-right" size={20} color={colors.accent} />
               </View>
             </LinearGradient>
           </TouchableOpacity>

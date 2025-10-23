@@ -908,12 +908,13 @@ declare module 'express-session' {
    - 達成日時
 
 **実装タスク**:
-- [ ] `apps/mobile/app/referral-status.tsx` 作成
-- [ ] API `/api/referral/my-status` と統合
-- [ ] リスト表示（FlatList）
-- [ ] コピー機能実装（Clipboard API）
-- [ ] 共有機能実装（Share API）
-- [ ] 設定画面からのナビゲーション追加
+- [x] `apps/mobile/app/referral-status.tsx` 作成
+- [x] `apps/mobile/src/hooks/useReferralStatus.ts` 作成
+- [x] API `/api/referral/my-status` と統合（services/api.ts）
+- [x] リスト表示実装
+- [x] コピー機能実装（Clipboard API）
+- [x] 共有機能実装（Share API）
+- [x] 設定画面からのナビゲーション追加
 
 ### 5.4 プレミアムバッジ・残日数表示
 
