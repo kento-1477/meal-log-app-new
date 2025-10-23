@@ -435,3 +435,18 @@ export async function submitIapPurchase(payload: IapPurchaseRequest) {
     body: JSON.stringify(payload),
   });
 }
+
+// Referral API
+export interface ReferralInviteLinkResponse {
+  inviteLink: string;
+  webLink: string;
+  code: string;
+  message: string;
+}
+
+export async function generateInviteLink(): Promise<ReferralInviteLinkResponse> {
+  return apiFetch('/api/referral/invite-link', {
+    method: 'POST',
+    body: JSON.stringify({ timezone: getDeviceTimezone() }),
+  });
+}

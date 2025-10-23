@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View, Share, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTranslation } from '@/i18n';
@@ -10,6 +10,7 @@ import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import { useSessionStore } from '@/store/session';
 import { SUPPORT_EMAIL } from '@/config/legal';
+import { generateInviteLink } from '@/services/api';
 import appManifest from '../../app.json';
 
 export default function SettingsScreen() {
@@ -17,9 +18,30 @@ export default function SettingsScreen() {
   const { t } = useTranslation();
   const user = useSessionStore((state) => state.user);
   const versionLabel = appManifest?.expo?.version ?? '1.0.0';
+  const [isLoadingInvite, setIsLoadingInvite] = useState(false);
 
-  const handleInvite = () => {
-    Alert.alert(t('settings.invite.toast'));
+  const handleInvite = async () => {
+    if (!user) {
+      Alert.alert(t('dashboard.requiresLogin'), t('dashboard.loginHint'));
+      return;
+    }
+
+    try {
+      setIsLoadingInvite(true);
+      const response = await generateInviteLink();
+
+      const shareMessage = t('referral.share.message', { link: response.inviteLink });
+
+      await Share.share({
+        title: t('referral.share.title'),
+        message: shareMessage,
+      });
+    } catch (error) {
+      console.error('Failed to generate or share invite link:', error);
+      Alert.alert(t('referral.error.loadFailed'));
+    } finally {
+      setIsLoadingInvite(false);
+    }
   };
 
   const menuItems = useMemo(
@@ -80,7 +102,7 @@ export default function SettingsScreen() {
             <Feather name="chevron-right" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.inviteCard} activeOpacity={0.9} onPress={handleInvite}>
+          <TouchableOpacity style={styles.inviteCard} activeOpacity={0.9} onPress={handleInvite} disabled={isLoadingInvite}>
             <LinearGradient colors={['#fbe4ff', '#ffecef']} style={styles.inviteGradient}>
               <View style={styles.inviteHeader}>
                 <Feather name="users" size={18} color={colors.textPrimary} />
@@ -88,10 +110,14 @@ export default function SettingsScreen() {
               </View>
               <View style={styles.inviteBody}>
                 <Text style={styles.inviteTitle}>{t('settings.invite.title')}</Text>
-                <Text style={styles.inviteSubtitle}>{t('settings.invite.subtitle')}</Text>
+                <Text style={styles.inviteSubtitle}>{t('referral.invite.rewardText')}</Text>
               </View>
               <View style={styles.inviteButton}>
-                <Text style={styles.inviteButtonLabel}>{t('settings.invite.cta')}</Text>
+                {isLoadingInvite ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <Text style={styles.inviteButtonLabel}>{t('settings.invite.cta')}</Text>
+                )}
               </View>
             </LinearGradient>
           </TouchableOpacity>
