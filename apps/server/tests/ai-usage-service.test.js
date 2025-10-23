@@ -57,16 +57,19 @@ test('recordAiUsage increments counters and decrements credits when needed', asy
   prismaAny.$transaction = async (fn) =>
     fn({
       user: {
-        findUnique: async () => ({ plan: 'STANDARD', aiCredits: 2 }),
+        findUnique: async () => ({ aiCredits: 2 }),
         update: async () => ({ aiCredits: 1 }),
       },
       aiUsageCounter: {
         upsert: async () => ({ count: 21 }),
       },
+      premiumGrant: {
+        findFirst: async () => ({ userId: 99, source: 'PURCHASE', endDate: new Date('2026-01-01') }),
+      },
     });
 
   const summary = await recordAiUsage({ userId: 99, usageDate, consumeCredit: true });
-  assert.equal(summary.plan, 'STANDARD');
+  assert.equal(summary.plan, 'PREMIUM');
   assert.equal(summary.limit, 20);
   assert.equal(summary.used, 21);
   assert.equal(summary.remaining, 0);
