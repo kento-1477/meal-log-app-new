@@ -4,13 +4,12 @@
 // 関連: services/api.ts, hooks/useReferralStatus.ts
 
 import { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, FlatList } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, FlatList, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
-import * as Clipboard from 'expo-clipboard';
-import { Share } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { useTranslation } from '@/i18n';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
@@ -23,12 +22,12 @@ export default function ReferralStatusScreen() {
   const { status, isLoading, error, refresh } = useReferralStatus();
   const [isCopying, setIsCopying] = useState(false);
 
-  const handleCopyCode = async () => {
+  const handleCopyCode = () => {
     if (!status?.inviteCode) return;
 
     try {
       setIsCopying(true);
-      await Clipboard.setStringAsync(status.inviteCode);
+      Clipboard.setString(status.inviteCode);
       Alert.alert(t('referral.status.copied'));
     } catch (err) {
       console.error('Failed to copy code:', err);
