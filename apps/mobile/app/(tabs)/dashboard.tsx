@@ -9,18 +9,18 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { DashboardPeriod, MealLogSummary, MealLogRange } from '@meal-log/shared';
+import type { DashboardPeriod, MealLogSummary, MealLogRange, DashboardSummary, DashboardTargets } from '@meal-log/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDashboardSummary, type MacroComparison } from '@/features/dashboard/useDashboardSummary';
 import { PeriodSelector } from '@/features/dashboard/components/PeriodSelector';
-import { TabBar, type TabKey } from '@/features/dashboard/components/TabBar';
-import { SummaryHeader } from '@/features/dashboard/components/SummaryHeader';
 import { CalorieLineChart } from '@/features/dashboard/components/CalorieLineChart';
 import { MealPeriodBreakdown } from '@/features/dashboard/components/MealPeriodBreakdown';
 
 import { EmptyStateCard } from '@/features/dashboard/components/EmptyStateCard';
 import { PeriodComparisonCard } from '@/features/dashboard/components/PeriodComparisonCard';
-import { RemainingRings, type MacroRingProps, type RingColorToken } from '@/features/dashboard/components/RemainingRings';
+import { type MacroRingProps, type RingColorToken } from '@/features/dashboard/components/RemainingRings';
+import { buildRingState } from '@/features/dashboard/components/ringMath';
+import Svg, { Circle } from 'react-native-svg';
 import { RecentLogsList } from '@/features/dashboard/components/RecentLogsList';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
@@ -30,6 +30,7 @@ import { logout, getMealLogs, getStreak, createFavoriteMeal, deleteFavoriteMeal 
 import { cacheStreak } from '@/services/streak-storage';
 import { useTranslation } from '@/i18n';
 import { buildFavoriteDraftFromSummary } from '@/utils/favorites';
+import { DateTime } from 'luxon';
 
 const DEFAULT_PERIOD: DashboardPeriod = 'today';
 
@@ -45,9 +46,10 @@ const MACRO_COLOR_TOKEN: Record<MacroComparison['key'], RingColorToken> = {
   fat_g: 'ringFat',
 };
 
+type Translate = (key: string, params?: Record<string, string | number>) => string;
+
 export default function DashboardScreen() {
   const [period, setPeriod] = useState<DashboardPeriod>(DEFAULT_PERIOD);
-  const [activeTab, setActiveTab] = useState<TabKey>('calories');
   const [logsRange, setLogsRange] = useState<MealLogRange>('today');
   const status = useSessionStore((state) => state.status);
   const setUser = useSessionStore((state) => state.setUser);
@@ -199,29 +201,35 @@ const streakQuery = useQuery({
               <Text style={styles.cacheBanner}>{t('dashboard.cacheNotice')}</Text>
             )}
 
-            <SummaryHeader remaining={data.header.remaining} totals={data.header.totals} />
+            {ringData ? (
+              <>
+                <View style={styles.topRow}>
+                  <View style={styles.calorieRingContainer}>
+                    <CalorieRing data={ringData.total} t={t} />
+                  </View>
+                  <MonthlyDeficitCard
+                    summary={data.summary}
+                    targets={data.targets}
+                    t={t}
+                  />
+                </View>
+                <View style={styles.macroRow}>
+                  {ringData.macros.map((macro) => (
+                    <MacroRing key={macro.label} data={macro} t={t} />
+                  ))}
+                </View>
+              </>
+            ) : null}
 
             {data.comparison ? <PeriodComparisonCard comparison={data.comparison} /> : null}
 
-            <TabBar active={activeTab} onChange={setActiveTab} />
-
-            {activeTab === 'calories' && (
-              <View style={styles.section}>
-                <View style={styles.card}>
-                  <CalorieLineChart points={data.calories.points} target={data.calories.targetLine} />
-                </View>
-                <MealPeriodBreakdown entries={data.calories.mealPeriodBreakdown} />
-                {showEmpty && <EmptyStateCard message={emptyMessage} />}
+            <View style={styles.section}>
+              <View style={styles.card}>
+                <CalorieLineChart points={data.calories.points} target={data.calories.targetLine} />
               </View>
-            )}
-
-            {activeTab === 'macros' && ringData && (
-              <View style={styles.section}>
-                <RemainingRings total={ringData.total} macros={ringData.macros} />
-              </View>
-            )}
-
-            
+              <MealPeriodBreakdown entries={data.calories.mealPeriodBreakdown} />
+              {showEmpty && <EmptyStateCard message={emptyMessage} />}
+            </View>
 
             <View style={styles.section}>
               {logsQuery.isLoading ? (
@@ -260,6 +268,192 @@ function periodLabel(period: DashboardPeriod, t: (key: string, params?: Record<s
     default:
       return '';
   }
+}
+
+interface MonthlyDeficitCardProps {
+  summary: DashboardSummary;
+  targets: DashboardTargets;
+  t: Translate;
+}
+
+function MonthlyDeficitCard({ summary, targets, t }: MonthlyDeficitCardProps) {
+  const timezone = summary.range.timezone;
+  let now = DateTime.now();
+  if (timezone) {
+    const zonedNow = DateTime.now().setZone(timezone);
+    if (zonedNow.isValid) {
+      now = zonedNow;
+    }
+  }
+
+  const targetDaily = typeof targets.calories === 'number' ? targets.calories : null;
+
+  // 今月のエントリーを全て集計
+  let totalDelta = 0;
+  let dayCount = 0;
+  
+  if (targetDaily !== null) {
+    summary.calories.daily.forEach((entry) => {
+      const entryDate = DateTime.fromISO(entry.date, { zone: timezone });
+      if (entryDate.isValid && entryDate.hasSame(now, 'month') && entryDate.hasSame(now, 'year')) {
+        const delta = entry.total - targetDaily;
+        totalDelta += delta;
+        dayCount++;
+      }
+    });
+  }
+
+  const averageDailyDelta = dayCount > 0 ? totalDelta / dayCount : 0;
+  const color = totalDelta < 0 ? colors.success : totalDelta > 0 ? colors.error : colors.textSecondary;
+
+  return (
+    <View style={styles.monthlyCard}>
+      <Text style={styles.monthlyLabel}>{t('dashboard.monthlyDeficit.title')}</Text>
+      <Text style={[styles.monthlyValue, { color }]}>{formatDelta(totalDelta)}</Text>
+      <Text style={styles.monthlyMeta}>
+        {t('dashboard.monthlyDeficit.subtitle', {
+          days: dayCount,
+          daily: formatDelta(averageDailyDelta),
+        })}
+      </Text>
+    </View>
+  );
+}
+
+function formatDelta(value: number) {
+  const rounded = Math.round(value);
+  if (rounded === 0) {
+    return '0 kcal';
+  }
+  const absValue = Math.abs(rounded).toLocaleString();
+  const sign = rounded > 0 ? '+' : '-';
+  return `${sign}${absValue} kcal`;
+}
+
+const LARGE_RING_SIZE = 140;
+const LARGE_STROKE_WIDTH = 12;
+const SMALL_RING_SIZE = 110;
+const SMALL_STROKE_WIDTH = 9;
+
+interface CalorieRingProps {
+  data: MacroRingProps;
+  t: Translate;
+}
+
+function CalorieRing({ data, t }: CalorieRingProps) {
+  const state = buildRingState(data, t);
+  const percentage = Math.round(state.progress * 100);
+
+  return (
+    <View style={styles.calorieCard}>
+      <Text style={styles.cardLabel}>{data.label}</Text>
+      <View style={styles.ringWrapper}>
+        <Ring
+          size={LARGE_RING_SIZE}
+          strokeWidth={LARGE_STROKE_WIDTH}
+          progress={state.progress}
+          color={state.ringColor}
+          trackColor={state.trackColor}
+        />
+        <View style={styles.ringCenter} pointerEvents="none">
+          <Text style={styles.percentTextLarge}>{percentage}%</Text>
+        </View>
+      </View>
+      <View style={styles.bottomContainer}>
+        <Text style={styles.ratioValueLarge}>
+          {state.currentText} / {state.targetText}
+        </Text>
+        <Text
+          style={[
+            styles.deltaText,
+            state.status === 'over' && styles.deltaTextOver,
+          ]}
+        >
+          {state.deltaText}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+interface MacroRingComponentProps {
+  data: MacroRingProps;
+  t: Translate;
+}
+
+function MacroRing({ data, t }: MacroRingComponentProps) {
+  const state = buildRingState(data, t);
+  const percentage = Math.round(state.progress * 100);
+
+  return (
+    <View style={styles.macroCard}>
+      <Text style={styles.cardLabel}>{data.label}</Text>
+      <View style={styles.ringWrapper}>
+        <Ring
+          size={SMALL_RING_SIZE}
+          strokeWidth={SMALL_STROKE_WIDTH}
+          progress={state.progress}
+          color={state.ringColor}
+          trackColor={state.trackColor}
+        />
+        <View style={styles.ringCenter} pointerEvents="none">
+          <Text style={styles.percentText}>{percentage}%</Text>
+        </View>
+      </View>
+      <View style={styles.bottomContainer}>
+        <Text style={styles.ratioValue}>
+          {state.currentText} / {state.targetText}
+        </Text>
+        <Text
+          style={[
+            styles.deltaText,
+            state.status === 'over' && styles.deltaTextOver,
+          ]}
+        >
+          {state.deltaText}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+interface RingProps {
+  size: number;
+  strokeWidth: number;
+  progress: number;
+  color: string;
+  trackColor: string;
+}
+
+function Ring({ size, strokeWidth, progress, color, trackColor }: RingProps) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const clamped = clamp(progress, 0, 1);
+  const dashOffset = circumference * (1 - clamped);
+
+  return (
+    <Svg width={size} height={size}>
+      <Circle cx={size / 2} cy={size / 2} r={radius} stroke={trackColor} strokeWidth={strokeWidth} fill="none" />
+      {clamped > 0 && (
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={dashOffset}
+          fill="none"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      )}
+    </Svg>
+  );
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 const styles = StyleSheet.create({
@@ -321,6 +515,106 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: spacing.md,
     gap: spacing.md,
+  },
+  topRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  calorieRingContainer: {
+    flex: 1,
+  },
+  calorieCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  macroRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  macroCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  monthlyCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  cardLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  ringWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ringCenter: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  percentText: {
+    ...textStyles.titleLarge,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  percentTextLarge: {
+    ...textStyles.titleLarge,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  bottomContainer: {
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  ratioValue: {
+    ...textStyles.body,
+    fontSize: 12,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  ratioValueLarge: {
+    ...textStyles.titleSmall,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  deltaText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  deltaTextOver: {
+    color: colors.error,
+    fontWeight: '600',
+  },
+  monthlyLabel: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  monthlyValue: {
+    ...textStyles.headline,
+    fontWeight: '700',
+    fontSize: 28,
+  },
+  monthlyMeta: {
+    ...textStyles.caption,
+    fontSize: 13,
+    color: colors.textSecondary,
   },
   errorContainer: {
     backgroundColor: colors.surface,
