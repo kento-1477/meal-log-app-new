@@ -5,7 +5,6 @@ import { resolveCreditsForProduct } from '@meal-log/shared';
 import { prisma } from '../db/prisma.js';
 import { env } from '../env.js';
 import { evaluateAiUsage, summarizeUsageStatus } from './ai-usage-service.js';
-import { grantPremiumDays } from './premium-service.js';
 import { logger } from '../logger.js';
 import { DateTime } from 'luxon';
 

@@ -27,7 +27,7 @@ export interface ReferralCheckResult {
 /**
  * PENDING状態の紹介をチェックし、3日連続達成を確認
  */
-export async function checkPendingReferrals(referenceDate: Date = new Date()): Promise<ReferralCheckResult> {
+export async function checkPendingReferrals(_referenceDate: Date = new Date()): Promise<ReferralCheckResult> {
   logger.info('Starting referral completion check...');
 
   const result: ReferralCheckResult = {

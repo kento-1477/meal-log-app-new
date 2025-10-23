@@ -14,7 +14,6 @@ import {
   getRecentReferrals,
   generateDeviceFingerprint,
 } from '../services/referral-service.js';
-import { getPremiumStatus, getAllPremiumGrants } from '../services/premium-service.js';
 
 const router = Router();
 
