@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import type { DashboardSummary, DashboardTargets } from '@meal-log/shared';
 import type { FormattedMacros } from '../useDashboardSummary';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
@@ -8,19 +9,38 @@ import { useTranslation } from '@/i18n';
 interface Props {
   remaining: FormattedMacros | null;
   totals: FormattedMacros | null;
+  targets: DashboardTargets;
+  summary: DashboardSummary;
 }
 
-export function SummaryHeader({ remaining, totals }: Props) {
+export function SummaryHeader({ remaining, totals, targets, summary }: Props) {
   const { t } = useTranslation();
+  
+  // 現在の摂取量を計算（目標 - 残り）
+  const currentIntake = {
+    calories: (targets.calories ?? 0) - (remaining?.calories ?? 0),
+    protein_g: (summary.macros.targets.protein_g ?? 0) - (remaining?.protein_g ?? 0),
+    fat_g: (summary.macros.targets.fat_g ?? 0) - (remaining?.fat_g ?? 0),
+    carbs_g: (summary.macros.targets.carbs_g ?? 0) - (remaining?.carbs_g ?? 0),
+  };
+  
+  // パーセンテージを計算
+  const percentages = {
+    calories: calcPercentage(currentIntake.calories, targets.calories ?? 0),
+    protein_g: calcPercentage(currentIntake.protein_g, summary.macros.targets.protein_g ?? 0),
+    fat_g: calcPercentage(currentIntake.fat_g, summary.macros.targets.fat_g ?? 0),
+    carbs_g: calcPercentage(currentIntake.carbs_g, summary.macros.targets.carbs_g ?? 0),
+  };
+  
   return (
     <View style={styles.container}>
       <View style={styles.block}>
         <Text style={styles.title}>{t('dashboard.summary.remainingToday')}</Text>
         <View style={styles.row}>
-          <SummaryChip label="kcal" value={remaining?.calories ?? 0} accent={colors.accent} />
-          <SummaryChip label="P" value={remaining?.protein_g ?? 0} accent="#ff9f0a" />
-          <SummaryChip label="F" value={remaining?.fat_g ?? 0} accent="#ff453a" />
-          <SummaryChip label="C" value={remaining?.carbs_g ?? 0} accent="#bf5af2" />
+          <SummaryChip label="kcal" value={remaining?.calories ?? 0} accent={colors.accent} percentage={percentages.calories} />
+          <SummaryChip label="P" value={remaining?.protein_g ?? 0} accent="#ff9f0a" percentage={percentages.protein_g} />
+          <SummaryChip label="F" value={remaining?.fat_g ?? 0} accent="#ff453a" percentage={percentages.fat_g} />
+          <SummaryChip label="C" value={remaining?.carbs_g ?? 0} accent="#bf5af2" percentage={percentages.carbs_g} />
         </View>
       </View>
       <View style={styles.block}>
@@ -36,18 +56,26 @@ export function SummaryHeader({ remaining, totals }: Props) {
   );
 }
 
+function calcPercentage(current: number, target: number): number {
+  if (target === 0) return 0;
+  return Math.round((current / target) * 100);
+}
+
 interface ChipProps {
   label: string;
   value: number;
   accent: string;
   subdued?: boolean;
+  percentage?: number;
 }
 
-function SummaryChip({ label, value, accent, subdued }: ChipProps) {
+function SummaryChip({ label, value, accent, subdued, percentage }: ChipProps) {
   return (
     <View style={[styles.chip, { borderColor: subdued ? colors.border : accent }] }>
       <Text style={[styles.chipLabel, { color: subdued ? colors.textSecondary : accent }]}>{label}</Text>
-      <Text style={[styles.chipValue, { color: subdued ? colors.textPrimary : accent }]}>{formatValue(value, label)}</Text>
+      <Text style={[styles.chipValue, { color: subdued ? colors.textPrimary : accent }]}>
+        {percentage !== undefined ? `${percentage}%` : formatValue(value, label)}
+      </Text>
     </View>
   );
 }
@@ -74,19 +102,19 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   chip: {
-    minWidth: 72,
+    flex: 1,
     borderRadius: 16,
     borderWidth: 1,
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.sm,
     paddingHorizontal: spacing.sm,
     alignItems: 'center',
   },
   chipLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   chipValue: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '700',
   },
 });
