@@ -1,19 +1,23 @@
 import { DateTime } from 'luxon';
-import { UserPlan } from '@prisma/client';
 import { prisma } from '../db/prisma.js';
 import { logger } from '../logger.js';
+import { getAllPremiumUserIds } from '../services/premium-service.js';
 
 const FREE_RETENTION_DAYS = 30;
+const PREMIUM_RETENTION_DAYS = 90;
 const DELETION_GRACE_DAYS = 30;
 const CLEANUP_TIMEZONE = 'Asia/Tokyo';
 const CLEANUP_HOUR = 3;
 
 export async function purgeExpiredMealLogs(referenceDate: Date = new Date()) {
   const now = DateTime.fromJSDate(referenceDate).setZone(CLEANUP_TIMEZONE);
-  const cutoff = now.minus({ days: FREE_RETENTION_DAYS }).toJSDate();
+  const freeUserCutoff = now.minus({ days: FREE_RETENTION_DAYS }).toJSDate();
+  const premiumUserCutoff = now.minus({ days: PREMIUM_RETENTION_DAYS }).toJSDate();
   const deletionCutoff = now.minus({ days: DELETION_GRACE_DAYS }).toJSDate();
 
-  const [softDeleted, freeExpired] = await Promise.all([
+  const premiumUserIds = await getAllPremiumUserIds();
+
+  const [softDeleted, freeExpired, premiumExpired] = await Promise.all([
     prisma.mealLog.deleteMany({
       where: {
         deletedAt: {
@@ -25,8 +29,15 @@ export async function purgeExpiredMealLogs(referenceDate: Date = new Date()) {
     prisma.mealLog.deleteMany({
       where: {
         deletedAt: null,
-        createdAt: { lt: cutoff },
-        user: { plan: UserPlan.FREE },
+        createdAt: { lt: freeUserCutoff },
+        userId: { notIn: premiumUserIds },
+      },
+    }),
+    prisma.mealLog.deleteMany({
+      where: {
+        deletedAt: null,
+        createdAt: { lt: premiumUserCutoff },
+        userId: { in: premiumUserIds },
       },
     }),
   ]);
@@ -34,6 +45,7 @@ export async function purgeExpiredMealLogs(referenceDate: Date = new Date()) {
   return {
     softDeleted: softDeleted.count,
     freeExpired: freeExpired.count,
+    premiumExpired: premiumExpired.count,
   };
 }
 
