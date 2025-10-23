@@ -869,23 +869,24 @@ declare module 'express-session' {
 #### ✅ 実装箇所: `apps/mobile/app/_layout.tsx`
 
 **変更内容**:
-- [ ] `expo-linking` の `useURL()` でディープリンクを監視
-- [ ] `meallog://invite?code={code}` を検出
-- [ ] ログイン済みの場合:
+- [x] `expo-linking` の `useURL()` でディープリンクを監視
+- [x] `meallog://invite?code={code}` を検出
+- [x] ログイン済みの場合:
   - API `/api/referral/claim` を呼び出し
-  - 成功時: トースト表示「14日間プレミアムを獲得しました！」
+  - 成功時: Alert表示「14日間プレミアムを獲得しました！」
   - 失敗時: エラーメッセージ表示
-- [ ] 未ログインの場合:
+- [x] 未ログインの場合:
   - 招待コードを一時保存（AsyncStorage: `@referral_code`）
-  - ログイン画面に遷移
+  - Alert表示「ログイン後に自動的にプレミアムが付与されます」
   - ログイン後に自動で `/api/referral/claim` を実行
 
 **実装タスク**:
-- [ ] `apps/mobile/src/hooks/useReferralDeepLink.ts` 作成
-- [ ] `_layout.tsx` に統合
-- [ ] AsyncStorageでコード一時保存
-- [ ] ログイン後の自動claim実装
-- [ ] トースト通知実装
+- [x] `apps/mobile/src/hooks/useReferralDeepLink.ts` 作成
+- [x] `_layout.tsx` に統合
+- [x] AsyncStorageでコード一時保存
+- [x] ログイン後の自動claim実装
+- [x] Alert通知実装
+- [x] app.jsonにintentFilters追加（meallog://invite）
 
 ### 5.3 紹介状況画面
 
