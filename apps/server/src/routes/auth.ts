@@ -14,7 +14,6 @@ authRouter.post('/register', async (req, res, next) => {
     const body = RegisterRequestSchema.parse(req.body);
     const user = await registerUser(body);
     req.session.userId = user.id;
-    req.session.userPlan = user.plan;
     req.session.aiCredits = user.aiCredits;
     const usageStatus = await evaluateAiUsage(user.id);
     const usage = summarizeUsageStatus(usageStatus);
@@ -33,7 +32,6 @@ authRouter.post('/login', async (req, res, next) => {
     const body = LoginRequestSchema.parse(req.body);
     const user = await authenticateUser(body);
     req.session.userId = user.id;
-    req.session.userPlan = user.plan;
     req.session.aiCredits = user.aiCredits;
     const usageStatus = await evaluateAiUsage(user.id);
     const usage = summarizeUsageStatus(usageStatus);
@@ -63,7 +61,6 @@ authRouter.get('/session', async (req, res, next) => {
       req.session.destroy(() => undefined);
       return res.status(StatusCodes.UNAUTHORIZED).json({ authenticated: false });
     }
-    req.session.userPlan = user.plan;
     req.session.aiCredits = user.aiCredits;
     const usageStatus = await evaluateAiUsage(user.id);
     const usage = summarizeUsageStatus(usageStatus);
