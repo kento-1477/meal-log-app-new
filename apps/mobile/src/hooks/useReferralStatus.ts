@@ -3,7 +3,7 @@
 // API /api/referral/my-statusからデータを取得
 // 関連: services/api.ts
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSessionStore } from '@/store/session';
 import { getReferralStatus, ReferralStatusResponse } from '@/services/api';
 
@@ -13,7 +13,7 @@ export function useReferralStatus() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async () => {
     if (!user) {
       setStatus(null);
       setIsLoading(false);
@@ -31,11 +31,11 @@ export function useReferralStatus() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     void fetchStatus();
-  }, [user]);
+  }, [fetchStatus]);
 
   return { status, isLoading, error, refresh: fetchStatus };
 }
