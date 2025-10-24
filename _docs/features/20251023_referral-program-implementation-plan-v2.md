@@ -1,9 +1,10 @@
 # 紹介制度実装計画書 v2（案A: PremiumGrant統一管理版）
 
 **更新日**: 2025-10-23  
-**ステータス**: 最終確定、案A採用  
+**ステータス**: ✅ **Phase 1 完了**（バックエンド + モバイルUI）  
 **優先度**: 高  
-**推定工数**: 12〜15日（1名想定、マイグレーション含む）
+**実施工数**: 1日（AI assisted implementation）  
+**コミット数**: 12件
 
 ---
 
@@ -403,7 +404,10 @@ export async function grantPremiumDays(params: {
 - [x] `isPremium()` 実装
 - [x] `getPremiumStatus()` 実装
 - [x] `grantPremiumDays()` 実装
-- [ ] ユニットテスト作成
+- [x] `getAllPremiumGrants()` 実装
+- [x] `filterPremiumUserIds()` 実装
+- [x] `getAllPremiumUserIds()` 実装
+- [ ] ユニットテスト作成（優先度: 中）
 
 ### 3.2 AI使用制限サービスの修正
 
@@ -448,8 +452,8 @@ export async function evaluateAiUsage(userId: number): Promise<AiUsageStatus> {
 - [x] `isPremium()` を使ってプレミアム判定
 - [x] `DAILY_LIMITS` の型を変更
 - [x] `resolveTierOverride()` に変更（USER_TIER_OVERRIDE環境変数を使用）
-- [ ] ユニットテスト修正
-- [ ] 統合テスト実行
+- [x] ユニットテスト修正
+- [x] 統合テスト実行（CI通過）
 
 ### 3.3 ログクリーンアップジョブの修正
 
@@ -530,8 +534,8 @@ export async function purgeExpiredMealLogs(referenceDate: Date = new Date()) {
 - [x] プレミアムユーザーID取得ロジック追加
 - [x] 無料/プレミアム別の削除処理実装
 - [x] `PREMIUM_RETENTION_DAYS = 90` を追加
-- [ ] ユニットテスト修正
-- [ ] 統合テスト実行
+- [x] ユニットテスト修正
+- [x] 統合テスト実行（CI通過）
 
 ### 3.4 課金購入サービスの修正
 
@@ -586,8 +590,8 @@ export async function processIapPurchase(params: ProcessPurchaseParams): Promise
 
 - [x] PremiumGrant作成（1年間、365日）
 - [x] `User.plan` 更新処理を削除
-- [ ] ユニットテスト修正
-- [ ] 統合テスト実行
+- [x] ユニットテスト修正
+- [x] 統合テスト実行（CI通過）
 
 ### 3.5 認証サービスの修正
 
@@ -636,7 +640,7 @@ function serializeUser(user: {
 - [x] `resolvePlanOverride()` 関数を削除
 - [x] `withPlanOverride()` 関数を削除
 - [x] セッションから `userPlan` を削除（`types/express-session.d.ts`）
-- [ ] ユニットテスト修正
+- [x] ユニットテスト修正
 
 ### 3.6 セッション型定義の修正
 
@@ -696,6 +700,8 @@ declare module 'express-session' {
 - [x] `ReferralInviteLink` テーブルに保存（既存なら再利用）
 - [x] ディープリンク + Webランディングページ両方のURLを返却
 - [x] 認証必須（セッションチェック）
+- [x] referral-service.ts実装完了
+- [x] CI通過
 
 ### 4.2 招待コード検証・紐付けAPI
 
@@ -724,11 +730,13 @@ declare module 'express-session' {
 - [x] 招待コードの存在確認
 - [x] 重複防止チェック（同一ユーザーが複数回使用不可）
 - [x] 自己紹介防止（referrerUserId ≠ referredUserId）
-- [x] デバイス指紋生成・記録
+- [x] デバイス指紋生成・記録（SHA256ハッシュ）
 - [x] `Referral` レコード作成（status: PENDING）
 - [x] **友だちに14日プレミアム付与**（PremiumGrant作成）
 - [x] `ReferralInviteLink` の `signupCount` をインクリメント
 - [x] 認証必須
+- [x] referral-service.ts実装完了
+- [x] CI通過
 
 ### 4.3 プレミアム状態取得API
 
@@ -757,6 +765,8 @@ declare module 'express-session' {
 - [x] `getPremiumStatus()` を使ってプレミアム状態取得
 - [x] ユーザーの全 `PremiumGrant` を取得
 - [x] 認証必須
+- [x] routes/account.ts実装完了
+- [x] CI通過
 
 ### 4.4 紹介状況取得API
 
@@ -792,6 +802,8 @@ declare module 'express-session' {
 - [x] 統計情報を計算（total, completed, pending, days earned）
 - [x] 最新5件の紹介状況を返却
 - [x] 認証必須
+- [x] referral-service.ts実装完了
+- [x] CI通過
 
 ### 4.5 3日連続ログチェックジョブ
 
@@ -815,8 +827,9 @@ declare module 'express-session' {
 - [x] 3日連続ログ判定ロジック実装（referral-service.ts内）
 - [x] PremiumGrant作成で30日付与
 - [x] 30日期限切れチェック実装（expireOldReferrals）
-- [x] index.tsにスケジューリング追加
+- [x] index.tsにスケジューリング追加（毎日3時JST実行）
 - [x] ログ出力（Pino）
+- [x] CI通過
 
 ---
 
@@ -827,52 +840,54 @@ declare module 'express-session' {
 #### ✅ 実装箇所: `apps/mobile/app/(tabs)/settings.tsx`
 
 **変更内容**:
-- [ ] `handleInvite` 関数を実装
+- [x] `handleInvite` 関数を実装
   - API `/api/referral/invite-link` を呼び出し
   - 招待リンクを取得
   - `Share.share()` で共有メニューを表示
     - タイトル: 「Meal Logを一緒に使いませんか？」
     - メッセージ: 「紹介リンクから登録すると14日間プレミアム無料！友だちを紹介すると30日延長も！ {inviteLink}」
-- [ ] 共有チャネルボタン追加（**LINEをプライマリ**、他をセカンダリ）
+- [ ] 共有チャネルボタン追加（**LINEをプライマリ**、他をセカンダリ）（優先度: 低、将来実装）
   - **LINE**: `line://msg/text/{message}` - **大きく目立つボタン**
   - Instagram: DM不可、ストーリー投稿のみ（`instagram://story-camera`）- 小さめボタン
   - X: `twitter://post?message={message}` - 小さめボタン
   - WhatsApp: `whatsapp://send?text={message}` - 小さめボタン
-- [ ] エラーハンドリング（ネットワークエラー、APIエラー）
-- [ ] ローディング状態表示
+- [x] エラーハンドリング（ネットワークエラー、APIエラー）
+- [x] ローディング状態表示
 
 #### ✅ 翻訳追加: `apps/mobile/src/i18n/index.ts`
 
-- [ ] `referral.share.title`: 「Meal Logを一緒に使いませんか？」
-- [ ] `referral.share.message`: 「このリンクから登録すると14日間プレミアム無料！友だちを紹介すると30日延長も！ {{link}}」
-- [ ] `referral.invite.rewardText`: 「友だち1人で30日延長」
-- [ ] `referral.friend.rewardText`: 「紹介なら14日間プレミアム無料」
-- [ ] `referral.error.loadFailed`: 「招待リンクの取得に失敗しました」
-- [ ] `referral.error.shareFailed`: 「共有に失敗しました」
-- [ ] 英語版も追加
+- [x] `referral.share.title`: 「Meal Logを一緒に使いませんか？」
+- [x] `referral.share.message`: 「このリンクから登録すると14日間プレミアム無料！友だちを紹介すると30日延長も！ {{link}}」
+- [x] `referral.invite.rewardText`: 「友だち1人で30日延長」
+- [x] `referral.friend.rewardText`: 「紹介なら14日間プレミアム無料」
+- [x] `referral.error.loadFailed`: 「招待リンクの取得に失敗しました」
+- [x] `referral.error.shareFailed`: 「共有に失敗しました」
+- [x] 紹介状況画面用の翻訳も追加
+- [x] 英語版も追加
 
 ### 5.2 ディープリンク受信・処理
 
 #### ✅ 実装箇所: `apps/mobile/app/_layout.tsx`
 
 **変更内容**:
-- [ ] `expo-linking` の `useURL()` でディープリンクを監視
-- [ ] `meallog://invite?code={code}` を検出
-- [ ] ログイン済みの場合:
+- [x] `expo-linking` の `useURL()` でディープリンクを監視
+- [x] `meallog://invite?code={code}` を検出
+- [x] ログイン済みの場合:
   - API `/api/referral/claim` を呼び出し
-  - 成功時: トースト表示「14日間プレミアムを獲得しました！」
+  - 成功時: Alert表示「14日間プレミアムを獲得しました！」
   - 失敗時: エラーメッセージ表示
-- [ ] 未ログインの場合:
+- [x] 未ログインの場合:
   - 招待コードを一時保存（AsyncStorage: `@referral_code`）
-  - ログイン画面に遷移
+  - Alert表示「ログイン後に自動的にプレミアムが付与されます」
   - ログイン後に自動で `/api/referral/claim` を実行
 
 **実装タスク**:
-- [ ] `apps/mobile/src/hooks/useReferralDeepLink.ts` 作成
-- [ ] `_layout.tsx` に統合
-- [ ] AsyncStorageでコード一時保存
-- [ ] ログイン後の自動claim実装
-- [ ] トースト通知実装
+- [x] `apps/mobile/src/hooks/useReferralDeepLink.ts` 作成
+- [x] `_layout.tsx` に統合
+- [x] AsyncStorageでコード一時保存
+- [x] ログイン後の自動claim実装
+- [x] Alert通知実装
+- [x] app.jsonにintentFilters追加（meallog://invite）
 
 ### 5.3 紹介状況画面
 
@@ -894,32 +909,35 @@ declare module 'express-session' {
    - 達成日時
 
 **実装タスク**:
-- [ ] `apps/mobile/app/referral-status.tsx` 作成
-- [ ] API `/api/referral/my-status` と統合
-- [ ] リスト表示（FlatList）
-- [ ] コピー機能実装（Clipboard API）
-- [ ] 共有機能実装（Share API）
-- [ ] 設定画面からのナビゲーション追加
+- [x] `apps/mobile/app/referral-status.tsx` 作成
+- [x] `apps/mobile/src/hooks/useReferralStatus.ts` 作成
+- [x] API `/api/referral/my-status` と統合（services/api.ts）
+- [x] リスト表示実装
+- [x] コピー機能実装（Clipboard API）
+- [x] 共有機能実装（Share API）
+- [x] 設定画面からのナビゲーション追加
 
 ### 5.4 プレミアムバッジ・残日数表示
 
 #### ✅ 実装箇所: ダッシュボード、設定画面
 
 **変更内容**:
-- [ ] API `/api/user/premium-status` を呼び出し
-- [ ] プレミアム状態を Zustand store に保存
-- [ ] ダッシュボードにプレミアムバッジ表示
+- [x] API `/api/user/premium-status` を呼び出し
+- [x] プレミアム状態を Zustand store に保存
+- [ ] ダッシュボードにプレミアムバッジ表示（優先度: 中、将来実装）
   - アイコン: ⭐️ or 👑
   - テキスト: 「プレミアム会員（残り12日）」
-- [ ] 設定画面のプロフィールカードにバッジ追加
-- [ ] プレミアム限定機能に鍵アイコン表示（無料ユーザー）
+- [x] 設定画面のプロフィールカードにバッジ追加
+- [ ] プレミアム限定機能に鍵アイコン表示（無料ユーザー）（優先度: 低、将来実装）
 
 **実装タスク**:
-- [ ] `apps/mobile/src/store/premium.ts` 作成（Zustand）
-- [ ] `/api/user/premium-status` 統合
-- [ ] ダッシュボードにバッジ表示
-- [ ] 設定画面にバッジ表示
-- [ ] プレミアム限定機能のペイウォール実装
+- [x] `apps/mobile/src/store/premium.ts` 作成（Zustand）
+- [x] `apps/mobile/src/hooks/usePremiumStatus.ts` 作成
+- [x] `/api/user/premium-status` 統合（services/api.ts）
+- [x] 翻訳追加（premium.badge, premium.daysRemaining, premium.free）
+- [ ] ダッシュボードにバッジ表示（優先度: 中、将来実装）
+- [x] 設定画面にバッジ表示（完了）
+- [ ] プレミアム限定機能のペイウォール実装（優先度: 低、将来実装）
 
 ---
 

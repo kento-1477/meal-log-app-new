@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTranslation } from '@/i18n';
@@ -9,6 +9,7 @@ import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import { useSessionStore } from '@/store/session';
+import { usePremiumStatus } from '@/hooks/usePremiumStatus';
 import { SUPPORT_EMAIL } from '@/config/legal';
 import appManifest from '../../app.json';
 
@@ -16,11 +17,8 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const user = useSessionStore((state) => state.user);
+  const { status: premiumStatus } = usePremiumStatus();
   const versionLabel = appManifest?.expo?.version ?? '1.0.0';
-
-  const handleInvite = () => {
-    Alert.alert(t('settings.invite.toast'));
-  };
 
   const menuItems = useMemo(
     () => [
@@ -74,13 +72,25 @@ export default function SettingsScreen() {
               <Feather name="user" size={24} color={colors.accent} />
             </View>
             <View style={styles.profileTextContainer}>
-              <Text style={styles.profileName}>{user?.username ?? t('settings.profile.namePlaceholder')}</Text>
-              <Text style={styles.profileSubtitle}>{t('settings.profile.subtitle')}</Text>
+              <View style={styles.profileNameRow}>
+                <Text style={styles.profileName}>{user?.username ?? t('settings.profile.namePlaceholder')}</Text>
+                {premiumStatus?.isPremium && (
+                  <View style={styles.premiumBadge}>
+                    <Feather name="star" size={12} color="#fff" />
+                    <Text style={styles.premiumBadgeText}>{t('premium.badge')}</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.profileSubtitle}>
+                {premiumStatus?.isPremium
+                  ? t('premium.daysRemaining', { days: premiumStatus.daysRemaining })
+                  : t('settings.profile.subtitle')}
+              </Text>
             </View>
             <Feather name="chevron-right" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.inviteCard} activeOpacity={0.9} onPress={handleInvite}>
+          <TouchableOpacity style={styles.inviteCard} activeOpacity={0.9} onPress={() => router.push('/referral-status')}>
             <LinearGradient colors={['#fbe4ff', '#ffecef']} style={styles.inviteGradient}>
               <View style={styles.inviteHeader}>
                 <Feather name="users" size={18} color={colors.textPrimary} />
@@ -88,10 +98,11 @@ export default function SettingsScreen() {
               </View>
               <View style={styles.inviteBody}>
                 <Text style={styles.inviteTitle}>{t('settings.invite.title')}</Text>
-                <Text style={styles.inviteSubtitle}>{t('settings.invite.subtitle')}</Text>
+                <Text style={styles.inviteSubtitle}>{t('referral.invite.rewardText')}</Text>
               </View>
               <View style={styles.inviteButton}>
-                <Text style={styles.inviteButtonLabel}>{t('settings.invite.cta')}</Text>
+                <Text style={styles.inviteButtonLabel}>１ヶ月の有料プランを受け取る</Text>
+                <Feather name="chevron-right" size={20} color={colors.accent} />
               </View>
             </LinearGradient>
           </TouchableOpacity>
@@ -173,9 +184,29 @@ const styles = StyleSheet.create({
   profileTextContainer: {
     flex: 1,
   },
+  profileNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   profileName: {
     ...textStyles.titleMedium,
     color: colors.textPrimary,
+  },
+  premiumBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 12,
+    gap: 4,
+  },
+  premiumBadgeText: {
+    ...textStyles.caption,
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 10,
   },
   profileSubtitle: {
     ...textStyles.caption,

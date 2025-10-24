@@ -68,7 +68,33 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     if (responseCache.has(cacheKey)) {
       return responseCache.get(cacheKey) as T;
     }
-    return null as T;
+    // No cached value available. Retry once with a cache-busting query to force a fresh 200 response.
+    const bustUrl = `${url}${url.includes('?') ? '&' : '?'}__bust=${Date.now()}`;
+    const retry = await fetch(bustUrl, {
+      ...options,
+      headers,
+      credentials: 'include',
+    });
+    if (!retry.ok) {
+      let message = retry.statusText;
+      try {
+        const data = await retry.json();
+        message = (data?.error as string) ?? (data?.message as string) ?? message;
+      } catch (_e) {
+        // ignore json parse errors
+      }
+      const error = new Error(message || '不明なエラーが発生しました') as ApiError;
+      error.status = retry.status;
+      throw error;
+    }
+    if (retry.status === 204) {
+      return null as T;
+    }
+    const retryText = await retry.text();
+    const retryParsed = retryText ? (JSON.parse(retryText) as T) : (null as T);
+    // Store under the original (non-busted) cache key
+    responseCache.set(cacheKey, retryParsed);
+    return retryParsed;
   }
 
   if (!response.ok) {
@@ -434,4 +460,60 @@ export async function submitIapPurchase(payload: IapPurchaseRequest) {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+// Referral API
+export interface ReferralInviteLinkResponse {
+  inviteLink: string;
+  webLink: string;
+  code: string;
+  message: string;
+}
+
+export async function generateInviteLink(): Promise<ReferralInviteLinkResponse> {
+  return apiFetch('/api/referral/invite-link', {
+    method: 'POST',
+    body: JSON.stringify({ timezone: getDeviceTimezone() }),
+  });
+}
+
+// Premium Status API
+export interface PremiumStatusResponse {
+  isPremium: boolean;
+  source: 'REFERRAL_FRIEND' | 'REFERRAL_REFERRER' | 'PURCHASE' | 'ADMIN_GRANT' | null;
+  daysRemaining: number;
+  expiresAt: string | null;
+  grants: Array<{
+    source: 'REFERRAL_FRIEND' | 'REFERRAL_REFERRER' | 'PURCHASE' | 'ADMIN_GRANT';
+    days: number;
+    startDate: string;
+    endDate: string;
+  }>;
+}
+
+export async function getPremiumStatus(): Promise<PremiumStatusResponse> {
+  return apiFetch('/api/user/premium-status', { method: 'GET' });
+}
+
+// Referral Status API
+export interface ReferralStatusResponse {
+  inviteCode: string;
+  inviteLink: string;
+  stats: {
+    totalReferred: number;
+    completedReferred: number;
+    pendingReferred: number;
+    totalPremiumDaysEarned: number;
+  };
+  recentReferrals: Array<{
+    friendUsername: string;
+    status: 'PENDING' | 'COMPLETED' | 'EXPIRED';
+    consecutiveDays: number;
+    createdAt: string;
+    completedAt?: string;
+  }>;
+}
+
+export async function getReferralStatus(): Promise<ReferralStatusResponse> {
+  return apiFetch('/api/referral/my-status', { method: 'GET' });
 }
