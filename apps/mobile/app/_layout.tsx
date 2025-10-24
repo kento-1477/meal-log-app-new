@@ -6,12 +6,14 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useSessionBootstrap } from '@/hooks/useSessionBootstrap';
 import { useLocaleBootstrap } from '@/hooks/useLocaleBootstrap';
+import { useReferralDeepLink } from '@/hooks/useReferralDeepLink';
 import { colors } from '@/theme/colors';
 
 export default function RootLayout() {
   const [queryClient] = useState(() => new QueryClient());
   useSessionBootstrap();
   useLocaleBootstrap();
+  useReferralDeepLink();
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
