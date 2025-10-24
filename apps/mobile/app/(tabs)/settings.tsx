@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View, Share, ActivityIndicator } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTranslation } from '@/i18n';
@@ -11,7 +11,6 @@ import { textStyles } from '@/theme/typography';
 import { useSessionStore } from '@/store/session';
 import { usePremiumStatus } from '@/hooks/usePremiumStatus';
 import { SUPPORT_EMAIL } from '@/config/legal';
-import { generateInviteLink } from '@/services/api';
 import appManifest from '../../app.json';
 
 export default function SettingsScreen() {
@@ -20,31 +19,6 @@ export default function SettingsScreen() {
   const user = useSessionStore((state) => state.user);
   const { status: premiumStatus } = usePremiumStatus();
   const versionLabel = appManifest?.expo?.version ?? '1.0.0';
-  const [isLoadingInvite, setIsLoadingInvite] = useState(false);
-
-  const handleInvite = async () => {
-    if (!user) {
-      Alert.alert(t('dashboard.requiresLogin'), t('dashboard.loginHint'));
-      return;
-    }
-
-    try {
-      setIsLoadingInvite(true);
-      const response = await generateInviteLink();
-
-      const shareMessage = t('referral.share.message', { link: response.inviteLink });
-
-      await Share.share({
-        title: t('referral.share.title'),
-        message: shareMessage,
-      });
-    } catch (error) {
-      console.error('Failed to generate or share invite link:', error);
-      Alert.alert(t('referral.error.loadFailed'));
-    } finally {
-      setIsLoadingInvite(false);
-    }
-  };
 
   const menuItems = useMemo(
     () => [
@@ -127,7 +101,7 @@ export default function SettingsScreen() {
                 <Text style={styles.inviteSubtitle}>{t('referral.invite.rewardText')}</Text>
               </View>
               <View style={styles.inviteButton}>
-                <Text style={styles.inviteButtonLabel}>詳細を見る</Text>
+                <Text style={styles.inviteButtonLabel}>１ヶ月の有料プランを受け取る</Text>
                 <Feather name="chevron-right" size={20} color={colors.accent} />
               </View>
             </LinearGradient>

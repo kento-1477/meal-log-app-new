@@ -4,11 +4,11 @@
 // 関連: services/api.ts, hooks/useReferralStatus.ts
 
 import { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, FlatList, Share } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
-import { Stack, useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { useTranslation } from '@/i18n';
 import { colors } from '@/theme/colors';
@@ -17,7 +17,6 @@ import { textStyles } from '@/theme/typography';
 import { useReferralStatus } from '@/hooks/useReferralStatus';
 
 export default function ReferralStatusScreen() {
-  const router = useRouter();
   const { t } = useTranslation();
   const { status, isLoading, error, refresh } = useReferralStatus();
   const [isCopying, setIsCopying] = useState(false);
@@ -53,7 +52,7 @@ export default function ReferralStatusScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        <Stack.Screen options={{ headerShown: true, title: t('referral.status.title') }} />
+        <Stack.Screen options={{ headerShown: true, title: t('settings.invite.header') }} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
@@ -64,7 +63,7 @@ export default function ReferralStatusScreen() {
   if (error || !status) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        <Stack.Screen options={{ headerShown: true, title: t('referral.status.title') }} />
+        <Stack.Screen options={{ headerShown: true, title: t('settings.invite.header') }} />
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error || t('referral.error.loadFailed')}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={refresh}>
@@ -75,96 +74,55 @@ export default function ReferralStatusScreen() {
     );
   }
 
-  const renderReferralItem = ({ item }: { item: any }) => {
-    const statusColor = item.status === 'COMPLETED' ? colors.success : colors.textSecondary;
-    const statusText = t(`referral.status.status.${item.status.toLowerCase()}`);
-
-    return (
-      <View style={styles.referralItem}>
-        <View style={styles.referralIcon}>
-          <Feather name="user" size={20} color={colors.accent} />
-        </View>
-        <View style={styles.referralInfo}>
-          <Text style={styles.referralUsername}>{item.friendUsername}</Text>
-          <Text style={styles.referralDate}>{new Date(item.createdAt).toLocaleDateString()}</Text>
-        </View>
-        <View style={styles.referralStatus}>
-          <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
-            <Text style={[styles.statusText, { color: statusColor }]}>{statusText}</Text>
-          </View>
-          {item.status === 'PENDING' && (
-            <Text style={styles.consecutiveDays}>{t('referral.status.consecutiveDays', { days: item.consecutiveDays })}</Text>
-          )}
-        </View>
-      </View>
-    );
-  };
-
   return (
     <LinearGradient colors={[colors.background, '#ffffff']} style={styles.gradient}>
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        <Stack.Screen options={{ headerShown: true, title: t('referral.status.title') }} />
+        <Stack.Screen options={{ headerShown: true, title: t('settings.invite.header') }} />
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          {/* 招待コードカード */}
+          <Text style={styles.pageTitle}>友だちを招待</Text>
+
+          {/* ベネフィット行 */}
+          <View style={styles.benefitRow}>
+            <View style={[styles.badge, styles.badgePrimary]}>
+              <Text style={[styles.badgeText, styles.badgePrimaryText]}>あなた +30日</Text>
+            </View>
+            <Text style={styles.slash}>/</Text>
+            <View style={[styles.badge, styles.badgeSecondary]}>
+              <Text style={[styles.badgeText, styles.badgeSecondaryText]}>友だち 14日</Text>
+            </View>
+          </View>
+          <Text style={styles.condition}>条件：友だちが3日連続で記録</Text>
+
+          {/* 招待コードカード（インラインコピー） */}
           <View style={styles.inviteCodeCard}>
             <Text style={styles.sectionTitle}>{t('referral.status.inviteCode')}</Text>
-            <View style={styles.codeContainer}>
+            <View style={styles.codeRow}>
               <Text style={styles.inviteCode}>{status.inviteCode}</Text>
-            </View>
-            <View style={styles.actionButtons}>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.copyButton]}
-                onPress={handleCopyCode}
-                disabled={isCopying}
-              >
+              <TouchableOpacity style={styles.copyIconBtn} onPress={handleCopyCode} disabled={isCopying}>
                 {isCopying ? (
                   <ActivityIndicator size="small" color={colors.accent} />
                 ) : (
-                  <>
-                    <Feather name="copy" size={16} color={colors.accent} />
-                    <Text style={styles.actionButtonText}>{t('referral.status.copy')}</Text>
-                  </>
+                  <Feather name="copy" size={18} color={colors.accent} />
                 )}
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionButton, styles.shareButton]} onPress={handleShareLink}>
-                <Feather name="share-2" size={16} color="#fff" />
-                <Text style={styles.shareButtonText}>{t('referral.status.share')}</Text>
-              </TouchableOpacity>
             </View>
           </View>
 
-          {/* 統計カード */}
-          <View style={styles.statsCard}>
-            <Text style={styles.sectionTitle}>統計</Text>
-            <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{status.stats.totalReferred}</Text>
-                <Text style={styles.statLabel}>{t('referral.status.stats.total')}</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{status.stats.completedReferred}</Text>
-                <Text style={styles.statLabel}>{t('referral.status.stats.completed')}</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{status.stats.pendingReferred}</Text>
-                <Text style={styles.statLabel}>{t('referral.status.stats.pending')}</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={[styles.statValue, styles.premiumDays]}>{status.stats.totalPremiumDaysEarned}</Text>
-                <Text style={styles.statLabel}>{t('referral.status.stats.daysEarned')}</Text>
-              </View>
-            </View>
+          {/* 共有CTA */}
+          <TouchableOpacity style={styles.primaryButton} onPress={handleShareLink}>
+            <Text style={styles.primaryButtonText}>{t('referral.status.share')}</Text>
+          </TouchableOpacity>
+
+          {/* 手順ボックス */}
+          <View style={styles.stepsCard}>
+            <Text style={styles.sectionTitle}>受け取り方</Text>
+            <View style={styles.stepItem}><Text style={styles.stepText}>・招待リンク／コードを友だちに送る</Text></View>
+            <View style={styles.stepItem}><Text style={styles.stepText}>・友だちは登録で <Text style={styles.em}>14日無料</Text> が開始</Text></View>
+            <View style={styles.stepItem}><Text style={styles.stepText}>・友だちが <Text style={styles.em}>3日連続で記録</Text> → あなたに <Text style={styles.em}>+30日</Text></Text></View>
           </View>
 
-          {/* 最近の紹介リスト */}
-          {status.recentReferrals.length > 0 && (
-            <View style={styles.referralListCard}>
-              <Text style={styles.sectionTitle}>{t('referral.status.recent')}</Text>
-              {status.recentReferrals.map((item, index) => (
-                <View key={index}>{renderReferralItem({ item })}</View>
-              ))}
-            </View>
-          )}
+          {/* 免責 */}
+          <Text style={styles.disclaimer}>※ 自分への招待や不正は特典対象外です</Text>
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>
@@ -181,6 +139,13 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
     padding: spacing.lg,
+  },
+  pageTitle: {
+    ...textStyles.titleLarge,
+    fontSize: 34,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
   },
   loadingContainer: {
     flex: 1,
@@ -210,11 +175,49 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
   },
+  benefitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  badge: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  badgePrimary: {
+    backgroundColor: colors.accent,
+  },
+  badgePrimaryText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  badgeSecondary: {
+    backgroundColor: '#eef2f7',
+  },
+  badgeSecondaryText: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  badgeText: {
+    ...textStyles.caption,
+    fontSize: 13,
+  },
+  slash: {
+    ...textStyles.titleMedium,
+    color: colors.textSecondary,
+  },
+  condition: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
+  },
   inviteCodeCard: {
     backgroundColor: '#fff',
     borderRadius: 24,
     padding: spacing.lg,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
     shadowColor: colors.shadow,
     shadowOpacity: 0.08,
     shadowRadius: 16,
@@ -227,12 +230,14 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: spacing.md,
   },
-  codeContainer: {
+  codeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.background,
     borderRadius: 16,
-    padding: spacing.lg,
-    alignItems: 'center',
-    marginBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    justifyContent: 'space-between',
   },
   inviteCode: {
     ...textStyles.h2,
@@ -240,130 +245,46 @@ const styles = StyleSheet.create({
     color: colors.accent,
     letterSpacing: 4,
   },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: spacing.md,
+  copyIconBtn: {
+    padding: spacing.xs,
   },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  primaryButton: {
+    backgroundColor: colors.textPrimary,
+    borderRadius: 999,
     paddingVertical: spacing.md,
-    borderRadius: 12,
-    gap: spacing.xs,
+    alignItems: 'center',
+    marginBottom: spacing.lg,
   },
-  copyButton: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.accent,
-  },
-  shareButton: {
-    backgroundColor: colors.accent,
-  },
-  actionButtonText: {
+  primaryButtonText: {
     ...textStyles.body,
-    fontWeight: '600',
-    color: colors.accent,
-  },
-  shareButtonText: {
-    ...textStyles.body,
-    fontWeight: '600',
     color: '#fff',
-  },
-  statsCard: {
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-    shadowColor: colors.shadow,
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 2,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-  },
-  statItem: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: colors.background,
-    borderRadius: 16,
-    padding: spacing.md,
-    alignItems: 'center',
-  },
-  statValue: {
-    ...textStyles.h2,
     fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
   },
-  premiumDays: {
-    color: colors.accent,
-  },
-  statLabel: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  referralListCard: {
+  stepsCard: {
     backgroundColor: '#fff',
     borderRadius: 24,
     padding: spacing.lg,
-    marginBottom: spacing.lg,
+    gap: spacing.sm,
     shadowColor: colors.shadow,
     shadowOpacity: 0.08,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
     elevation: 2,
   },
-  referralItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.background,
-  },
-  referralIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-  },
-  referralInfo: {
-    flex: 1,
-  },
-  referralUsername: {
-    ...textStyles.body,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 2,
-  },
-  referralDate: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-  },
-  referralStatus: {
-    alignItems: 'flex-end',
-  },
-  statusBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: 8,
+  stepItem: {
     marginBottom: 4,
   },
-  statusText: {
-    ...textStyles.caption,
-    fontWeight: '600',
+  stepText: {
+    ...textStyles.body,
+    color: colors.textPrimary,
   },
-  consecutiveDays: {
+  em: {
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  disclaimer: {
     ...textStyles.caption,
     color: colors.textSecondary,
+    marginTop: spacing.sm,
   },
 });
