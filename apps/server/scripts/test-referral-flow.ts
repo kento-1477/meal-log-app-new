@@ -91,7 +91,7 @@ async function testReferralFlow() {
   });
 
   // 友だちに14日プレミアム付与
-  const friendPremiumGrant = await prisma.premiumGrant.create({
+  await prisma.premiumGrant.create({
     data: {
       userId: friend.id,
       source: 'REFERRAL_FRIEND',
