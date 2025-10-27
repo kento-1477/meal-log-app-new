@@ -31,6 +31,7 @@ export default function LoginScreen() {
       setUser(response?.user ?? null);
       setUsage(response?.usage ?? null);
       setStatus('authenticated');
+      router.dismissAll();
       router.replace('/(tabs)/chat');
     } catch (err) {
       setError((err as Error).message ?? t('login.error.generic'));

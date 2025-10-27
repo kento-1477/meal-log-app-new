@@ -6,6 +6,7 @@ import {
 } from '@meal-log/shared';
 import { authenticateUser, findUserById, registerUser } from '../services/auth-service.js';
 import { evaluateAiUsage, summarizeUsageStatus } from '../services/ai-usage-service.js';
+import { ZodError, ZodIssue } from 'zod';
 
 export const authRouter = Router();
 
@@ -23,6 +24,13 @@ authRouter.post('/register', async (req, res, next) => {
       usage,
     });
   } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: formatValidationError(error, 'register'),
+        code: 'VALIDATION_ERROR',
+        details: error.errors,
+      });
+    }
     next(error);
   }
 });
@@ -41,9 +49,43 @@ authRouter.post('/login', async (req, res, next) => {
       usage,
     });
   } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: formatValidationError(error, 'login'),
+        code: 'VALIDATION_ERROR',
+        details: error.errors,
+      });
+    }
     next(error);
   }
 });
+
+function formatValidationError(error: ZodError, type: 'register' | 'login') {
+  const issue: ZodIssue | undefined = error.errors[0];
+  const field = issue?.path?.[0];
+
+  if (field === 'email') {
+    return 'メールアドレスの形式が正しくありません。';
+  }
+
+  if (field === 'password') {
+    if (issue?.code === 'too_small') {
+      return 'パスワードが短すぎます。8文字以上で入力してください。';
+    }
+    return 'パスワードの入力内容を確認してください。';
+  }
+
+  if (type === 'register' && field === 'username') {
+    if (issue?.code === 'too_small') {
+      return 'ユーザー名は2文字以上で入力してください。';
+    }
+    if (issue?.code === 'too_big') {
+      return 'ユーザー名は40文字以内で入力してください。';
+    }
+  }
+
+  return '入力内容が正しくありません。';
+}
 
 authRouter.post('/logout', async (req, res) => {
   req.session.destroy(() => {

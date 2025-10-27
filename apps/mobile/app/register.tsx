@@ -25,7 +25,12 @@ export default function RegisterScreen() {
 
   const handleRegister = async () => {
     if (!email.trim() || !password.trim()) {
-      setError(t('register.validation.missing')); 
+      setError(t('register.validation.missing'));
+      return;
+    }
+
+    if (password.trim().length < 8) {
+      setError(t('register.validation.passwordShort'));
       return;
     }
     try {
@@ -40,6 +45,7 @@ export default function RegisterScreen() {
       setUser(response.user);
       setUsage(response.usage);
       setStatus('authenticated');
+      router.dismissAll();
       router.replace('/(tabs)/chat');
     } catch (err) {
       const message = err instanceof Error ? err.message : t('register.error.generic');
