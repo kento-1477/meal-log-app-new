@@ -8,7 +8,7 @@ import { Alert } from 'react-native';
 import { useURL } from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSessionStore } from '@/store/session';
-import { trackReferralPremiumClaimedFriend } from '@/analytics/events';
+import { trackReferralPremiumClaimedFriend } from '../analytics/events';
 import { getSession } from '@/services/api';
 
 const REFERRAL_CODE_KEY = '@referral_code';
