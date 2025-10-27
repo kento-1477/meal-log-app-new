@@ -3,7 +3,7 @@
 // 招待コード、統計情報、最近の紹介一覧を表示
 // 関連: services/api.ts, hooks/useReferralStatus.ts
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,11 +15,34 @@ import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import { useReferralStatus } from '@/hooks/useReferralStatus';
+import { trackInviteLinkShared } from '@/analytics/events';
 
 export default function ReferralStatusScreen() {
   const { t } = useTranslation();
   const { status, isLoading, error, refresh } = useReferralStatus();
   const [isCopying, setIsCopying] = useState(false);
+
+  const stats = useMemo(() => {
+    if (!status) return [];
+    return [
+      {
+        label: t('referral.status.stats.total'),
+        value: String(status.stats.totalReferred),
+      },
+      {
+        label: t('referral.status.stats.completed'),
+        value: String(status.stats.completedReferred),
+      },
+      {
+        label: t('referral.status.stats.pending'),
+        value: String(status.stats.pendingReferred),
+      },
+      {
+        label: t('referral.status.stats.daysEarned'),
+        value: t('referral.status.stats.daysEarnedValue', { count: status.stats.totalPremiumDaysEarned }),
+      },
+    ];
+  }, [status, t]);
 
   const handleCopyCode = () => {
     if (!status?.inviteCode) return;
@@ -44,6 +67,7 @@ export default function ReferralStatusScreen() {
         title: t('referral.share.title'),
         message,
       });
+      trackInviteLinkShared({ channel: 'system-share' });
     } catch (err) {
       console.error('Failed to share link:', err);
     }
@@ -113,6 +137,19 @@ export default function ReferralStatusScreen() {
             <Text style={styles.primaryButtonText}>{t('referral.status.share')}</Text>
           </TouchableOpacity>
 
+          {/* スタッツ */}
+          <View style={styles.statsCard}>
+            {stats.map((stat, index) => (
+              <View
+                key={stat.label}
+                style={[styles.statItem, index % 2 === 0 ? styles.statItemLeft : styles.statItemRight]}
+              >
+                <Text style={styles.statValue}>{stat.value}</Text>
+                <Text style={styles.statLabel}>{stat.label}</Text>
+              </View>
+            ))}
+          </View>
+
           {/* 手順ボックス */}
           <View style={styles.stepsCard}>
             <Text style={styles.sectionTitle}>受け取り方</Text>
@@ -123,10 +160,60 @@ export default function ReferralStatusScreen() {
 
           {/* 免責 */}
           <Text style={styles.disclaimer}>※ 自分への招待や不正は特典対象外です</Text>
+
+          {/* 最近の紹介 */}
+          <View style={styles.recentCard}>
+            <Text style={styles.sectionTitle}>{t('referral.status.recent')}</Text>
+            {status.recentReferrals.length === 0 ? (
+              <Text style={styles.emptyText}>{t('referral.status.recent.empty')}</Text>
+            ) : (
+              status.recentReferrals.map((item) => {
+                const statusLabelMap = {
+                  PENDING: t('referral.status.status.pending'),
+                  COMPLETED: t('referral.status.status.completed'),
+                  EXPIRED: t('referral.status.status.expired'),
+                } as const;
+                const statusLabel = statusLabelMap[item.status];
+                const createdAt = formatDate(item.createdAt);
+                const completedAt = item.completedAt ? formatDate(item.completedAt) : null;
+                const badgeStyle =
+                  item.status === 'COMPLETED'
+                    ? styles.statusBadgeCOMPLETED
+                    : item.status === 'PENDING'
+                      ? styles.statusBadgePENDING
+                      : styles.statusBadgeEXPIRED;
+
+                return (
+                  <View key={`${item.friendUsername}-${item.createdAt}`} style={styles.recentItem}>
+                    <View style={styles.recentHeader}>
+                      <Text style={styles.recentName}>{item.friendUsername}</Text>
+                      <View style={[styles.statusBadge, badgeStyle]}>
+                        <Text style={styles.statusBadgeText}>{statusLabel}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.recentMeta}>
+                      {t('referral.status.consecutiveDays', { days: item.consecutiveDays })}・{createdAt}
+                      {completedAt ? ` → ${completedAt}` : ''}
+                    </Text>
+                  </View>
+                );
+              })
+            )}
+          </View>
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>
   );
+}
+
+function formatDate(iso: string) {
+  const date = new Date(iso);
+  const formatter = new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+  return formatter.format(date);
 }
 
 const styles = StyleSheet.create({
@@ -286,5 +373,95 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textSecondary,
     marginTop: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  statsCard: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+  },
+  statItem: {
+    width: '50%',
+    paddingVertical: spacing.md,
+  },
+  statItemLeft: {
+    paddingRight: spacing.sm,
+  },
+  statItemRight: {
+    paddingLeft: spacing.sm,
+  },
+  statValue: {
+    ...textStyles.titleMedium,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  statLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  recentCard: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: spacing.lg,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+    marginBottom: spacing.xl,
+  },
+  emptyText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  recentItem: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+    marginTop: spacing.md,
+    gap: spacing.xs,
+  },
+  recentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  recentName: {
+    ...textStyles.body,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  statusBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  statusBadgeText: {
+    ...textStyles.caption,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  statusBadgePENDING: {
+    backgroundColor: colors.accentSoft,
+  },
+  statusBadgeCOMPLETED: {
+    backgroundColor: colors.success,
+  },
+  statusBadgeEXPIRED: {
+    backgroundColor: colors.error,
+  },
+  recentMeta: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
   },
 });
