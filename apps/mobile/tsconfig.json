@@ -13,6 +13,8 @@
       "@/store/*": ["store/*"],
       "@/theme/*": ["theme/*"],
       "@/features/*": ["features/*"],
+      "@/analytics": ["analytics"],
+      "@/analytics/*": ["analytics/*"],
       "@/i18n": ["i18n"],
       "@/i18n/*": ["i18n/*"],
       "@/utils/*": ["utils/*"],
@@ -20,5 +22,5 @@
       "@/screen-components/*": ["screen-components/*"]
     }
   },
-  "include": ["src", "App.tsx", "app.d.ts"]
+  "include": ["app", "src", "App.tsx", "app.d.ts"]
 }
