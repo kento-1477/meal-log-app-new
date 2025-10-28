@@ -15,7 +15,7 @@ import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import { useReferralStatus } from '@/hooks/useReferralStatus';
-import { trackInviteLinkShared } from '@/analytics/events';
+import { trackInviteLinkShared } from '../src/analytics/events';
 
 export default function ReferralStatusScreen() {
   const { t } = useTranslation();
