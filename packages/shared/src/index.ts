@@ -215,7 +215,7 @@ export const MealLogSummarySchema = z.object({
 
 export type MealLogSummary = z.infer<typeof MealLogSummarySchema>;
 
-export const MealLogRangeSchema = z.enum(['today', 'week', 'twoWeeks', 'threeWeeks', 'month']);
+export const MealLogRangeSchema = z.enum(['today', 'week', 'twoWeeks', 'threeWeeks', 'month', 'threeMonths']);
 export type MealLogRange = z.infer<typeof MealLogRangeSchema>;
 
 export const MealLogListResponseSchema = z.object({

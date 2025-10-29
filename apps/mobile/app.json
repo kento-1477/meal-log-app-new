@@ -31,6 +31,21 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.meallog.app",
       "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSExceptionDomains": {
+            "localhost": {
+              "NSIncludesSubdomains": true,
+              "NSTemporaryExceptionAllowsInsecureHTTPLoads": true,
+              "NSTemporaryExceptionMinimumTLSVersion": "TLSv1.1"
+            },
+            "127.0.0.1": {
+              "NSIncludesSubdomains": true,
+              "NSTemporaryExceptionAllowsInsecureHTTPLoads": true,
+              "NSTemporaryExceptionMinimumTLSVersion": "TLSv1.1"
+            }
+          }
+        },
         "NSPhotoLibraryUsageDescription": "食事の写真を添付するためにフォトライブラリへアクセスします。",
         "NSPhotoLibraryAddUsageDescription": "食事の写真を保存するためにフォトライブラリへアクセスします。",
         "NSCameraUsageDescription": "料理を撮影して記録に追加するためにカメラを利用します。"

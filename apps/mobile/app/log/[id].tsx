@@ -104,6 +104,7 @@ export default function MealLogDetailScreen() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['logDetail', logId] });
       queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['mealLogs'] });
       queryClient.invalidateQueries({ queryKey: ['dailySummary'] });
       if (result?.item && logId) {
         updateCardForLog(logId, {
@@ -139,6 +140,7 @@ export default function MealLogDetailScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['logDetail', logId, locale] });
       queryClient.invalidateQueries({ queryKey: ['recentLogs', locale] });
+      queryClient.invalidateQueries({ queryKey: ['mealLogs'] });
     },
     onError: (error: unknown) => {
       const message = error instanceof Error ? error.message : 'お気に入りの更新に失敗しました';
@@ -233,6 +235,7 @@ export default function MealLogDetailScreen() {
 
   function invalidateQueries(targetId: string) {
     queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
+    queryClient.invalidateQueries({ queryKey: ['mealLogs'] });
     queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
     queryClient.invalidateQueries({ queryKey: ['streak'] });
     queryClient.invalidateQueries({ queryKey: ['logDetail', targetId] });

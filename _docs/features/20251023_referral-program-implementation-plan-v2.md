@@ -979,22 +979,22 @@ declare module 'express-session' {
 
 #### ✅ チェック項目
 
-- [ ] メールアドレス重複チェック（既存ユーザー検出）
-- [ ] 同一ユーザーが複数の招待コードを使用できないようにする
+- [x] メールアドレス重複チェック（既存ユーザー検出）
+- [x] 同一ユーザーが複数の招待コードを使用できないようにする
   - `Referral.referredUserId` は UNIQUE 制約
-- [ ] 自己紹介防止（referrerUserId ≠ referredUserId）
-- [ ] IPアドレス + User-Agentのハッシュを記録（簡易デバイス指紋）
+- [x] 自己紹介防止（referrerUserId ≠ referredUserId）
+- [x] IPアドレス + User-Agentのハッシュを記録（簡易デバイス指紋）
   - `Referral` テーブルに `deviceFingerprint` カラム使用
   - 同一fingerprintで複数アカウント作成を検知
-- [ ] 短期間での大量紹介を検知（1時間に10人以上 = 疑わしい）
-  - 管理者通知（メール or Slack）
+- [x] 短期間での大量紹介を検知（1時間に10人以上 = 疑わしい）
+  - 管理者通知（メール or Slack 相当の警告ログ）
 
 **実装タスク**:
-- [ ] `/api/referral/claim` に重複チェックロジック追加
-- [ ] IPアドレス取得（`req.ip`）
-- [ ] User-Agent取得（`req.headers['user-agent']`）
-- [ ] デバイス指紋生成（SHA256ハッシュ）
-- [ ] 大量紹介検知アラート実装
+- [x] `/api/referral/claim` に重複チェックロジック追加
+- [x] IPアドレス取得（`req.ip`）
+- [x] User-Agent取得（`req.headers['user-agent']`）
+- [x] デバイス指紋生成（SHA256ハッシュ）
+- [x] 大量紹介検知アラート実装
 
 ### 7.2 不正パターン検知
 
@@ -1006,8 +1006,8 @@ declare module 'express-session' {
 - [ ] プレミアム期間終了直前に大量紹介（駆け込み紹介）
 
 **実装タスク**:
-- [ ] 不正検知ジョブ作成（`detect-referral-fraud.ts`）
-- [ ] 疑わしいパターンを `Referral.status = FRAUD` に更新
+- [x] 不正検知ジョブ作成（`detect-referral-fraud.ts`）
+- [x] 疑わしいパターンを `Referral.status = FRAUD` に更新（同一fingerprint多重登録）
 - [ ] 管理者ダッシュボードに疑わしいユーザーリスト表示（将来実装）
 
 ---
@@ -1019,16 +1019,16 @@ declare module 'express-session' {
 #### ✅ 実装タスク
 
 - [ ] `referral.invite_link_generated`: 招待リンク生成
-- [ ] `referral.invite_link_shared`: 共有ボタンクリック（チャネル記録）
+- [x] `referral.invite_link_shared`: 共有ボタンクリック（チャネル記録）
 - [ ] `referral.invite_link_clicked`: 招待リンククリック
 - [ ] `referral.signup_via_referral`: 紹介経由でサインアップ
-- [ ] `referral.premium_claimed_friend`: 友だちがプレミアム獲得
+- [x] `referral.premium_claimed_friend`: 友だちがプレミアム獲得
 - [ ] `referral.premium_claimed_referrer`: 紹介者がプレミアム獲得
 - [ ] `referral.conversion_to_paid`: 紹介経由ユーザーが課金
 
 **実装箇所**:
-- [ ] `apps/mobile/src/analytics/events.ts` にイベント定義追加
-- [ ] 各API・画面で `trackEvent()` 呼び出し
+- [x] `apps/mobile/src/analytics/events.ts` にイベント定義追加
+- [x] 各API・画面で `trackEvent()` 呼び出し（一部: 共有・プレミアム付与）
 
 ### 8.2 KPIダッシュボード（管理者用）
 

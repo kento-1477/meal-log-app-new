@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -31,6 +32,9 @@ import { cacheStreak } from '@/services/streak-storage';
 import { useTranslation } from '@/i18n';
 import { buildFavoriteDraftFromSummary } from '@/utils/favorites';
 import { DateTime } from 'luxon';
+import { usePremiumStore } from '@/store/premium';
+import { useRouter } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 
 const DEFAULT_PERIOD: DashboardPeriod = 'today';
 
@@ -49,14 +53,18 @@ const MACRO_COLOR_TOKEN: Record<MacroComparison['key'], RingColorToken> = {
 type Translate = (key: string, params?: Record<string, string | number>) => string;
 
 export default function DashboardScreen() {
+  const router = useRouter();
   const [period, setPeriod] = useState<DashboardPeriod>(DEFAULT_PERIOD);
   const [logsRange, setLogsRange] = useState<MealLogRange>('today');
   const status = useSessionStore((state) => state.status);
+  const userPlan = useSessionStore((state) => state.user?.plan ?? 'FREE');
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
   const setUsage = useSessionStore((state) => state.setUsage);
   const isAuthenticated = status === 'authenticated';
   const { t, locale } = useTranslation();
+  const premiumState = usePremiumStore((state) => state.status);
+  const isPremium = premiumState?.isPremium ?? userPlan === 'PREMIUM';
 
   const { data, isLoading, isFetching, error, refetch, isStaleFromCache } = useDashboardSummary(period, {
     enabled: isAuthenticated,
@@ -207,11 +215,20 @@ const streakQuery = useQuery({
                   <View style={styles.calorieRingContainer}>
                     <CalorieRing data={ringData.total} t={t} />
                   </View>
-                  <MonthlyDeficitCard
-                    summary={data.summary}
-                    targets={data.targets}
-                    t={t}
-                  />
+                  {isPremium ? (
+                    <MonthlyDeficitCard summary={data.summary} targets={data.targets} t={t} />
+                  ) : (
+                    <View style={[styles.monthlyCard, styles.lockedCard]}>
+                      <View style={styles.premiumLockHeader}>
+                        <Feather name="lock" size={16} color={colors.textSecondary} />
+                        <Text style={styles.lockedTitle}>{t('dashboard.premiumLocked.monthlyTitle')}</Text>
+                      </View>
+                      <Text style={styles.lockedSubtitle}>{t('dashboard.premiumLocked.monthlyDescription')}</Text>
+                      <TouchableOpacity style={styles.lockedButton} onPress={() => router.push('/paywall')}>
+                        <Text style={styles.lockedButtonLabel}>{t('dashboard.premiumLocked.cta')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
                 <View style={styles.macroRow}>
                   {ringData.macros.map((macro) => (
@@ -221,11 +238,11 @@ const streakQuery = useQuery({
               </>
             ) : null}
 
-            {data.comparison ? <PeriodComparisonCard comparison={data.comparison} /> : null}
+            {data.comparison && isPremium ? <PeriodComparisonCard comparison={data.comparison} /> : null}
 
             <View style={styles.section}>
               <View style={styles.card}>
-                <CalorieLineChart points={data.calories.points} target={data.calories.targetLine} />
+          <CalorieLineChart points={data.calories.points} target={data.calories.targetLine} />
               </View>
               <MealPeriodBreakdown entries={data.calories.mealPeriodBreakdown} />
               {showEmpty && <EmptyStateCard message={emptyMessage} />}
@@ -501,6 +518,39 @@ const styles = StyleSheet.create({
   },
   dashboardBody: {
     gap: spacing.lg,
+  },
+  premiumLockHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  lockedTitle: {
+    ...textStyles.body,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  lockedSubtitle: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  lockedButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.textSecondary,
+    borderRadius: 999,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+    opacity: 0.85,
+  },
+  lockedButtonLabel: {
+    ...textStyles.caption,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  lockedCard: {
+    opacity: 0.4,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
   },
   cacheBanner: {
     ...textStyles.caption,

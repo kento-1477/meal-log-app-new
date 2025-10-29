@@ -4,6 +4,7 @@ import { env } from './env.js';
 import { logger } from './logger.js';
 import { scheduleDailyLogCleanup } from './jobs/log-cleanup.js';
 import { scheduleReferralCompletionCheck } from './jobs/check-referral-completion.js';
+import { scheduleReferralFraudDetection } from './jobs/detect-referral-fraud.js';
 
 const app = createApp();
 const server = createServer(app);
@@ -18,4 +19,8 @@ if (process.env.DISABLE_LOG_CLEANUP !== 'true' && env.NODE_ENV !== 'test') {
 
 if (process.env.DISABLE_REFERRAL_CHECK !== 'true' && env.NODE_ENV !== 'test') {
   scheduleReferralCompletionCheck();
+}
+
+if (process.env.DISABLE_REFERRAL_FRAUD_CHECK !== 'true' && env.NODE_ENV !== 'test') {
+  scheduleReferralFraudDetection();
 }
