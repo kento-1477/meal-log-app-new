@@ -11,7 +11,6 @@ import type {
   MealLogListResponse,
   UpdateMealLogRequest,
   AiUsageSummary,
-  UserPlan,
   GeminiNutritionResponse,
   FavoriteMeal,
   FavoriteMealDraft,
@@ -161,7 +160,6 @@ export interface SessionUser {
   id: number;
   email: string;
   username?: string;
-  plan: UserPlan;
   aiCredits: number;
 }
 

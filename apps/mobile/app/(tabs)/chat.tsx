@@ -67,6 +67,26 @@ const composeTimeline = (messages: ReturnType<typeof useChatStore.getState>['mes
     return [base];
   });
 
+const NETWORK_HINT_DELAY_MS = 30000;
+const NETWORK_ERROR_PATTERNS = [
+  'Network request failed',
+  'The network connection was lost',
+  'A server with the specified hostname could not be found',
+  'offline',
+  'timed out',
+];
+
+function isLikelyNetworkError(error: unknown): boolean {
+  if (!error) {
+    return false;
+  }
+  if (error instanceof TypeError) {
+    return true;
+  }
+  const message = typeof (error as { message?: unknown }).message === 'string' ? (error as { message: string }).message : '';
+  return NETWORK_ERROR_PATTERNS.some((pattern) => message.toLowerCase().includes(pattern.toLowerCase()));
+}
+
 // ... (rest of the imports)
 
 // ... (Timeline interfaces)
@@ -90,6 +110,14 @@ export default function ChatScreen() {
   const [limitModalVisible, setLimitModalVisible] = useState(false);
   const [streakModalVisible, setStreakModalVisible] = useState(false);
   const [iapLoading, setIapLoading] = useState(false);
+  const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearNetworkHintTimer = useCallback(() => {
+    if (networkHintTimerRef.current) {
+      clearTimeout(networkHintTimerRef.current);
+      networkHintTimerRef.current = null;
+    }
+  }, []);
 
   const {
     messages,
@@ -137,6 +165,8 @@ export default function ChatScreen() {
     staleTime: 1000 * 60 * 15,
   });
 
+  useEffect(() => () => clearNetworkHintTimer(), [clearNetworkHintTimer]);
+
   const streak = streakQuery.data;
   const hasStreak = Boolean(streak);
   const streakCurrent = streak?.current;
@@ -147,6 +177,7 @@ export default function ChatScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['favorites'] });
       queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['mealLogs'] });
       queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
     },
   });
@@ -307,6 +338,7 @@ export default function ChatScreen() {
       return null;
     }
 
+    clearNetworkHintTimer();
     setSending(true);
     setError(null);
 
@@ -314,6 +346,12 @@ export default function ChatScreen() {
 
     const userMessage = addUserMessage(displayMessage);
     const assistantPlaceholder = addAssistantMessage('解析中です…', { status: 'sending' });
+    networkHintTimerRef.current = setTimeout(() => {
+      setMessageText(
+        assistantPlaceholder.id,
+        `解析中です…\n${t('chat.networkSlowWarning')}`,
+      );
+    }, NETWORK_HINT_DELAY_MS);
     scrollToEnd();
 
     try {
@@ -333,6 +371,7 @@ export default function ChatScreen() {
         setUsage(response.usage);
       }
       queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['mealLogs'] });
       queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
       queryClient.invalidateQueries({ queryKey: ['streak'] });
       options.onSuccess?.(response);
@@ -347,6 +386,11 @@ export default function ChatScreen() {
           setUsage(payload);
         }
         setError('本日の利用回数が上限に達しました。');
+      } else if (isLikelyNetworkError(apiError)) {
+        updateMessageStatus(userMessage.id, 'error');
+        updateMessageStatus(assistantPlaceholder.id, 'error');
+        setMessageText(assistantPlaceholder.id, t('chat.networkErrorBubble'));
+        setError(t('chat.networkErrorBanner'));
       } else {
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');
@@ -354,6 +398,7 @@ export default function ChatScreen() {
       }
       return null;
     } finally {
+      clearNetworkHintTimer();
       setSending(false);
       scrollToEnd();
     }
@@ -430,6 +475,7 @@ export default function ChatScreen() {
         setUsage(response.usage);
       }
       queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['mealLogs'] });
       queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
       queryClient.invalidateQueries({ queryKey: ['streak'] });
       queryClient.invalidateQueries({ queryKey: ['favorites'] });

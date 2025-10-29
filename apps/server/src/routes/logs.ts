@@ -8,6 +8,7 @@ import { prisma } from '../db/prisma.js';
 import { requireAuth } from '../middleware/require-auth.js';
 import { updateMealLog, deleteMealLog, restoreMealLog } from '../services/log-service.js';
 import { getMealLogSharePayload, getLogsForExport } from '../services/log-share-service.js';
+import { isPremium } from '../services/premium-service.js';
 import { resolveRequestLocale } from '../utils/request-locale.js';
 import { resolveMealLogLocalization, type LocalizationResolution } from '../utils/locale.js';
 import { normalizeTimezone, resolveRequestTimezone } from '../utils/timezone.js';
@@ -24,7 +25,7 @@ const mealPeriodLookup: Record<string, MealPeriod> = {
 const toMealPeriodLabel = (period: MealPeriod | null | undefined) =>
   period ? period.toLowerCase() : null;
 
-type LogsRangeKey = 'today' | 'week' | 'twoWeeks' | 'threeWeeks' | 'month';
+type LogsRangeKey = 'today' | 'week' | 'twoWeeks' | 'threeWeeks' | 'month' | 'threeMonths';
 
 interface LogsRange {
   key: LogsRangeKey;
@@ -32,38 +33,58 @@ interface LogsRange {
   to: Date;
 }
 
-function resolveLogsRange(key: string | undefined, timezone: string): LogsRange | null {
+function resolveLogsRange(
+  key: string | undefined,
+  timezone: string,
+  options: { allowThreeMonths?: boolean } = {},
+): LogsRange | null {
   const normalizedKey = (key as LogsRangeKey | undefined) ?? 'today';
   const zone = normalizeTimezone(timezone);
   const now = DateTime.now().setZone(zone).startOf('day');
+  const allowThreeMonths = options.allowThreeMonths ?? false;
 
-  if (normalizedKey === 'today') {
-    return {
-      key: 'today',
-      from: now.toUTC().toJSDate(),
-      to: now.plus({ days: 1 }).toUTC().toJSDate(),
-    };
+  switch (normalizedKey) {
+    case 'today':
+      return {
+        key: 'today',
+        from: now.toUTC().toJSDate(),
+        to: now.plus({ days: 1 }).toUTC().toJSDate(),
+      } satisfies LogsRange;
+    case 'week':
+    case 'twoWeeks':
+    case 'threeWeeks':
+    case 'month': {
+      const durationMap = {
+        week: 7,
+        twoWeeks: 14,
+        threeWeeks: 21,
+        month: 30,
+      } as const;
+      const days = durationMap[normalizedKey as keyof typeof durationMap];
+      if (!days) {
+        return null;
+      }
+      const from = now.minus({ days: days - 1 });
+      return {
+        key: normalizedKey,
+        from: from.toUTC().toJSDate(),
+        to: now.plus({ days: 1 }).toUTC().toJSDate(),
+      } satisfies LogsRange;
+    }
+    case 'threeMonths': {
+      if (!allowThreeMonths) {
+        return null;
+      }
+      const from = now.minus({ days: 89 });
+      return {
+        key: 'threeMonths',
+        from: from.toUTC().toJSDate(),
+        to: now.plus({ days: 1 }).toUTC().toJSDate(),
+      } satisfies LogsRange;
+    }
+    default:
+      return null;
   }
-
-  const durationMap: Record<Exclude<LogsRangeKey, 'today'>, number> = {
-    week: 7,
-    twoWeeks: 14,
-    threeWeeks: 21,
-    month: 30,
-  };
-
-  const days = durationMap[normalizedKey as Exclude<LogsRangeKey, 'today'>];
-  if (!days) {
-    return null;
-  }
-
-  const from = now.minus({ days: days - 1 });
-
-  return {
-    key: normalizedKey,
-    from: from.toUTC().toJSDate(),
-    to: now.plus({ days: 1 }).toUTC().toJSDate(),
-  };
 }
 
 const fetchMealLogDetail = async (logId: string, userId: number, locale: Locale) => {
@@ -147,19 +168,24 @@ logsRouter.get('/logs', requireAuth, async (req, res, next) => {
     req.session.timezone = timezone;
 
     const rangeKey = typeof req.query.range === 'string' ? req.query.range : undefined;
-    const range = resolveLogsRange(rangeKey, timezone);
+    const userId = req.session.userId!;
+    const premiumUser = await isPremium(userId);
+    const range = resolveLogsRange(rangeKey, timezone, { allowThreeMonths: premiumUser });
+
+    if (!range) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        ok: false,
+        error: '指定した期間は利用できません',
+      });
+    }
 
     const whereClause = {
-      userId: req.session.userId!,
+      userId,
       deletedAt: null,
-      ...(range
-        ? {
-            createdAt: {
-              gte: range.from,
-              lt: range.to,
-            },
-          }
-        : {}),
+      createdAt: {
+        gte: range.from,
+        lt: range.to,
+      },
     } satisfies Prisma.MealLogWhereInput;
 
     const items = await prisma.mealLog.findMany({
@@ -197,7 +223,7 @@ logsRouter.get('/logs', requireAuth, async (req, res, next) => {
       };
     });
 
-    res.status(StatusCodes.OK).json({ ok: true, items: responseItems, range: range?.key ?? 'today', timezone });
+    res.status(StatusCodes.OK).json({ ok: true, items: responseItems, range: range.key, timezone });
   } catch (error) {
     next(error);
   }
