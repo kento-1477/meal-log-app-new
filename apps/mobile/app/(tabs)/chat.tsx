@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,6 +14,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -40,7 +41,7 @@ import {
 import { purchaseCreditPack, IAP_UNSUPPORTED_ERROR } from '@/services/iap';
 import { hasDialogBeenSeen, markDialogSeen } from '@/services/dialog-tracker';
 import { describeLocale } from '@/utils/locale';
-import type { NutritionCardPayload } from '@/types/chat';
+import type { ChatMessage, NutritionCardPayload } from '@/types/chat';
 import type { AiUsageSummary, FavoriteMeal, FavoriteMealDraft } from '@meal-log/shared';
 import { useTranslation } from '@/i18n';
 
@@ -77,6 +78,7 @@ export default function ChatScreen() {
   const router = useRouter();
   const listRef = useRef<FlatList<TimelineItemMessage | TimelineItemCard>>(null);
   const tabBarHeight = useBottomTabBarHeight();
+  const windowHeight = useWindowDimensions().height;
   const queryClient = useQueryClient();
   const { t, locale } = useTranslation();
   const [input, setInput] = useState('');
@@ -108,6 +110,13 @@ export default function ChatScreen() {
   const usageRemaining = usage?.remaining;
 
   const [mediaPermission, requestMediaPermission] = ImagePicker.useMediaLibraryPermissions();
+
+  const prevMessagesRef = useRef<ChatMessage[] | null>(null);
+  const [enhancedExchange, setEnhancedExchange] = useState<{ user: ChatMessage; assistant: ChatMessage | null } | null>(null);
+
+  const scrollToEnd = useCallback(() => {
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+  }, []);
 
   const favoritesQuery = useQuery({
     queryKey: ['favorites'],
@@ -193,11 +202,78 @@ export default function ChatScreen() {
     };
   }, [hasStreak, streakCurrent, streakLastLoggedAt, userPlan]);
 
+  useEffect(() => {
+    const prev = prevMessagesRef.current;
+    const userCount = messages.filter((message) => message.role === 'user').length;
+
+    if (!prev) {
+      prevMessagesRef.current = messages;
+      return;
+    }
+
+    if (userCount <= 1) {
+      if (enhancedExchange) {
+        setEnhancedExchange(null);
+      }
+      prevMessagesRef.current = messages;
+      return;
+    }
+
+    const prevUserCount = prev.filter((message) => message.role === 'user').length;
+    let lastUserIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === 'user') {
+        lastUserIndex = i;
+        break;
+      }
+    }
+
+    const lastUser = lastUserIndex >= 0 ? messages[lastUserIndex] : null;
+    const assistantAfterUser =
+      lastUserIndex >= 0 ? messages.slice(lastUserIndex + 1).find((message) => message.role === 'assistant') ?? null : null;
+
+    const shouldUpdateOnNewUser = userCount > prevUserCount && lastUser !== null;
+    const isDifferentUser = lastUser && enhancedExchange && enhancedExchange.user.id !== lastUser.id;
+    const assistantNowPresent = lastUser && enhancedExchange && enhancedExchange.user.id === lastUser.id && !enhancedExchange.assistant && assistantAfterUser;
+
+    if (shouldUpdateOnNewUser || isDifferentUser || assistantNowPresent) {
+      if (lastUser) {
+        setEnhancedExchange({ user: lastUser, assistant: assistantAfterUser });
+        requestAnimationFrame(() => scrollToEnd());
+      }
+    }
+
+    prevMessagesRef.current = messages;
+  }, [messages, enhancedExchange, scrollToEnd]);
+
   const timeline = useMemo<Array<TimelineItemMessage | TimelineItemCard>>(() => composeTimeline(messages), [messages]);
 
-  const scrollToEnd = () => {
-    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
-  };
+  const filteredTimeline = useMemo(() => {
+    if (!enhancedExchange) {
+      return timeline;
+    }
+    const excludedMessageIds = new Set<string>([enhancedExchange.user.id]);
+    if (enhancedExchange.assistant) {
+      excludedMessageIds.add(enhancedExchange.assistant.id);
+    }
+    return timeline.filter((item) => {
+      if (item.type === 'message') {
+        return !excludedMessageIds.has(item.payload.id);
+      }
+      if (item.type === 'card' && enhancedExchange.assistant) {
+        return item.id !== `${enhancedExchange.assistant.id}-card`;
+      }
+      return true;
+    });
+  }, [timeline, enhancedExchange]);
+
+  const enhancedContainerMinHeight = useMemo(() => {
+    if (!enhancedExchange) {
+      return undefined;
+    }
+    const headerAllowance = inset.top + 120;
+    return Math.max(windowHeight - (tabBarHeight + headerAllowance), 320);
+  }, [enhancedExchange, inset.top, tabBarHeight, windowHeight]);
 
   const canSend = !usage || usage.remaining > 0 || usage.credits > 0;
 
@@ -467,6 +543,42 @@ export default function ChatScreen() {
     }
   };
 
+  const renderEnhancedFooter = () => {
+    if (!enhancedExchange || !enhancedContainerMinHeight) {
+      return null;
+    }
+
+    const assistantCard = enhancedExchange.assistant?.card ?? null;
+    const assistantCardId = enhancedExchange.assistant ? `${enhancedExchange.assistant.id}-card` : null;
+
+    return (
+      <View style={[styles.enhancedContainer, { minHeight: enhancedContainerMinHeight }]}
+        key={enhancedExchange.user.id}
+      >
+        <ChatBubble message={enhancedExchange.user} />
+        {enhancedExchange.assistant ? (
+          <>
+            <ChatBubble message={enhancedExchange.assistant} />
+            {assistantCard && assistantCardId ? (
+              <NutritionCard
+                payload={assistantCard}
+                onShare={() => handleShareCard(assistantCard, assistantCardId)}
+                sharing={sharingId === assistantCardId}
+                onAddFavorite={
+                  assistantCard.favoriteCandidate
+                    ? (draft) => handleAddFavoriteFromCard(assistantCardId, draft)
+                    : undefined
+                }
+                addingFavorite={addingFavoriteId === assistantCardId}
+                onEdit={assistantCard.logId ? () => handleEditLog(assistantCard.logId) : undefined}
+              />
+            ) : null}
+          </>
+        ) : null}
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <Text style={[styles.headerTitle, { paddingHorizontal: 16, marginBottom: 16 }]}>{t('chat.header')}</Text>
@@ -500,7 +612,7 @@ export default function ChatScreen() {
       >
         <FlatList
           ref={listRef}
-          data={timeline}
+          data={filteredTimeline}
           keyExtractor={(item) => item.id}
           contentInsetAdjustmentBehavior="automatic"
           renderItem={({ item }) =>
@@ -518,6 +630,7 @@ export default function ChatScreen() {
             )
           }
           contentContainerStyle={[styles.listContent, { paddingBottom: 120 + inset.bottom }]}
+          ListFooterComponent={renderEnhancedFooter}
           onContentSizeChange={scrollToEnd}
           showsVerticalScrollIndicator={false}
         />
@@ -799,6 +912,13 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 16,
+  },
+  enhancedContainer: {
+    justifyContent: 'flex-end',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+    gap: 12,
   },
   composer: {
     borderTopWidth: StyleSheet.hairlineWidth,
