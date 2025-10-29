@@ -11,6 +11,7 @@
  */
 
 import { prisma } from '../db/prisma.js';
+import { logger } from '../logger.js';
 import { ReferralStatus } from '@prisma/client';
 import { DateTime } from 'luxon';
 import { StatusCodes } from 'http-status-codes';
@@ -207,6 +208,22 @@ export async function claimReferralCode(params: {
         referralId: referral.id,
       },
     });
+
+    // 直近1時間の紹介数を集計（大量紹介の兆候）
+    const oneHourAgo = DateTime.now().minus({ hours: 1 }).toJSDate();
+    const recentCount = await tx.referral.count({
+      where: {
+        referrerUserId: inviteLink.userId,
+        createdAt: { gte: oneHourAgo },
+      },
+    });
+
+    if (recentCount >= 10) {
+      logger.warn(
+        { referrerUserId: inviteLink.userId, recentCount },
+        'suspicious high referral volume detected within last hour',
+      );
+    }
 
     return {
       referral,

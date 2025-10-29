@@ -12,6 +12,7 @@ const server = app.listen(0);
 const address = server.address();
 const baseUrl = typeof address === 'object' && address ? `http://127.0.0.1:${address.port}` : 'http://127.0.0.1:4100';
 let sessionCookie = '';
+let demoUserId: number;
 
 async function fetchWithSession(path, init = {}) {
   const headers = new Headers(init.headers ?? {});
@@ -42,6 +43,7 @@ before(async () => {
   await prisma.$executeRawUnsafe('TRUNCATE "LogShareToken" CASCADE');
   await prisma.$executeRawUnsafe('TRUNCATE "FavoriteMealItem" CASCADE');
   await prisma.$executeRawUnsafe('TRUNCATE "FavoriteMeal" CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE "PremiumGrant" CASCADE');
   await prisma.$executeRawUnsafe('TRUNCATE "User" CASCADE');
 
   const response = await fetch(`${baseUrl}/api/register`, {
@@ -54,6 +56,12 @@ before(async () => {
     const body = await response.text();
     throw new Error(`Failed to seed demo user via API: ${response.status} ${body}`);
   }
+
+  const demoUser = await prisma.user.findUnique({ where: { email: 'demo@example.com' } });
+  if (!demoUser) {
+    throw new Error('Failed to locate demo user after registration');
+  }
+  demoUserId = demoUser.id;
 });
 
 after(async () => {
@@ -158,6 +166,66 @@ test('logs range filter respects timezone windows', async () => {
   assert.equal(twoWeeksLogs.response.status, 200);
   assert.equal(twoWeeksLogs.body.items.length, 1);
   assert.equal(twoWeeksLogs.body.items[0]?.id, logId);
+});
+
+test('three month range requires premium access', async () => {
+  await loginAsDemo();
+  await prisma.$executeRawUnsafe('TRUNCATE "MealLog" CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE "PremiumGrant" CASCADE');
+
+  const now = new Date();
+  const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+  const eightyDaysAgo = new Date(Date.now() - 80 * 24 * 60 * 60 * 1000);
+
+  await prisma.mealLog.createMany({
+    data: [
+      {
+        userId: demoUserId,
+        foodItem: 'オートミール',
+        calories: 350,
+        proteinG: 20,
+        fatG: 8,
+        carbsG: 50,
+        createdAt: sixtyDaysAgo,
+        updatedAt: now,
+      },
+      {
+        userId: demoUserId,
+        foodItem: 'グリルチキン',
+        calories: 420,
+        proteinG: 38,
+        fatG: 12,
+        carbsG: 30,
+        createdAt: eightyDaysAgo,
+        updatedAt: now,
+      },
+    ],
+  });
+
+  const forbidden = await fetchWithSession('/api/logs?range=threeMonths', {
+    headers: { 'X-Timezone': 'Asia/Tokyo' },
+  });
+  assert.equal(forbidden.response.status, 400);
+
+  const startDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const endDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  await prisma.premiumGrant.create({
+    data: {
+      userId: demoUserId,
+      source: 'ADMIN_GRANT',
+      days: 30,
+      startDate,
+      endDate,
+    },
+  });
+
+  const granted = await fetchWithSession('/api/logs?range=threeMonths', {
+    headers: { 'X-Timezone': 'Asia/Tokyo' },
+  });
+  assert.equal(granted.response.status, 200);
+  assert.equal(Array.isArray(granted.body.items), true);
+  assert.equal(granted.body.items.length, 2);
+  assert.equal(granted.body.range, 'threeMonths');
 });
 
 test('delete and restore keep period history intact', async () => {

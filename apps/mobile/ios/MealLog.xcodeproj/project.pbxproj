@@ -253,6 +253,7 @@
 			inputPaths = (
 				"$(SRCROOT)/.xcode.env",
 				"$(SRCROOT)/.xcode.env.local",
+				"$(SRCROOT)/MealLog/MealLog.entitlements",
 				"$(SRCROOT)/Pods/Target Support Files/Pods-MealLog/expo-configure-project.sh",
 			);
 			name = "[Expo] Configure project";
@@ -338,6 +339,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = MealLog/MealLog.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -357,14 +359,13 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.meallog.app";
-				PRODUCT_NAME = "MealLog";
+				PRODUCT_BUNDLE_IDENTIFIER = com.meallog.app;
+				PRODUCT_NAME = MealLog;
 				SWIFT_OBJC_BRIDGING_HEADER = "MealLog/MealLog-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
-				VERSIONING_SYSTEM = "apple-generic";
 				TARGETED_DEVICE_FAMILY = "1,2";
-				CODE_SIGN_ENTITLEMENTS = MealLog/MealLog.entitlements;
+				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Debug;
 		};
@@ -374,6 +375,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = MealLog/MealLog.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = MealLog/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
@@ -388,13 +390,12 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.meallog.app";
-				PRODUCT_NAME = "MealLog";
+				PRODUCT_BUNDLE_IDENTIFIER = com.meallog.app;
+				PRODUCT_NAME = MealLog;
 				SWIFT_OBJC_BRIDGING_HEADER = "MealLog/MealLog-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
-				VERSIONING_SYSTEM = "apple-generic";
 				TARGETED_DEVICE_FAMILY = "1,2";
-				CODE_SIGN_ENTITLEMENTS = MealLog/MealLog.entitlements;
+				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
 		};

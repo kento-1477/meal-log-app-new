@@ -346,6 +346,7 @@ export default function FavoriteDetailScreen() {
   function invalidateLists() {
     queryClient.invalidateQueries({ queryKey: ['favorites'] });
     queryClient.invalidateQueries({ queryKey: ['recentLogs', locale] });
+    queryClient.invalidateQueries({ queryKey: ['mealLogs'] });
   }
 }
 

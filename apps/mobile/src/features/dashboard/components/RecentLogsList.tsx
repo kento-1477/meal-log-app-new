@@ -30,14 +30,20 @@ import {
 import { buildCsv, buildPdfHtml, type ExportItem } from '@/utils/logExport';
 import { describeLocale } from '@/utils/locale';
 import { useSessionStore } from '@/store/session';
+import { usePremiumStore } from '@/store/premium';
 
-const RANGE_OPTIONS: Array<{ value: MealLogRange; labelKey: string }> = [
+const BASE_RANGE_OPTIONS: Array<{ value: MealLogRange; labelKey: string }> = [
   { value: 'today', labelKey: 'history.range.today' },
   { value: 'week', labelKey: 'history.range.week' },
   { value: 'twoWeeks', labelKey: 'history.range.twoWeeks' },
   { value: 'threeWeeks', labelKey: 'history.range.threeWeeks' },
   { value: 'month', labelKey: 'history.range.month' },
 ];
+
+const PREMIUM_EXTRA_RANGE: { value: MealLogRange; labelKey: string } = {
+  value: 'threeMonths',
+  labelKey: 'history.range.threeMonths',
+};
 
 interface Props {
   logs: MealLogSummary[];
@@ -57,7 +63,11 @@ export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleF
   const [isExporting, setIsExporting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const plan = useSessionStore((state) => state.user?.plan ?? 'FREE');
+  const sessionPlan = useSessionStore((state) => state.user?.plan ?? 'FREE');
+  const premiumState = usePremiumStore((state) => state.status);
+  const isPremium = premiumState?.isPremium ?? sessionPlan === 'PREMIUM';
+  const rangeOptions = isPremium ? [...BASE_RANGE_OPTIONS, PREMIUM_EXTRA_RANGE] : BASE_RANGE_OPTIONS;
+  const showPremiumUpsell = !isPremium;
 
   if (!logs.length) {
     return (
@@ -65,7 +75,7 @@ export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleF
         <Text style={styles.heading}>{t('recentLogs.heading')}</Text>
         <View style={styles.emptyCard}>
           <Text style={styles.emptyText}>{t('recentLogs.empty')}</Text>
-          {plan === 'FREE' ? <Text style={styles.resetNotice}>{t('recentLogs.resetNotice')}</Text> : null}
+          {showPremiumUpsell ? <Text style={styles.resetNotice}>{t('recentLogs.resetNotice')}</Text> : null}
           <TouchableOpacity style={styles.cta} onPress={() => router.push('/(tabs)/chat')}>
             <Text style={styles.ctaLabel}>{t('button.record')}</Text>
           </TouchableOpacity>
@@ -89,7 +99,7 @@ export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleF
       </View>
       {onRangeChange && (
         <View style={styles.rangeRow}>
-          {RANGE_OPTIONS.map((option) => {
+          {rangeOptions.map((option) => {
             const isActive = option.value === range;
             return (
               <TouchableOpacity
@@ -103,6 +113,15 @@ export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleF
               </TouchableOpacity>
             );
           })}
+        </View>
+      )}
+      {showPremiumUpsell && (
+        <View style={styles.premiumCard}>
+          <Text style={styles.premiumTitle}>{t('recentLogs.premiumUpsell.title')}</Text>
+          <Text style={styles.premiumSubtitle}>{t('recentLogs.premiumUpsell.description')}</Text>
+          <TouchableOpacity style={styles.premiumButton} onPress={() => router.push('/referral-status')}>
+            <Text style={styles.premiumButtonLabel}>{t('recentLogs.premiumUpsell.cta')}</Text>
+          </TouchableOpacity>
         </View>
       )}
       <View style={styles.list}>
@@ -242,6 +261,7 @@ export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleF
 
   function invalidateLogQueries() {
     queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
+    queryClient.invalidateQueries({ queryKey: ['mealLogs'] });
     queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
     queryClient.invalidateQueries({ queryKey: ['streak'] });
   }
@@ -423,6 +443,36 @@ const styles = StyleSheet.create({
   },
   rangeLabelActive: {
     color: colors.accent,
+    fontWeight: '600',
+  },
+  premiumCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.md,
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  premiumTitle: {
+    ...textStyles.body,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  premiumSubtitle: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  premiumButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.accent,
+    borderRadius: 999,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  premiumButtonLabel: {
+    ...textStyles.caption,
+    color: '#fff',
     fontWeight: '600',
   },
   list: {

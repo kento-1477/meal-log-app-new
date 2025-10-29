@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AiUsageSummary, UserPlan } from '@meal-log/shared';
+import type { AiUsageSummary, UserTier } from '@meal-log/shared';
 import { getLocale, setLocale as setI18nLocale, type Locale } from '@/i18n';
 import { savePreferredLocale } from '@/services/locale-storage';
 
@@ -7,7 +7,7 @@ type User = {
   id: number;
   email: string;
   username?: string | null;
-  plan: UserPlan;
+  plan?: UserTier;
   aiCredits: number;
 };
 
