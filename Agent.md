@@ -110,7 +110,7 @@
 **本番環境 (prod)**:
 - [TODO] 本番URLを記載
 
-**環境変数**: `.env.local` を使う。秘密はコミットしない（`.env.example`を参照）。
+**環境変数**: `.env.local` を使う。秘密はコミットしない（`.env.example`を参照）。App Store決済を試すときは `IAP_TEST_MODE=true` と `APP_STORE_SHARED_SECRET`（サンドボックスの共有シークレット）を忘れず設定する。
 
 **主要な環境変数**:
 ```bash
@@ -125,7 +125,13 @@ AI_MAX_ATTEMPTS=2
 AI_TRANSLATION_STRATEGY=ai  # ai | copy | none
 USER_PLAN_OVERRIDE=STANDARD  # FREE | STANDARD（開発用）
 EXPO_PUBLIC_API_BASE_URL=http://localhost:4000
+IAP_TEST_MODE=true
+APP_STORE_SHARED_SECRET=dummy-shared-secret
 ```
+
+**App Store IAP プロダクトID**（コードにハードコード済み）
+- プレミアム年額: `com.meallog.premium.annual`
+- クレジットパック: `com.meallog.credits.100`
 
 ---
 

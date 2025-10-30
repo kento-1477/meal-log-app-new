@@ -30,6 +30,9 @@ AI_TOTAL_TIMEOUT_MS=35000
 AI_HEDGE_DELAY_MS=5000
 AI_MAX_ATTEMPTS=2
 EXPO_PUBLIC_API_BASE_URL=http://localhost:4000
+# In-app purchase testing (leave APP_STORE_SHARED_SECRET empty in dev if not using App Store validation)
+IAP_TEST_MODE=true
+APP_STORE_SHARED_SECRET=your-shared-secret
 # 翻訳戦略（任意: `ai` | `copy` | `none`）
 AI_TRANSLATION_STRATEGY=ai
 ```
@@ -117,6 +120,16 @@ npx expo start --clear
 - Dashboard tab surfaces daily totals, 7-day trends, and recent meals, and now shows the refreshed macro rings with “current / target” copy along with left/over states.
 
 Ensure the Expo app is pointed at the same host as the server (`EXPO_PUBLIC_API_BASE_URL`). For physical devices on the same network, set this value to your machine’s LAN IP.
+
+### Testing App Store subscriptions (sandbox)
+
+1. In `.env.local` set `IAP_TEST_MODE=true` (already the default) so the backend accepts locally-generated base64 receipts.
+2. Configure `APP_STORE_SHARED_SECRET` with the App Store Connect shared secret. For local tests a dummy value is fine; production requires the real secret.
+3. Product identifiers are fixed in code:
+   - Premium: `com.meallog.premium.annual`
+   - Credit pack: `com.meallog.credits.100`
+4. Use an Apple Sandbox account on the simulator/physical device when exercising the real App Store purchase sheet.
+5. To replay purchases without UI, run `npm run test:integration --workspace apps/server` which includes `iap.test.ts` and verifies the Premium grant path via the `/api/iap/purchase` endpoint.
 
 ## Gemini configuration notes
 

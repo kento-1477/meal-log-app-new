@@ -10,3 +10,27 @@ export function trackInviteLinkShared(params: { channel: string }) {
 export function trackReferralPremiumClaimedFriend(params: { referrer?: string | null }) {
   trackEvent('referral.premium_claimed_friend', params);
 }
+
+export function trackPaywallViewed(params: { source?: string } = {}) {
+  trackEvent('paywall.view', params);
+}
+
+export function trackPaywallPurchaseSuccess(params: { productId: string }) {
+  trackEvent('paywall.purchase_success', params);
+}
+
+export function trackPaywallPurchaseCancel(params: { productId: string }) {
+  trackEvent('paywall.purchase_cancel', params);
+}
+
+export function trackPaywallPurchaseFailure(params: { productId: string; code?: string; message?: string }) {
+  trackEvent('paywall.purchase_failure', params);
+}
+
+export function trackPaywallRestoreSuccess(params: { productId: string; restoredCount: number }) {
+  trackEvent('paywall.restore_success', params);
+}
+
+export function trackPaywallRestoreFailure(params: { productId: string; code?: string; message?: string }) {
+  trackEvent('paywall.restore_failure', params);
+}

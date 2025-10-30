@@ -98,10 +98,10 @@ export default function SettingsScreen() {
               </View>
               <View style={styles.inviteBody}>
                 <Text style={styles.inviteTitle}>{t('settings.invite.title')}</Text>
-                <Text style={styles.inviteSubtitle}>{t('referral.invite.rewardText')}</Text>
+                <Text style={styles.inviteSubtitle}>{t('settings.invite.subtitle')}</Text>
               </View>
               <View style={styles.inviteButton}>
-                <Text style={styles.inviteButtonLabel}>１ヶ月の有料プランを受け取る</Text>
+                <Text style={styles.inviteButtonLabel}>{t('settings.invite.cta')}</Text>
                 <Feather name="chevron-right" size={20} color={colors.accent} />
               </View>
             </LinearGradient>

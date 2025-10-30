@@ -1,12 +1,13 @@
 import { StatusCodes } from 'http-status-codes';
 import { IapPlatform } from '@prisma/client';
-import type { AiUsageSummary, IapPurchaseRequest } from '@meal-log/shared';
-import { resolveCreditsForProduct } from '@meal-log/shared';
+import type { AiUsageSummary, IapPurchaseRequest, PremiumStatus } from '@meal-log/shared';
+import { resolveCreditsForProduct, resolvePremiumDaysForProduct } from '@meal-log/shared';
 import { prisma } from '../db/prisma.js';
 import { env } from '../env.js';
 import { evaluateAiUsage, summarizeUsageStatus } from './ai-usage-service.js';
 import { logger } from '../logger.js';
 import { DateTime } from 'luxon';
+import { getAllPremiumGrants, getPremiumStatus } from './premium-service.js';
 
 interface ProcessPurchaseParams extends IapPurchaseRequest {
   userId: number;
@@ -26,6 +27,7 @@ const DEFAULT_QUANTITY = 1;
 export async function processIapPurchase(params: ProcessPurchaseParams): Promise<{
   creditsGranted: number;
   usage: AiUsageSummary;
+  premiumStatus: PremiumStatus;
 }> {
   const platform = params.platform === 'APP_STORE' ? IapPlatform.APP_STORE : IapPlatform.GOOGLE_PLAY;
 
@@ -52,16 +54,22 @@ export async function processIapPurchase(params: ProcessPurchaseParams): Promise
     quantity: params.quantity,
   });
 
-  const creditsPerUnit = resolveCreditsForProduct(verification.productId ?? params.productId);
-  if (!creditsPerUnit) {
-    const error = new Error(`未対応のプロダクトIDです: ${verification.productId ?? params.productId}`);
+  const resolvedProductId = verification.productId ?? params.productId;
+  const creditsPerUnit = resolveCreditsForProduct(resolvedProductId);
+  const premiumDaysPerUnit = resolvePremiumDaysForProduct(resolvedProductId);
+
+  if (creditsPerUnit === null && premiumDaysPerUnit === null) {
+    const error = new Error(`未対応のプロダクトIDです: ${resolvedProductId}`);
     Object.assign(error, { statusCode: StatusCodes.BAD_REQUEST, expose: true });
     throw error;
   }
 
-  const creditsGranted = creditsPerUnit * (verification.quantity || DEFAULT_QUANTITY);
-  if (creditsGranted <= 0) {
-    const error = new Error('付与クレジットが計算できませんでした');
+  const quantity = verification.quantity || DEFAULT_QUANTITY;
+  const creditsGranted = (creditsPerUnit ?? 0) * quantity;
+  const premiumDaysGranted = (premiumDaysPerUnit ?? 0) * quantity;
+
+  if (creditsGranted <= 0 && premiumDaysGranted <= 0) {
+    const error = new Error('付与内容が計算できませんでした');
     Object.assign(error, { statusCode: StatusCodes.BAD_REQUEST, expose: true });
     throw error;
   }
@@ -82,31 +90,56 @@ export async function processIapPurchase(params: ProcessPurchaseParams): Promise
       },
     });
 
-    await tx.user.update({
-      where: { id: params.userId },
-      data: { aiCredits: { increment: creditsGranted } },
-    });
+    if (creditsGranted > 0) {
+      await tx.user.update({
+        where: { id: params.userId },
+        data: { aiCredits: { increment: creditsGranted } },
+      });
+    }
 
-    const now = new Date();
-    const endDate = DateTime.fromJSDate(now).plus({ days: 365 }).toJSDate();
-    await tx.premiumGrant.create({
-      data: {
-        userId: params.userId,
-        source: 'PURCHASE',
-        days: 365,
-        startDate: now,
-        endDate,
-        iapReceiptId: receipt.id,
-      },
-    });
+    if (premiumDaysGranted > 0) {
+      const now = new Date();
+      const endDate = DateTime.fromJSDate(now).plus({ days: premiumDaysGranted }).toJSDate();
+      await tx.premiumGrant.create({
+        data: {
+          userId: params.userId,
+          source: 'PURCHASE',
+          days: premiumDaysGranted,
+          startDate: now,
+          endDate,
+          iapReceiptId: receipt.id,
+        },
+      });
+    }
   });
 
   logger.info({ userId: params.userId, creditsGranted, transactionId: params.transactionId }, 'iap purchase processed');
 
   const usageStatus = await evaluateAiUsage(params.userId);
+  const premiumStatus = await buildPremiumStatusPayload(params.userId);
   return {
     creditsGranted,
     usage: summarizeUsageStatus(usageStatus),
+    premiumStatus,
+  };
+}
+
+async function buildPremiumStatusPayload(userId: number): Promise<PremiumStatus> {
+  const status = await getPremiumStatus(userId);
+  const grants = await getAllPremiumGrants(userId);
+
+  return {
+    isPremium: status.isPremium,
+    source: status.source,
+    daysRemaining: status.daysRemaining,
+    expiresAt: status.expiresAt?.toISOString() ?? null,
+    grants: grants.map((grant) => ({
+      source: grant.source,
+      days: grant.days,
+      startDate: grant.startDate.toISOString(),
+      endDate: grant.endDate.toISOString(),
+      createdAt: grant.createdAt.toISOString(),
+    })),
   };
 }
 

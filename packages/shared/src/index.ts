@@ -127,15 +127,34 @@ export type IapPlatform = z.infer<typeof IapPlatformSchema>;
 export const IapEnvironmentSchema = z.enum(['sandbox', 'production']);
 export type IapEnvironment = z.infer<typeof IapEnvironmentSchema>;
 
-export const IAP_CREDIT_PRODUCTS = [
-  { productId: 'com.meallog.credits.100', credits: 100 },
-] as const;
+export const IAP_CREDIT_PRODUCT_ID = 'com.meallog.credits.100';
+export const IAP_PREMIUM_PRODUCT_ID = 'com.meallog.premium.annual';
 
-export type IapCreditProduct = (typeof IAP_CREDIT_PRODUCTS)[number];
+export interface IapProductDefinition {
+  productId: string;
+  credits?: number;
+  premiumDays?: number;
+}
+
+export const IAP_PRODUCTS = [
+  { productId: IAP_CREDIT_PRODUCT_ID, credits: 100 },
+  { productId: IAP_PREMIUM_PRODUCT_ID, premiumDays: 365 },
+] as const satisfies readonly IapProductDefinition[];
+
+export type IapProduct = (typeof IAP_PRODUCTS)[number];
+
+export function resolveIapProduct(productId: string): IapProduct | null {
+  return IAP_PRODUCTS.find((item) => item.productId === productId) ?? null;
+}
 
 export function resolveCreditsForProduct(productId: string): number | null {
-  const entry = IAP_CREDIT_PRODUCTS.find((item) => item.productId === productId);
-  return entry ? entry.credits : null;
+  const entry = resolveIapProduct(productId);
+  return typeof entry?.credits === 'number' ? entry.credits : null;
+}
+
+export function resolvePremiumDaysForProduct(productId: string): number | null {
+  const entry = resolveIapProduct(productId);
+  return typeof entry?.premiumDays === 'number' ? entry.premiumDays : null;
 }
 
 export const UserTierSchema = z.enum(['FREE', 'PREMIUM']);
@@ -144,11 +163,22 @@ export type UserTier = z.infer<typeof UserTierSchema>;
 export const PremiumSourceSchema = z.enum(['REFERRAL_FRIEND', 'REFERRAL_REFERRER', 'PURCHASE', 'ADMIN_GRANT']);
 export type PremiumSource = z.infer<typeof PremiumSourceSchema>;
 
+export const PremiumGrantSchema = z.object({
+  source: PremiumSourceSchema,
+  days: z.number().int().positive(),
+  startDate: z.string(),
+  endDate: z.string(),
+  createdAt: z.string().optional(),
+});
+
+export type PremiumGrant = z.infer<typeof PremiumGrantSchema>;
+
 export const PremiumStatusSchema = z.object({
   isPremium: z.boolean(),
   source: PremiumSourceSchema.nullable(),
   daysRemaining: z.number().int().nonnegative(),
   expiresAt: z.string().nullable(),
+  grants: z.array(PremiumGrantSchema).default([]),
 });
 
 export type PremiumStatus = z.infer<typeof PremiumStatusSchema>;
@@ -180,6 +210,7 @@ export const IapPurchaseResponseSchema = z.object({
   ok: z.literal(true),
   creditsGranted: z.number().int().nonnegative(),
   usage: AiUsageSummarySchema,
+  premiumStatus: PremiumStatusSchema,
 });
 
 export type IapPurchaseResponse = z.infer<typeof IapPurchaseResponseSchema>;

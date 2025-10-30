@@ -6,6 +6,26 @@ import ts from 'typescript';
 const projectRoot = new URL('..', import.meta.url);
 
 export async function resolve(specifier, context, defaultResolve) {
+  if (specifier === 'expo-in-app-purchases') {
+    const url = new URL('tests/stubs/expo-in-app-purchases.ts', projectRoot);
+    return { url: url.href, shortCircuit: true };
+  }
+  if (specifier === 'expo-constants') {
+    const url = new URL('tests/stubs/expo-constants.ts', projectRoot);
+    return { url: url.href, shortCircuit: true };
+  }
+  if (specifier === 'react') {
+    const url = new URL('tests/stubs/react.js', projectRoot);
+    return { url: url.href, shortCircuit: true };
+  }
+  if (specifier === 'react/jsx-runtime' || specifier === 'react/jsx-dev-runtime') {
+    const url = new URL('tests/stubs/react-jsx-runtime.js', projectRoot);
+    return { url: url.href, shortCircuit: true };
+  }
+  if (specifier === 'react-native') {
+    const url = new URL('tests/stubs/react-native.ts', projectRoot);
+    return { url: url.href, shortCircuit: true };
+  }
   if (specifier.startsWith('@/')) {
     const basePath = specifier.slice(2);
     const candidates = [
