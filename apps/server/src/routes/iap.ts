@@ -10,7 +10,9 @@ iapRouter.post('/iap/purchase', requireAuth, async (req, res, next) => {
   try {
     const payload = IapPurchaseRequestSchema.parse(req.body);
     const result = await processIapPurchase({ ...payload, userId: req.session.userId! });
-    res.status(StatusCodes.OK).json({ ok: true, creditsGranted: result.creditsGranted, usage: result.usage });
+    res
+      .status(StatusCodes.OK)
+      .json({ ok: true, creditsGranted: result.creditsGranted, usage: result.usage, premiumStatus: result.premiumStatus });
   } catch (error) {
     next(error);
   }

@@ -119,7 +119,7 @@ export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleF
         <View style={styles.premiumCard}>
           <Text style={styles.premiumTitle}>{t('recentLogs.premiumUpsell.title')}</Text>
           <Text style={styles.premiumSubtitle}>{t('recentLogs.premiumUpsell.description')}</Text>
-          <TouchableOpacity style={styles.premiumButton} onPress={() => router.push('/referral-status')}>
+          <TouchableOpacity style={styles.premiumButton} onPress={() => router.push('/paywall')}>
             <Text style={styles.premiumButtonLabel}>{t('recentLogs.premiumUpsell.cta')}</Text>
           </TouchableOpacity>
         </View>

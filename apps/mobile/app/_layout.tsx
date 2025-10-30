@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useSessionBootstrap } from '@/hooks/useSessionBootstrap';
 import { useLocaleBootstrap } from '@/hooks/useLocaleBootstrap';
 import { useReferralDeepLink } from '@/hooks/useReferralDeepLink';
+import { useTranslation } from '@/i18n';
 import { colors } from '@/theme/colors';
 
 export default function RootLayout() {
@@ -14,6 +15,7 @@ export default function RootLayout() {
   useSessionBootstrap();
   useLocaleBootstrap();
   useReferralDeepLink();
+  const { t } = useTranslation();
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
@@ -30,6 +32,10 @@ export default function RootLayout() {
             <Stack.Screen name="settings/profile" options={{ headerShown: true, title: 'プロフィールと目標' }} />
             <Stack.Screen name="settings/notifications" options={{ headerShown: true, title: '通知設定' }} />
             <Stack.Screen name="settings/language" options={{ headerShown: true, title: '表示言語' }} />
+            <Stack.Screen
+              name="paywall"
+              options={{ headerShown: true, title: t('paywall.headerTitle'), presentation: 'modal' }}
+            />
           </Stack>
         </QueryClientProvider>
       </SafeAreaProvider>

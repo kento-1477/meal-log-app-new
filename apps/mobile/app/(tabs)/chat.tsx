@@ -38,7 +38,6 @@ import {
   type MealLogResponse,
   type ApiError,
 } from '@/services/api';
-import { purchaseCreditPack, IAP_UNSUPPORTED_ERROR } from '@/services/iap';
 import { hasDialogBeenSeen, markDialogSeen } from '@/services/dialog-tracker';
 import { describeLocale } from '@/utils/locale';
 import type { ChatMessage, NutritionCardPayload } from '@/types/chat';
@@ -109,7 +108,6 @@ export default function ChatScreen() {
   const [addingFavoriteId, setAddingFavoriteId] = useState<string | null>(null);
   const [limitModalVisible, setLimitModalVisible] = useState(false);
   const [streakModalVisible, setStreakModalVisible] = useState(false);
-  const [iapLoading, setIapLoading] = useState(false);
   const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearNetworkHintTimer = useCallback(() => {
@@ -565,29 +563,9 @@ export default function ChatScreen() {
     }
   };
 
-  const handlePurchaseCredits = async () => {
-    try {
-      setIapLoading(true);
-      const result = await purchaseCreditPack();
-      setUsage(result.response.usage);
-      queryClient.invalidateQueries({ queryKey: ['streak'] });
-      Alert.alert(t('usage.purchase.success'));
-      setLimitModalVisible(false);
-    } catch (error) {
-      const err = error as { code?: string; message?: string } | Error;
-      if ((err as any)?.code === 'iap.cancelled') {
-        return;
-      }
-      if ((err as any)?.code === IAP_UNSUPPORTED_ERROR) {
-        Alert.alert(t('usage.purchase.unsupported'));
-        return;
-      }
-      const message = err instanceof Error ? err.message : undefined;
-      Alert.alert(t('usage.purchase.error'), message);
-    } finally {
-      setIapLoading(false);
-    }
-  };
+  const handleOpenPaywall = useCallback(() => {
+    router.push('/paywall');
+  }, [router]);
 
   const renderEnhancedFooter = () => {
     if (!enhancedExchange || !enhancedContainerMinHeight) {
@@ -632,7 +610,7 @@ export default function ChatScreen() {
         <View style={styles.usageBanner}>
           <View style={styles.usageBannerText}>
             <Text style={styles.usageText}>
-              {userPlan === 'STANDARD' ? t('usage.plan.standard') : t('usage.plan.free')} ｜{' '}
+              {userPlan === 'PREMIUM' ? t('usage.plan.standard') : t('usage.plan.free')} ｜{' '}
               {t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}
             </Text>
             {usage.credits > 0 ? (
@@ -640,12 +618,8 @@ export default function ChatScreen() {
             ) : null}
           </View>
           {userPlan === 'FREE' ? (
-            <TouchableOpacity
-              style={[styles.usageAction, iapLoading && styles.usageActionDisabled]}
-              onPress={handlePurchaseCredits}
-              disabled={iapLoading}
-            >
-              {iapLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.usageActionLabel}>{t('usage.limitModal.purchase')}</Text>}
+            <TouchableOpacity style={styles.usageAction} onPress={handleOpenPaywall}>
+              <Text style={styles.usageActionLabel}>{t('usage.limitModal.purchase')}</Text>
             </TouchableOpacity>
           ) : null}
         </View>
@@ -762,15 +736,13 @@ export default function ChatScreen() {
             </Text>
             <View style={styles.usageModalActions}>
               <TouchableOpacity
-                style={[styles.usageModalPrimary, iapLoading && styles.usageModalDisabled]}
-                onPress={handlePurchaseCredits}
-                disabled={iapLoading}
+                style={styles.usageModalPrimary}
+                onPress={() => {
+                  setLimitModalVisible(false);
+                  handleOpenPaywall();
+                }}
               >
-                {iapLoading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.usageModalPrimaryLabel}>{t('usage.limitModal.purchase')}</Text>
-                )}
+                <Text style={styles.usageModalPrimaryLabel}>{t('usage.limitModal.purchase')}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setLimitModalVisible(false)}>
                 <Text style={styles.usageModalSecondary}>{t('usage.limitModal.close')}</Text>
@@ -794,7 +766,7 @@ export default function ChatScreen() {
                 style={styles.usageModalPrimary}
                 onPress={() => {
                   setStreakModalVisible(false);
-                  router.push('/(tabs)/settings');
+                  handleOpenPaywall();
                 }}
               >
                 <Text style={styles.usageModalPrimaryLabel}>{t('usage.streakModal.upgrade')}</Text>
@@ -900,9 +872,6 @@ const styles = StyleSheet.create({
     minWidth: 120,
     alignItems: 'center',
   },
-  usageActionDisabled: {
-    opacity: 0.7,
-  },
   usageActionLabel: {
     ...textStyles.caption,
     color: '#fff',
@@ -949,9 +918,6 @@ const styles = StyleSheet.create({
     color: colors.accent,
     textAlign: 'center',
     fontWeight: '600',
-  },
-  usageModalDisabled: {
-    opacity: 0.6,
   },
   flex: {
     flex: 1,

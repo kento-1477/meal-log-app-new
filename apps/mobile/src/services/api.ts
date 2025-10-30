@@ -69,9 +69,14 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     }
     // No cached value available. Retry once with a cache-busting query to force a fresh 200 response.
     const bustUrl = `${url}${url.includes('?') ? '&' : '?'}__bust=${Date.now()}`;
+    const bustHeaders = new Headers(headers);
+    bustHeaders.delete('If-None-Match');
+    bustHeaders.delete('if-none-match');
+    bustHeaders.delete('If-Modified-Since');
+    bustHeaders.delete('if-modified-since');
     const retry = await fetch(bustUrl, {
       ...options,
-      headers,
+      headers: bustHeaders,
       credentials: 'include',
     });
     if (!retry.ok) {
@@ -460,6 +465,10 @@ export async function submitIapPurchase(payload: IapPurchaseRequest) {
   });
 }
 
+export async function purchasePremium(payload: IapPurchaseRequest) {
+  return submitIapPurchase(payload);
+}
+
 // Referral API
 export interface ReferralInviteLinkResponse {
   inviteLink: string;
@@ -486,6 +495,7 @@ export interface PremiumStatusResponse {
     days: number;
     startDate: string;
     endDate: string;
+    createdAt?: string;
   }>;
 }
 

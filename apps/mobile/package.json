@@ -8,7 +8,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "lint": "eslint ./src --ext .ts,.tsx",
-    "test": "node --loader ./tests/ts-loader.mjs --test tests/*.test.ts"
+    "test": "node --require ./tests/register-react-stub.cjs --loader ./tests/ts-loader.mjs --test tests/*.test.ts"
   },
   "dependencies": {
     "@meal-log/shared": "*",
