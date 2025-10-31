@@ -908,6 +908,11 @@ declare module 'express-session' {
    - 連続日数バッジ（"2/3日" など）
    - 達成日時
 
+- **設定タブ誘導**（2025-03 プロダクト方針）
+  - プレミアム導線ではなく紹介プログラムを最優先に表示する
+  - `apps/mobile/app/(tabs)/settings.tsx` の大型カードは `/referral-status` に遷移させる
+  - 文言は「友だちを招待」テキストを保持する
+
 **実装タスク**:
 - [x] `apps/mobile/app/referral-status.tsx` 作成
 - [x] `apps/mobile/src/hooks/useReferralStatus.ts` 作成
@@ -915,7 +920,7 @@ declare module 'express-session' {
 - [x] リスト表示実装
 - [x] コピー機能実装（Clipboard API）
 - [x] 共有機能実装（Share API）
-- [x] 設定画面からのナビゲーション追加
+- [x] 設定画面からのナビゲーション追加（紹介カードを維持）
 
 ### 5.4 プレミアムバッジ・残日数表示
 

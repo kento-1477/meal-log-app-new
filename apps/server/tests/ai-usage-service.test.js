@@ -16,9 +16,11 @@ const originalCounterFindUnique = prismaAny.aiUsageCounter.findUnique;
 const originalCounterUpsert = prismaAny.aiUsageCounter.upsert;
 const originalUserUpdate = prismaAny.user.update;
 const originalTransaction = prismaAny.$transaction;
+const originalPremiumFindFirst = prismaAny.premiumGrant.findFirst;
 
 test.beforeEach(() => {
   delete process.env.USER_PLAN_OVERRIDE;
+  prismaAny.premiumGrant.findFirst = async () => null;
 });
 
 test.afterEach(() => {
@@ -27,6 +29,7 @@ test.afterEach(() => {
   prismaAny.aiUsageCounter.upsert = originalCounterUpsert;
   prismaAny.user.update = originalUserUpdate;
   prismaAny.$transaction = originalTransaction;
+  prismaAny.premiumGrant.findFirst = originalPremiumFindFirst;
 });
 
 test('evaluateAiUsage reports remaining allowance for free plan', async () => {

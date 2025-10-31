@@ -12,6 +12,7 @@ export interface PremiumGrant {
   days: number;
   startDate: string;
   endDate: string;
+  createdAt?: string;
 }
 
 export interface PremiumStatus {
