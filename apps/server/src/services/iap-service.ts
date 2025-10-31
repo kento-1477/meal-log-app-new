@@ -39,9 +39,11 @@ export async function processIapPurchase(params: ProcessPurchaseParams): Promise
       throw error;
     }
     const status = await evaluateAiUsage(params.userId);
+    const premiumStatus = await buildPremiumStatusPayload(params.userId);
     return {
       creditsGranted: 0,
       usage: summarizeUsageStatus(status),
+      premiumStatus,
     };
   }
 
