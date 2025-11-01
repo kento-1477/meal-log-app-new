@@ -7,6 +7,7 @@ export default function Index() {
   const user = useSessionStore((state) => state.user);
   const hydrated = useSessionStore((state) => state.hydrated);
   const status = useSessionStore((state) => state.status);
+  const onboarding = useSessionStore((state) => state.onboarding);
 
   if (!hydrated || status === 'loading') {
     return (
@@ -17,6 +18,10 @@ export default function Index() {
   }
 
   if (user) {
+    const completed = onboarding?.completed ?? false;
+    if (!completed) {
+      return <Redirect href="/(onboarding)/welcome" />;
+    }
     return <Redirect href="/(tabs)/chat" />;
   }
 

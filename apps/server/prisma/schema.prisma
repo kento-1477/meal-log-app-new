@@ -177,19 +177,50 @@ model IapReceipt {
   @@index([userId])
 }
 
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  UNSPECIFIED
+}
+
+enum MeasurementSystem {
+  METRIC
+  IMPERIAL
+}
+
+enum PlanIntensity {
+  GENTLE
+  STANDARD
+  INTENSE
+}
+
 model UserProfile {
-  id              Int      @id @default(autoincrement())
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId          Int      @unique
-  targetCalories  Int?
-  targetProteinG  Float?
-  targetFatG      Float?
-  targetCarbsG    Float?
-  bodyWeightKg    Float?
-  activityLevel   String?
-  language        String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                       Int                @id @default(autoincrement())
+  user                     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                   Int                @unique
+  displayName              String?
+  gender                   Gender?
+  birthdate                DateTime?
+  heightCm                 Float?
+  unitPreference           MeasurementSystem? @default(METRIC)
+  marketingSource          String?
+  goals                    String[]           @default([])
+  targetCalories           Int?
+  targetProteinG           Float?
+  targetFatG               Float?
+  targetCarbsG             Float?
+  bodyWeightKg             Float?
+  currentWeightKg          Float?
+  targetWeightKg           Float?
+  planIntensity            PlanIntensity?
+  targetDate               DateTime?
+  activityLevel            String?
+  appleHealthLinked        Boolean            @default(false)
+  questionnaireCompletedAt DateTime?
+  language                 String?
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
 }
 
 model PremiumGrant {

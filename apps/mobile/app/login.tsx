@@ -15,6 +15,7 @@ export default function LoginScreen() {
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
   const setUsage = useSessionStore((state) => state.setUsage);
+  const setOnboarding = useSessionStore((state) => state.setOnboarding);
   const { t } = useTranslation();
 
   const [email, setEmail] = useState('demo@example.com');
@@ -30,12 +31,15 @@ export default function LoginScreen() {
       const response = await login({ email, password });
       setUser(response?.user ?? null);
       setUsage(response?.usage ?? null);
+      setOnboarding(response?.onboarding ?? null);
       setStatus('authenticated');
       router.dismissAll();
-      router.replace('/(tabs)/chat');
+      const needsOnboarding = !(response?.onboarding?.completed ?? false);
+      router.replace(needsOnboarding ? '/(onboarding)/welcome' : '/(tabs)/chat');
     } catch (err) {
       setError((err as Error).message ?? t('login.error.generic'));
       setStatus('error');
+      setOnboarding(null);
     } finally {
       setLoading(false);
     }
