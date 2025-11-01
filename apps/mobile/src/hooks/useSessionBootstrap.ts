@@ -8,6 +8,7 @@ export function useSessionBootstrap() {
   const setUsage = useSessionStore((state) => state.setUsage);
   const hydrated = useSessionStore((state) => state.hydrated);
   const markHydrated = useSessionStore((state) => state.markHydrated);
+  const setOnboarding = useSessionStore((state) => state.setOnboarding);
 
   useEffect(() => {
     if (hydrated) return;
@@ -20,10 +21,12 @@ export function useSessionBootstrap() {
       if (session.authenticated && session.user) {
         setUser(session.user);
         setUsage(session.usage ?? null);
+        setOnboarding(session.onboarding ?? null);
       } else {
         setStatus('unauthenticated');
         setUser(null);
         setUsage(null);
+        setOnboarding(null);
       }
       markHydrated();
     }
@@ -33,5 +36,5 @@ export function useSessionBootstrap() {
     return () => {
       cancelled = true;
     };
-  }, [hydrated, markHydrated, setStatus, setUsage, setUser]);
+  }, [hydrated, markHydrated, setOnboarding, setStatus, setUsage, setUser]);
 }

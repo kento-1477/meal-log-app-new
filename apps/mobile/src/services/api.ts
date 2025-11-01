@@ -20,6 +20,7 @@ import type {
   IapPurchaseResponse,
   UserProfile,
   UpdateUserProfileRequest,
+  OnboardingStatus,
 } from '@meal-log/shared';
 import {
   DashboardSummarySchema,
@@ -172,12 +173,14 @@ export interface SessionPayload {
   authenticated: boolean;
   user?: SessionUser;
   usage?: AiUsageSummary;
+  onboarding?: OnboardingStatus;
 }
 
 export interface AuthResponse {
   message: string;
   user: SessionUser;
   usage: AiUsageSummary;
+  onboarding: OnboardingStatus;
 }
 
 export async function registerUser(input: { email: string; password: string; username?: string }) {

@@ -54,6 +54,7 @@ export function useReferralDeepLink() {
   const user = useSessionStore((state) => state.user);
   const setUser = useSessionStore((state) => state.setUser);
   const setUsage = useSessionStore((state) => state.setUsage);
+  const setOnboarding = useSessionStore((state) => state.setOnboarding);
   const [isProcessing, setIsProcessing] = useState(false);
   const lastProcessedUrlRef = useRef<string | null>(null);
 
@@ -63,11 +64,12 @@ export function useReferralDeepLink() {
       if (session.authenticated && session.user) {
         setUser(session.user);
         setUsage(session.usage ?? null);
+        setOnboarding(session.onboarding ?? null);
       }
     } catch (error) {
       console.error('Failed to refresh session after referral claim:', error);
     }
-  }, [setUsage, setUser]);
+  }, [setOnboarding, setUsage, setUser]);
 
   useEffect(() => {
     if (!url || isProcessing) return;

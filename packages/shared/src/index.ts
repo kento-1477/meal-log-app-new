@@ -7,6 +7,23 @@ export const LocaleSchema = z
 
 export type Locale = z.infer<typeof LocaleSchema>;
 
+export const GenderSchema = z.enum(['MALE', 'FEMALE', 'NON_BINARY', 'UNSPECIFIED']);
+export type Gender = z.infer<typeof GenderSchema>;
+
+export const MeasurementSystemSchema = z.enum(['METRIC', 'IMPERIAL']);
+export type MeasurementSystem = z.infer<typeof MeasurementSystemSchema>;
+
+export const ActivityLevelSchema = z.enum(['SEDENTARY', 'LIGHT', 'MODERATE', 'ACTIVE', 'ATHLETE']);
+export type ActivityLevel = z.infer<typeof ActivityLevelSchema>;
+
+export const PlanIntensitySchema = z.enum(['GENTLE', 'STANDARD', 'INTENSE']);
+export type PlanIntensity = z.infer<typeof PlanIntensitySchema>;
+
+export const ActivityLevelStringSchema = z.union([ActivityLevelSchema, z.string().min(1).max(40)]);
+export type ActivityLevelString = z.infer<typeof ActivityLevelStringSchema>;
+
+export const MAX_GOAL_SELECTION = 3;
+
 export const NutritionTotalsSchema = z.object({
   kcal: z.number().nonnegative(),
   protein_g: z.number().nonnegative(),
@@ -403,12 +420,29 @@ export const DashboardTargetsSchema = MacroTotalsSchema;
 export type DashboardTargets = z.infer<typeof DashboardTargetsSchema>;
 
 export const UserProfileSchema = z.object({
+  display_name: z.string().trim().min(1).max(80).nullable().optional(),
+  gender: GenderSchema.nullable().optional(),
+  birthdate: z.string().datetime().nullable().optional(),
+  height_cm: z.number().nonnegative().nullable().optional(),
+  unit_preference: MeasurementSystemSchema.nullable().optional(),
+  marketing_source: z.string().trim().min(1).max(80).nullable().optional(),
+  goals: z
+    .array(z.string().trim().min(1).max(40))
+    .max(MAX_GOAL_SELECTION)
+    .nullable()
+    .optional(),
   target_calories: z.number().int().nonnegative().nullable().optional(),
   target_protein_g: z.number().nonnegative().nullable().optional(),
   target_fat_g: z.number().nonnegative().nullable().optional(),
   target_carbs_g: z.number().nonnegative().nullable().optional(),
   body_weight_kg: z.number().nonnegative().nullable().optional(),
-  activity_level: z.string().min(1).max(40).nullable().optional(),
+  current_weight_kg: z.number().nonnegative().nullable().optional(),
+  target_weight_kg: z.number().nonnegative().nullable().optional(),
+  plan_intensity: PlanIntensitySchema.nullable().optional(),
+  target_date: z.string().datetime().nullable().optional(),
+  activity_level: ActivityLevelStringSchema.nullable().optional(),
+  apple_health_linked: z.boolean().optional(),
+  questionnaire_completed_at: z.string().datetime().nullable().optional(),
   language: LocaleSchema.nullable().optional(),
   updated_at: z.string().optional(),
 });
@@ -422,12 +456,29 @@ export const UserProfileResponseSchema = z.object({
 
 export const UpdateUserProfileRequestSchema = z
   .object({
+    display_name: z.string().trim().min(1).max(80).nullable().optional(),
+    gender: GenderSchema.nullable().optional(),
+    birthdate: z.string().datetime().nullable().optional(),
+    height_cm: z.number().nonnegative().nullable().optional(),
+    unit_preference: MeasurementSystemSchema.nullable().optional(),
+    marketing_source: z.string().trim().min(1).max(80).nullable().optional(),
+    goals: z
+      .array(z.string().trim().min(1).max(40))
+      .max(MAX_GOAL_SELECTION)
+      .nullable()
+      .optional(),
     target_calories: z.number().int().nonnegative().nullable().optional(),
     target_protein_g: z.number().nonnegative().nullable().optional(),
     target_fat_g: z.number().nonnegative().nullable().optional(),
     target_carbs_g: z.number().nonnegative().nullable().optional(),
     body_weight_kg: z.number().nonnegative().nullable().optional(),
-    activity_level: z.string().min(1).max(40).nullable().optional(),
+    current_weight_kg: z.number().nonnegative().nullable().optional(),
+    target_weight_kg: z.number().nonnegative().nullable().optional(),
+    plan_intensity: PlanIntensitySchema.nullable().optional(),
+    target_date: z.string().datetime().nullable().optional(),
+    activity_level: ActivityLevelStringSchema.nullable().optional(),
+    apple_health_linked: z.boolean().optional(),
+    questionnaire_completed_at: z.string().datetime().nullable().optional(),
     language: LocaleSchema.nullable().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
@@ -435,3 +486,12 @@ export const UpdateUserProfileRequestSchema = z
   });
 
 export type UpdateUserProfileRequest = z.infer<typeof UpdateUserProfileRequestSchema>;
+
+export const OnboardingStatusSchema = z.object({
+  completed: z.boolean(),
+  completed_at: z.string().datetime().nullable().optional(),
+});
+
+export type OnboardingStatus = z.infer<typeof OnboardingStatusSchema>;
+
+export * from './health.ts';

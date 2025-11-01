@@ -14,7 +14,10 @@ export type AnalyticsEventName =
   | 'paywall.purchase_cancel'
   | 'paywall.purchase_failure'
   | 'paywall.restore_success'
-  | 'paywall.restore_failure';
+  | 'paywall.restore_failure'
+  | 'onboarding.step_viewed'
+  | 'onboarding.goal_selected'
+  | 'onboarding.completed';
 
 export function trackEvent(event: AnalyticsEventName, params: Record<string, unknown> = {}) {
   console.log(`[analytics] ${event}`, params);

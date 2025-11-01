@@ -24,6 +24,7 @@ export default function RootLayout() {
           <StatusBar style="dark" />
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="(onboarding)" />
             <Stack.Screen name="invite" options={{ presentation: 'transparentModal', headerShown: false }} />
             <Stack.Screen name="login" options={{ presentation: 'modal' }} />
             <Stack.Screen name="register" options={{ headerShown: true, title: '新規登録', presentation: 'modal' }} />

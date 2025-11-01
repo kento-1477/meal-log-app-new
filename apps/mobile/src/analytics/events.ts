@@ -34,3 +34,15 @@ export function trackPaywallRestoreSuccess(params: { productId: string; restored
 export function trackPaywallRestoreFailure(params: { productId: string; code?: string; message?: string }) {
   trackEvent('paywall.restore_failure', params);
 }
+
+export function trackOnboardingStepViewed(params: { step: string }) {
+  trackEvent('onboarding.step_viewed', params);
+}
+
+export function trackOnboardingGoalsUpdated(params: { goals: string[] }) {
+  trackEvent('onboarding.goal_selected', params);
+}
+
+export function trackOnboardingCompleted(params: { durationMs: number }) {
+  trackEvent('onboarding.completed', params);
+}

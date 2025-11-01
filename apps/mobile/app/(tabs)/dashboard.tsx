@@ -21,13 +21,20 @@ import { EmptyStateCard } from '@/features/dashboard/components/EmptyStateCard';
 import { PeriodComparisonCard } from '@/features/dashboard/components/PeriodComparisonCard';
 import { type MacroRingProps, type RingColorToken } from '@/features/dashboard/components/RemainingRings';
 import { buildRingState } from '@/features/dashboard/components/ringMath';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, Defs, Pattern, Rect } from 'react-native-svg';
 import { RecentLogsList } from '@/features/dashboard/components/RecentLogsList';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import { useSessionStore } from '@/store/session';
-import { logout, getMealLogs, getStreak, createFavoriteMeal, deleteFavoriteMeal } from '@/services/api';
+import {
+  logout,
+  getMealLogs,
+  getStreak,
+  createFavoriteMeal,
+  deleteFavoriteMeal,
+  getDashboardSummary,
+} from '@/services/api';
 import { cacheStreak } from '@/services/streak-storage';
 import { useTranslation } from '@/i18n';
 import { buildFavoriteDraftFromSummary } from '@/utils/favorites';
@@ -35,6 +42,7 @@ import { DateTime } from 'luxon';
 import { usePremiumStore } from '@/store/premium';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const DEFAULT_PERIOD: DashboardPeriod = 'today';
 
@@ -216,7 +224,7 @@ const streakQuery = useQuery({
                     <CalorieRing data={ringData.total} t={t} />
                   </View>
                   {isPremium ? (
-                    <MonthlyDeficitCard summary={data.summary} targets={data.targets} t={t} />
+                    <MonthlyDeficitCard summary={data.summary} targets={data.targets} t={t} locale={locale} />
                   ) : (
                     <View style={[styles.monthlyCard, styles.lockedCard]}>
                       <View style={styles.premiumLockHeader}>
@@ -291,48 +299,112 @@ interface MonthlyDeficitCardProps {
   summary: DashboardSummary;
   targets: DashboardTargets;
   t: Translate;
+  locale: string;
 }
 
-function MonthlyDeficitCard({ summary, targets, t }: MonthlyDeficitCardProps) {
-  const timezone = summary.range.timezone;
-  let now = DateTime.now();
+function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardProps) {
+  const timezone = summary.range.timezone ?? null;
+
+  const zonedNow = timezone ? DateTime.now().setZone(timezone) : DateTime.now();
+  const now = zonedNow.isValid ? zonedNow : DateTime.now();
+  const today = now.startOf('day');
+  const monthKey = today.toFormat('yyyy-MM');
+
+  let monthStart = today.startOf('month');
   if (timezone) {
-    const zonedNow = DateTime.now().setZone(timezone);
-    if (zonedNow.isValid) {
-      now = zonedNow;
+    const explicitStart = DateTime.fromObject({ year: today.year, month: today.month, day: 1 }, { zone: timezone });
+    if (explicitStart.isValid) {
+      monthStart = explicitStart.startOf('day');
     }
   }
+  const monthEnd = monthStart.endOf('month').startOf('day');
+  const rangeEnd = DateTime.min(today, monthEnd);
 
-  const targetDaily = typeof targets.calories === 'number' ? targets.calories : null;
+  const rangeEndIso = rangeEnd.toISODate();
+  const monthRange = {
+    from: monthStart.toISODate(),
+    to: rangeEndIso,
+  } as const;
 
-  // 今月のエントリーを全て集計
-  let totalDelta = 0;
-  let dayCount = 0;
-  
-  if (targetDaily !== null) {
-    summary.calories.daily.forEach((entry) => {
-      const entryDate = DateTime.fromISO(entry.date, { zone: timezone });
-      if (entryDate.isValid && entryDate.hasSame(now, 'month') && entryDate.hasSame(now, 'year')) {
-        const delta = entry.total - targetDaily;
-        totalDelta += delta;
-        dayCount++;
-      }
-    });
-  }
+  const monthlySummaryQuery = useQuery({
+    queryKey: ['dashboardSummary', 'monthlyDeficit', monthKey, rangeEndIso, locale],
+    queryFn: () => getDashboardSummary('custom', monthRange),
+    staleTime: 1000 * 60 * 5,
+  });
 
-  const averageDailyDelta = dayCount > 0 ? totalDelta / dayCount : 0;
-  const color = totalDelta < 0 ? colors.success : totalDelta > 0 ? colors.error : colors.textSecondary;
+  const monthlySummary = monthlySummaryQuery.data ?? null;
+  const dailyEntries = monthlySummary?.calories.daily ?? [];
+
+  const targetDaily = typeof targets.calories === 'number' ? targets.calories : 0;
+
+  const totalDeficit = dailyEntries.reduce((sum, entry) => {
+    if (entry.total <= 0) {
+      return sum;
+    }
+      const dailyDeficit = Math.max(targetDaily - entry.total, 0);
+    return sum + dailyDeficit;
+  }, 0);
+
+  const hasMonthlyData = monthlySummary !== null;
+  const displayValue = hasMonthlyData ? formatDelta(-totalDeficit) : '-- kcal';
+  const valueColor = hasMonthlyData
+    ? totalDeficit > 0
+      ? colors.success
+      : colors.textSecondary
+    : colors.textSecondary;
+
+  const maxAccumulation = dailyEntries.length * targetDaily;
+  const progress = maxAccumulation > 0 ? Math.min(totalDeficit / maxAccumulation, 1) : 0;
+  const chipVariant = hasMonthlyData && totalDeficit > 0 ? styles.monthlyChipPositive : styles.monthlyChipNeutral;
+  const isLoading = monthlySummaryQuery.isLoading && !monthlySummary;
 
   return (
     <View style={styles.monthlyCard}>
-      <Text style={styles.monthlyLabel}>{t('dashboard.monthlyDeficit.title')}</Text>
-      <Text style={[styles.monthlyValue, { color }]}>{formatDelta(totalDelta)}</Text>
-      <Text style={styles.monthlyMeta}>
-        {t('dashboard.monthlyDeficit.subtitle', {
-          days: dayCount,
-          daily: formatDelta(averageDailyDelta),
-        })}
-      </Text>
+      <View style={styles.monthlyHeader}>
+        <Feather name="unlock" size={14} color={colors.success} />
+        <Text style={styles.monthlyLabel}>{t('dashboard.monthlyDeficit.newTitle')}</Text>
+      </View>
+      <Text style={[styles.monthlyValue, { color: valueColor }]}>{displayValue}</Text>
+      <MonthlyProgressMeter progress={progress} isLoading={isLoading} />
+      <View style={styles.monthlyFooter}>
+        <Text style={styles.monthlyFooterLabel}>{t('dashboard.monthlyDeficit.totalLabel')}</Text>
+        <View style={[styles.monthlyChip, chipVariant]}>
+          <Text style={[styles.monthlyChipText, { color: valueColor }]}>{displayValue}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+interface MonthlyProgressMeterProps {
+  progress: number;
+  isLoading: boolean;
+}
+
+function MonthlyProgressMeter({ progress, isLoading }: MonthlyProgressMeterProps) {
+  const clampedProgress = Math.max(0, Math.min(progress, 1));
+  const fillWidth = `${(clampedProgress * 100).toFixed(1)}%`;
+
+  return (
+    <View style={styles.monthlyProgressContainer}>
+      <Svg style={styles.monthlyProgressSvg} pointerEvents="none">
+        <Defs>
+          <Pattern id="monthlyProgressStripes" patternUnits="userSpaceOnUse" width={12} height={40}>
+            <Rect width={6} height={40} fill="rgba(255,255,255,0.45)" />
+          </Pattern>
+        </Defs>
+        <Rect x={0} y={0} width="100%" height="100%" rx={22} ry={22} fill="rgba(255,255,255,0.6)" />
+        <Rect x={0} y={0} width="100%" height="100%" rx={22} ry={22} fill="url(#monthlyProgressStripes)" />
+      </Svg>
+      {clampedProgress > 0 ? (
+        <LinearGradient
+          colors={[colors.success, '#30d158']}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={[styles.monthlyProgressFill, { width: fillWidth }]}
+        />
+      ) : null}
+      {isLoading ? <ActivityIndicator style={styles.monthlyProgressLoader} size="small" color={colors.success} /> : null}
     </View>
   );
 }
@@ -597,11 +669,10 @@ const styles = StyleSheet.create({
   monthlyCard: {
     flex: 1,
     backgroundColor: colors.surface,
-    borderRadius: 20,
+    borderRadius: 24,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.md,
-    justifyContent: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   cardLabel: {
     ...textStyles.caption,
@@ -651,20 +722,80 @@ const styles = StyleSheet.create({
     color: colors.error,
     fontWeight: '600',
   },
+  monthlyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   monthlyLabel: {
     ...textStyles.body,
     color: colors.textSecondary,
     fontWeight: '600',
   },
   monthlyValue: {
-    ...textStyles.headline,
+    ...textStyles.titleLarge,
+    fontSize: 40,
+    lineHeight: 44,
     fontWeight: '700',
-    fontSize: 28,
+    letterSpacing: -0.5,
   },
-  monthlyMeta: {
+  monthlyProgressContainer: {
+    height: 56,
+    borderRadius: 22,
+    backgroundColor: 'rgba(28,28,30,0.16)',
+    overflow: 'hidden',
+    justifyContent: 'center',
+  },
+  monthlyProgressSvg: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
+  monthlyProgressFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    borderTopLeftRadius: 22,
+    borderBottomLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderBottomRightRadius: 22,
+  },
+  monthlyProgressLoader: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    marginTop: -10,
+    marginLeft: -10,
+  },
+  monthlyFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  monthlyFooterLabel: {
     ...textStyles.caption,
-    fontSize: 13,
     color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  monthlyChip: {
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: 'rgba(28,28,30,0.12)',
+  },
+  monthlyChipPositive: {
+    backgroundColor: 'rgba(52,199,89,0.18)',
+  },
+  monthlyChipNeutral: {
+    backgroundColor: 'rgba(28,28,30,0.12)',
+  },
+  monthlyChipText: {
+    ...textStyles.body,
+    fontSize: 16,
+    fontWeight: '600',
   },
   errorContainer: {
     backgroundColor: colors.surface,

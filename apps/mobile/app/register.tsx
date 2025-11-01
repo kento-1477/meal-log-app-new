@@ -15,6 +15,7 @@ export default function RegisterScreen() {
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
   const setUsage = useSessionStore((state) => state.setUsage);
+  const setOnboarding = useSessionStore((state) => state.setOnboarding);
   const { t } = useTranslation();
 
   const [email, setEmail] = useState('');
@@ -44,13 +45,16 @@ export default function RegisterScreen() {
       });
       setUser(response.user);
       setUsage(response.usage);
+      setOnboarding(response.onboarding ?? null);
       setStatus('authenticated');
       router.dismissAll();
-      router.replace('/(tabs)/chat');
+      const needsOnboarding = !(response.onboarding?.completed ?? false);
+      router.replace(needsOnboarding ? '/(onboarding)/welcome' : '/(tabs)/chat');
     } catch (err) {
       const message = err instanceof Error ? err.message : t('register.error.generic');
       setError(message);
       setStatus('error');
+      setOnboarding(null);
     } finally {
       setLoading(false);
     }

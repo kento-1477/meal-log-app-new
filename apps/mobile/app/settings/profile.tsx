@@ -53,6 +53,34 @@ export default function ProfileScreen() {
           <Text style={styles.title}>{t('settings.profile.screenTitle')}</Text>
           <View style={styles.formStack}>
             <ProfileField
+              label="表示名"
+              value={form.displayName}
+              onChangeText={(value) => setForm((prev) => ({ ...prev, displayName: value }))}
+              placeholder="meal 太郎"
+              keyboardType="default"
+            />
+            <ProfileField
+              label="身長"
+              value={form.height}
+              onChangeText={(value) => setForm((prev) => ({ ...prev, height: value }))}
+              placeholder="170"
+              suffix="cm"
+            />
+            <ProfileField
+              label="現在の体重"
+              value={form.currentWeight}
+              onChangeText={(value) => setForm((prev) => ({ ...prev, currentWeight: value }))}
+              placeholder="65"
+              suffix="kg"
+            />
+            <ProfileField
+              label="目標体重"
+              value={form.targetWeight}
+              onChangeText={(value) => setForm((prev) => ({ ...prev, targetWeight: value }))}
+              placeholder="60"
+              suffix="kg"
+            />
+            <ProfileField
               label={t('settings.profile.targetCalories')}
               value={form.targetCalories}
               onChangeText={(value) => setForm((prev) => ({ ...prev, targetCalories: value }))}
@@ -96,6 +124,27 @@ export default function ProfileScreen() {
               value={form.activityLevel}
               onChangeText={(value) => setForm((prev) => ({ ...prev, activityLevel: value }))}
               placeholder={t('settings.profile.activityPlaceholder')}
+            />
+            <ProfileField
+              label="プラン強度 (GENTLE / STANDARD / INTENSE)"
+              value={form.planIntensity}
+              onChangeText={(value) => setForm((prev) => ({ ...prev, planIntensity: value }))}
+              placeholder="STANDARD"
+              keyboardType="default"
+            />
+            <ProfileField
+              label="流入チャネル"
+              value={form.marketingSource}
+              onChangeText={(value) => setForm((prev) => ({ ...prev, marketingSource: value }))}
+              placeholder="Instagram"
+              keyboardType="default"
+            />
+            <ProfileField
+              label="目標のキーワード (カンマ区切り)"
+              value={form.goals}
+              onChangeText={(value) => setForm((prev) => ({ ...prev, goals: value }))}
+              placeholder="ダイエット, 筋肉を増やす"
+              keyboardType="default"
             />
             <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
               <Text style={styles.saveButtonLabel}>{t('settings.profile.save')}</Text>

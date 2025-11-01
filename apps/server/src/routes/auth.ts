@@ -7,6 +7,7 @@ import {
 import { authenticateUser, findUserById, registerUser } from '../services/auth-service.js';
 import { evaluateAiUsage, summarizeUsageStatus } from '../services/ai-usage-service.js';
 import { ZodError, ZodIssue } from 'zod';
+import { prisma } from '../db/prisma.js';
 
 export const authRouter = Router();
 
@@ -18,10 +19,12 @@ authRouter.post('/register', async (req, res, next) => {
     req.session.aiCredits = user.aiCredits;
     const usageStatus = await evaluateAiUsage(user.id);
     const usage = summarizeUsageStatus(usageStatus);
+    const onboarding = await getOnboardingStatus(user.id);
     res.status(StatusCodes.CREATED).json({
       message: 'ユーザー登録が完了しました',
       user,
       usage,
+      onboarding,
     });
   } catch (error) {
     if (error instanceof ZodError) {
@@ -43,10 +46,12 @@ authRouter.post('/login', async (req, res, next) => {
     req.session.aiCredits = user.aiCredits;
     const usageStatus = await evaluateAiUsage(user.id);
     const usage = summarizeUsageStatus(usageStatus);
+    const onboarding = await getOnboardingStatus(user.id);
     res.status(StatusCodes.OK).json({
       message: 'ログインに成功しました',
       user,
       usage,
+      onboarding,
     });
   } catch (error) {
     if (error instanceof ZodError) {
@@ -106,8 +111,18 @@ authRouter.get('/session', async (req, res, next) => {
     req.session.aiCredits = user.aiCredits;
     const usageStatus = await evaluateAiUsage(user.id);
     const usage = summarizeUsageStatus(usageStatus);
-    return res.status(StatusCodes.OK).json({ authenticated: true, user, usage });
+    const onboarding = await getOnboardingStatus(user.id);
+    return res.status(StatusCodes.OK).json({ authenticated: true, user, usage, onboarding });
   } catch (error) {
     next(error);
   }
 });
+
+async function getOnboardingStatus(userId: number) {
+  const profile = await prisma.userProfile.findUnique({ where: { userId } });
+  const completedAt = profile?.questionnaireCompletedAt ?? null;
+  return {
+    completed: Boolean(completedAt),
+    completed_at: completedAt?.toISOString() ?? null,
+  };
+}
