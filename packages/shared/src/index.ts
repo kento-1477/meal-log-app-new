@@ -494,4 +494,4 @@ export const OnboardingStatusSchema = z.object({
 
 export type OnboardingStatus = z.infer<typeof OnboardingStatusSchema>;
 
-export * from './health';
+export * from './health.ts';
