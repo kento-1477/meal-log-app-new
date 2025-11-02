@@ -123,6 +123,7 @@ export interface NutritionPlanInput {
   targetWeightKg: number | null | undefined;
   activityLevel: ActivityLevelString | null | undefined;
   planIntensity: PlanIntensity | null | undefined;
+  goals?: readonly string[] | null | undefined;
 }
 
 export interface NutritionPlanResult {
@@ -139,8 +140,15 @@ export type NutritionPlanComputation = NutritionPlanResult & {
     bmr: number;
     activityFactor: number;
     calorieAdjustment: number;
+    goalFocus: GoalFocus;
   };
 };
+
+type GoalFocus = 'LOSS' | 'GAIN' | 'MAINTAIN' | 'BALANCE';
+
+const WEIGHT_LOSS_GOALS = new Set(['WEIGHT_LOSS']);
+const MUSCLE_GAIN_GOALS = new Set(['MUSCLE_GAIN']);
+const MAINTAIN_GOALS = new Set(['WEIGHT_MAINTENANCE']);
 
 interface PlanComputationContext {
   gender: Gender;
@@ -150,6 +158,27 @@ interface PlanComputationContext {
   targetWeightKg: number;
   activityFactor: number;
   planIntensity: PlanIntensity;
+  goalFocus: GoalFocus;
+}
+
+function determineGoalFocus(
+  goals: readonly string[] | null | undefined,
+  currentWeightKg: number,
+  targetWeightKg: number,
+): GoalFocus {
+  const list = Array.isArray(goals) ? goals : [];
+  const hasLossGoal = list.some((goal) => WEIGHT_LOSS_GOALS.has(goal));
+  const hasGainGoal = list.some((goal) => MUSCLE_GAIN_GOALS.has(goal));
+  const hasMaintainGoal = list.some((goal) => MAINTAIN_GOALS.has(goal));
+
+  if (hasLossGoal) return 'LOSS';
+  if (hasGainGoal) return 'GAIN';
+  if (hasMaintainGoal) return 'MAINTAIN';
+
+  const delta = targetWeightKg - currentWeightKg;
+  if (delta < -0.5) return 'LOSS';
+  if (delta > 0.5) return 'GAIN';
+  return 'BALANCE';
 }
 
 function guardInputs(input: NutritionPlanInput): PlanComputationContext | null {
@@ -191,6 +220,7 @@ function guardInputs(input: NutritionPlanInput): PlanComputationContext | null {
 
   const upperActivityKey = typeof input.activityLevel === 'string' ? input.activityLevel.toUpperCase() : 'MODERATE';
   const activityFactor = ACTIVITY_LEVEL_FACTORS[upperActivityKey] ?? 1.45;
+  const goalFocus = determineGoalFocus(input.goals, currentWeightKg, targetWeightKg);
 
   return {
     gender,
@@ -200,6 +230,7 @@ function guardInputs(input: NutritionPlanInput): PlanComputationContext | null {
     targetWeightKg,
     activityFactor,
     planIntensity: input.planIntensity,
+    goalFocus,
   };
 }
 
@@ -209,15 +240,31 @@ export function calculateBasalMetabolicRate(context: PlanComputationContext) {
 }
 
 function determineCalorieAdjustment(context: PlanComputationContext, maintenance: number) {
-  const weightDelta = context.targetWeightKg - context.currentWeightKg;
-  if (Math.abs(weightDelta) < 0.1) {
+  let direction: number;
+
+  switch (context.goalFocus) {
+    case 'LOSS':
+      direction = -1;
+      break;
+    case 'GAIN':
+      direction = 1;
+      break;
+    case 'MAINTAIN':
+      return 0;
+    default: {
+      const delta = context.targetWeightKg - context.currentWeightKg;
+      direction = Math.sign(delta);
+    }
+  }
+
+  if (direction === 0) {
     return 0;
   }
-  const table = weightDelta < 0 ? PLAN_INTENSITY_DEFICIT : PLAN_INTENSITY_SURPLUS;
+
+  const table = direction < 0 ? PLAN_INTENSITY_DEFICIT : PLAN_INTENSITY_SURPLUS;
   const adjustment = table[context.planIntensity];
-  // 調整幅はメンテナンスの40%を超えないようにする
-  const maxAdjustment = maintenance * 0.4;
-  return Math.sign(weightDelta) * Math.min(adjustment, maxAdjustment);
+  const maxAdjustment = maintenance * 0.35;
+  return direction * Math.min(adjustment, maxAdjustment);
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -243,9 +290,13 @@ export function computeNutritionPlan(input: NutritionPlanInput): NutritionPlanCo
   targetCalories = clamp(targetCalories, minCalories, maxCalories);
 
   const weightDelta = context.targetWeightKg - context.currentWeightKg;
-  const proteinFactor = weightDelta > 0.5 ? 2.2 : weightDelta < -0.5 ? 2 : 1.8;
-  const minProteinFactor = 1.4;
-  const maxProteinCaloriesRatio = 0.35;
+  const goalFocus = context.goalFocus;
+
+  const defaultProteinFactor = weightDelta > 0.5 ? 2.2 : weightDelta < -0.5 ? 2 : 1.8;
+  const proteinFactor =
+    goalFocus === 'GAIN' ? 2.2 : goalFocus === 'LOSS' ? 2 : goalFocus === 'MAINTAIN' ? 1.7 : defaultProteinFactor;
+  const minProteinFactor = goalFocus === 'GAIN' ? 1.8 : 1.4;
+  const maxProteinCaloriesRatio = goalFocus === 'GAIN' ? 0.4 : 0.35;
 
   const baseProteinGrams = context.currentWeightKg * proteinFactor;
   const minProteinGrams = context.currentWeightKg * minProteinFactor;
@@ -254,14 +305,17 @@ export function computeNutritionPlan(input: NutritionPlanInput): NutritionPlanCo
   proteinGrams = clamp(proteinGrams, 60, 220);
   let proteinCalories = proteinGrams * 4;
 
-  const minFatCalories = targetCalories * 0.2;
-  const preferredFatCalories = targetCalories * 0.25;
-  const maxFatCalories = targetCalories * 0.3;
+  const minFatRatio = goalFocus === 'LOSS' ? 0.22 : 0.2;
+  const preferredFatRatio = goalFocus === 'GAIN' ? 0.27 : 0.25;
+  const maxFatRatio = goalFocus === 'GAIN' ? 0.32 : 0.3;
+  const minFatCalories = targetCalories * minFatRatio;
+  const preferredFatCalories = targetCalories * preferredFatRatio;
+  const maxFatCalories = targetCalories * maxFatRatio;
   let fatCalories = clamp(preferredFatCalories, minFatCalories, maxFatCalories);
   let fatGrams = fatCalories / 9;
 
   let carbCalories = targetCalories - proteinCalories - fatCalories;
-  const minCarbCalories = 100 * 4;
+  const minCarbCalories = (goalFocus === 'GAIN' ? 160 : goalFocus === 'LOSS' ? 120 : 130) * 4;
 
   if (carbCalories < minCarbCalories) {
     const deficit = minCarbCalories - carbCalories;
@@ -308,6 +362,7 @@ export function computeNutritionPlan(input: NutritionPlanInput): NutritionPlanCo
       bmr: Math.round(bmr),
       activityFactor: context.activityFactor,
       calorieAdjustment: Math.round(adjustment),
+      goalFocus,
     },
   };
 }

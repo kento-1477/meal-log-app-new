@@ -355,23 +355,21 @@ function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardP
 
   const maxAccumulation = dailyEntries.length * targetDaily;
   const progress = maxAccumulation > 0 ? Math.min(totalDeficit / maxAccumulation, 1) : 0;
-  const chipVariant = hasMonthlyData && totalDeficit > 0 ? styles.monthlyChipPositive : styles.monthlyChipNeutral;
   const isLoading = monthlySummaryQuery.isLoading && !monthlySummary;
 
   return (
     <View style={styles.monthlyCard}>
       <View style={styles.monthlyHeader}>
         <Feather name="unlock" size={14} color={colors.success} />
-        <Text style={styles.monthlyLabel}>{t('dashboard.monthlyDeficit.newTitle')}</Text>
+        <Text
+          style={styles.monthlyLabelMultiline}
+          numberOfLines={2}
+        >
+          {`${t('dashboard.monthlyDeficit.newTitle.line1')}\n${t('dashboard.monthlyDeficit.newTitle.line2')}`}
+        </Text>
       </View>
       <Text style={[styles.monthlyValue, { color: valueColor }]}>{displayValue}</Text>
       <MonthlyProgressMeter progress={progress} isLoading={isLoading} />
-      <View style={styles.monthlyFooter}>
-        <Text style={styles.monthlyFooterLabel}>{t('dashboard.monthlyDeficit.totalLabel')}</Text>
-        <View style={[styles.monthlyChip, chipVariant]}>
-          <Text style={[styles.monthlyChipText, { color: valueColor }]}>{displayValue}</Text>
-        </View>
-      </View>
     </View>
   );
 }
@@ -724,11 +722,13 @@ const styles = StyleSheet.create({
   },
   monthlyHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: spacing.xs,
   },
-  monthlyLabel: {
-    ...textStyles.body,
+  monthlyLabelMultiline: {
+    ...textStyles.caption,
+    fontSize: 13,
+    lineHeight: 18,
     color: colors.textSecondary,
     fontWeight: '600',
   },
@@ -742,7 +742,7 @@ const styles = StyleSheet.create({
   monthlyProgressContainer: {
     height: 56,
     borderRadius: 22,
-    backgroundColor: 'rgba(28,28,30,0.16)',
+    backgroundColor: 'rgba(28,28,30,0.2)',
     overflow: 'hidden',
     justifyContent: 'center',
   },
@@ -769,33 +769,6 @@ const styles = StyleSheet.create({
     left: '50%',
     marginTop: -10,
     marginLeft: -10,
-  },
-  monthlyFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  monthlyFooterLabel: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  monthlyChip: {
-    borderRadius: 999,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    backgroundColor: 'rgba(28,28,30,0.12)',
-  },
-  monthlyChipPositive: {
-    backgroundColor: 'rgba(52,199,89,0.18)',
-  },
-  monthlyChipNeutral: {
-    backgroundColor: 'rgba(28,28,30,0.12)',
-  },
-  monthlyChipText: {
-    ...textStyles.body,
-    fontSize: 16,
-    fontWeight: '600',
   },
   errorContainer: {
     backgroundColor: colors.surface,
