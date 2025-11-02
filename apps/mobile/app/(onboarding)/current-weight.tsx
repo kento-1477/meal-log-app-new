@@ -8,7 +8,7 @@ import { useOnboardingStep } from '@/hooks/useOnboardingStep';
 import { OnboardingScaffold } from '@/screen-components/onboarding/OnboardingScaffold';
 import { useOnboardingStore } from '@/store/onboarding';
 import { useTranslation } from '@/i18n';
-import { formatWeight, parseWeightInput, roundTo } from '@/utils/units';
+import { roundTo } from '@/utils/units';
 
 export default function OnboardingCurrentWeightScreen() {
   const router = useRouter();
@@ -18,14 +18,13 @@ export default function OnboardingCurrentWeightScreen() {
 
   useOnboardingStep('current-weight');
 
-  const unit = draft.unitPreference ?? 'METRIC';
   const initialKg = draft.currentWeightKg ?? draft.bodyWeightKg ?? null;
-  const [weightInput, setWeightInput] = useState(() => formatWeight(initialKg, unit));
+  const [weightInput, setWeightInput] = useState(() => (initialKg ? String(roundTo(initialKg, 1)) : ''));
   const [error, setError] = useState<string | null>(null);
 
   const handleWeightChange = (value: string) => {
     setWeightInput(value);
-    const parsed = parseWeightInput(value, unit);
+    const parsed = Number(value);
     if (parsed == null || parsed <= 0) {
       if (!value) {
         updateDraft({ currentWeightKg: null, bodyWeightKg: null });
@@ -63,9 +62,9 @@ export default function OnboardingCurrentWeightScreen() {
               value={weightInput}
               onChangeText={handleWeightChange}
               keyboardType="decimal-pad"
-              placeholder={unit === 'IMPERIAL' ? '150' : '65'}
+              placeholder="65"
             />
-            <Text style={styles.unitLabel}>{unit === 'IMPERIAL' ? t('onboarding.weight.lbs') : t('onboarding.weight.kg')}</Text>
+            <Text style={styles.unitLabel}>{t('onboarding.weight.kg')}</Text>
           </View>
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>

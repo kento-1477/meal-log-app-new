@@ -9,7 +9,7 @@ import { useOnboardingStep } from '@/hooks/useOnboardingStep';
 import { PLAN_INTENSITY_OPTIONS } from '@/screen-components/onboarding/constants';
 import { useOnboardingStore } from '@/store/onboarding';
 import { useTranslation } from '@/i18n';
-import { formatWeight, parseWeightInput, roundTo } from '@/utils/units';
+import { roundTo } from '@/utils/units';
 
 export default function OnboardingPlanSummaryScreen() {
   const router = useRouter();
@@ -19,17 +19,16 @@ export default function OnboardingPlanSummaryScreen() {
 
   useOnboardingStep('plan-summary');
 
-  const unit = draft.unitPreference ?? 'METRIC';
   const plan = PLAN_INTENSITY_OPTIONS.find((item) => item.id === draft.planIntensity) ?? null;
 
   const [targetInput, setTargetInput] = useState(() =>
-    formatWeight(draft.targetWeightKg ?? null, unit),
+    draft.targetWeightKg ? String(roundTo(draft.targetWeightKg, 1)) : '',
   );
   const [error, setError] = useState<string | null>(null);
 
   const handleTargetChange = (value: string) => {
     setTargetInput(value);
-    const parsed = parseWeightInput(value, unit);
+    const parsed = Number(value);
     if (parsed == null || parsed <= 0) {
       if (!value) {
         updateDraft({ targetWeightKg: null });
@@ -110,9 +109,9 @@ export default function OnboardingPlanSummaryScreen() {
               value={targetInput}
               onChangeText={handleTargetChange}
               keyboardType="decimal-pad"
-              placeholder={unit === 'IMPERIAL' ? '145' : '60'}
+              placeholder="60"
             />
-            <Text style={styles.unit}>{unit === 'IMPERIAL' ? t('onboarding.weight.lbs') : t('onboarding.weight.kg')}</Text>
+            <Text style={styles.unit}>{t('onboarding.weight.kg')}</Text>
           </View>
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>

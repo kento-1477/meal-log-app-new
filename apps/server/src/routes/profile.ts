@@ -3,6 +3,8 @@ import { StatusCodes } from 'http-status-codes';
 import {
   UserProfileSchema,
   UpdateUserProfileRequestSchema,
+  computeNutritionPlan,
+  type NutritionPlanInput,
   type UpdateUserProfileRequest,
 } from '@meal-log/shared';
 import type { UserProfile as PrismaUserProfile } from '@prisma/client';
@@ -31,7 +33,31 @@ profileRouter.put('/profile', async (req, res, next) => {
   try {
     const userId = req.session.userId!;
     const parsed = UpdateUserProfileRequestSchema.parse(req.body);
+    const existing = await prisma.userProfile.findUnique({ where: { userId } });
     const updateData = mapProfileInput(parsed);
+
+    const nutritionInput: NutritionPlanInput = {
+      gender: hasOwn(parsed, 'gender') ? parsed.gender ?? null : existing?.gender ?? null,
+      birthdate: hasOwn(parsed, 'birthdate') ? parsed.birthdate ?? null : existing?.birthdate ?? null,
+      heightCm: hasOwn(parsed, 'height_cm') ? parsed.height_cm ?? null : existing?.heightCm ?? null,
+      currentWeightKg: hasOwn(parsed, 'current_weight_kg')
+        ? parsed.current_weight_kg ?? null
+        : existing?.currentWeightKg ?? existing?.bodyWeightKg ?? null,
+      targetWeightKg: hasOwn(parsed, 'target_weight_kg')
+        ? parsed.target_weight_kg ?? null
+        : existing?.targetWeightKg ?? null,
+      activityLevel: hasOwn(parsed, 'activity_level') ? parsed.activity_level ?? null : existing?.activityLevel ?? null,
+      planIntensity: hasOwn(parsed, 'plan_intensity') ? parsed.plan_intensity ?? null : existing?.planIntensity ?? null,
+    };
+
+    const autoPlan = computeNutritionPlan(nutritionInput);
+    if (autoPlan) {
+      updateData.targetCalories = autoPlan.targetCalories;
+      updateData.targetProteinG = autoPlan.proteinGrams;
+      updateData.targetFatG = autoPlan.fatGrams;
+      updateData.targetCarbsG = autoPlan.carbGrams;
+    }
+
     const profile = await prisma.userProfile.upsert({
       where: { userId },
       update: updateData,

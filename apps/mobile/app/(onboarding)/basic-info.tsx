@@ -10,14 +10,13 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
-import type { Gender, MeasurementSystem } from '@meal-log/shared';
+import type { Gender } from '@meal-log/shared';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
 import { useOnboardingStep } from '@/hooks/useOnboardingStep';
 import { OnboardingScaffold } from '@/screen-components/onboarding/OnboardingScaffold';
 import { useOnboardingStore } from '@/store/onboarding';
 import { useTranslation } from '@/i18n';
-import { cmToFeetInches, feetInchesToCm } from '@/utils/units';
 
 const GENDER_ORDER: Gender[] = ['FEMALE', 'MALE', 'NON_BINARY', 'UNSPECIFIED'];
 
@@ -31,7 +30,6 @@ export default function OnboardingBasicInfoScreen() {
 
   const [name, setName] = useState(draft.displayName ?? '');
   const [gender, setGender] = useState<Gender | null>(draft.gender ?? null);
-  const [unit, setUnit] = useState<MeasurementSystem>(draft.unitPreference ?? 'METRIC');
   const initialBirthdate = draft.birthdate ? new Date(draft.birthdate) : null;
   const defaultBirthdate = initialBirthdate ?? buildDefaultBirthdate();
   const [birthdate, setBirthdate] = useState<Date | null>(initialBirthdate);
@@ -73,19 +71,9 @@ export default function OnboardingBasicInfoScreen() {
       return Math.min(prev, total - 1);
     });
   }, [days.length]);
-  const [heightMetricInput, setHeightMetricInput] = useState(
+  const [heightInput, setHeightInput] = useState(
     draft.heightCm ? Math.round(draft.heightCm).toString() : '',
   );
-  const initialFeetInches = useMemo(() => {
-    if (!draft.heightCm) return { feet: '', inches: '' };
-    const { feet, inches } = cmToFeetInches(draft.heightCm);
-    return {
-      feet: String(feet),
-      inches: String(Math.round(inches)),
-    } as const;
-  }, [draft.heightCm]);
-  const [heightFeetInput, setHeightFeetInput] = useState(initialFeetInches.feet);
-  const [heightInchesInput, setHeightInchesInput] = useState(initialFeetInches.inches);
 
   const [heightCm, setHeightCm] = useState<number | null>(draft.heightCm ?? null);
 
@@ -98,24 +86,6 @@ export default function OnboardingBasicInfoScreen() {
     const next = gender === value ? null : value;
     setGender(next);
     updateDraft({ gender: next });
-  };
-
-  const handleUnitToggle = (value: MeasurementSystem) => {
-    setUnit(value);
-    updateDraft({ unitPreference: value });
-    if (value === 'IMPERIAL' && heightCm != null) {
-      const { feet, inches } = cmToFeetInches(heightCm);
-      setHeightFeetInput(String(feet));
-      setHeightInchesInput(String(Math.round(inches)));
-    } else if (value === 'IMPERIAL') {
-      setHeightFeetInput('');
-      setHeightInchesInput('');
-    }
-    if (value === 'METRIC' && heightCm != null) {
-      setHeightMetricInput(Math.round(heightCm).toString());
-    } else if (value === 'METRIC') {
-      setHeightMetricInput('');
-    }
   };
 
   const openBirthdatePicker = () => {
@@ -150,28 +120,13 @@ export default function OnboardingBasicInfoScreen() {
     handleBirthdateConfirm(selected);
   };
 
-  const handleMetricHeightChange = (value: string) => {
-    setHeightMetricInput(value);
+  const handleHeightChange = (value: string) => {
+    setHeightInput(value);
     const numeric = Number(value);
     if (Number.isFinite(numeric) && numeric > 0) {
       setHeightCm(numeric);
       updateDraft({ heightCm: numeric });
     } else if (!value) {
-      setHeightCm(null);
-      updateDraft({ heightCm: null });
-    }
-  };
-
-  const handleImperialHeightChange = (feetInput: string, inchesInput: string) => {
-    setHeightFeetInput(feetInput);
-    setHeightInchesInput(inchesInput);
-    const feet = Number(feetInput || '0');
-    const inches = Number(inchesInput || '0');
-    if (Number.isFinite(feet) && Number.isFinite(inches) && (feet > 0 || inches > 0)) {
-      const cm = feetInchesToCm(feet, inches);
-      setHeightCm(cm);
-      updateDraft({ heightCm: cm });
-    } else if (!feetInput && !inchesInput) {
       setHeightCm(null);
       updateDraft({ heightCm: null });
     }
@@ -250,65 +205,17 @@ export default function OnboardingBasicInfoScreen() {
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.label}>{t('onboarding.basicInfo.unit')}</Text>
-          <View style={styles.chipRow}>
-            <TouchableOpacity
-              style={[styles.chip, unit === 'METRIC' ? styles.chipSelected : null]}
-              onPress={() => handleUnitToggle('METRIC')}
-            >
-              <Text style={[styles.chipLabel, unit === 'METRIC' ? styles.chipLabelSelected : null]}>
-                {t('onboarding.basicInfo.metric')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.chip, unit === 'IMPERIAL' ? styles.chipSelected : null]}
-              onPress={() => handleUnitToggle('IMPERIAL')}
-            >
-              <Text style={[styles.chipLabel, unit === 'IMPERIAL' ? styles.chipLabelSelected : null]}>
-                {t('onboarding.basicInfo.imperial')}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.helperText}>{t('onboarding.basicInfo.healthNote')}</Text>
-        </View>
-
-        <View style={styles.field}>
           <Text style={styles.label}>{t('onboarding.basicInfo.height')}</Text>
-          {unit === 'METRIC' ? (
-            <View style={styles.inlineField}>
-              <TextInput
-                style={[styles.input, styles.inlineInput]}
-                value={heightMetricInput}
-                onChangeText={handleMetricHeightChange}
-                keyboardType="numeric"
-                placeholder="170"
-              />
-              <Text style={styles.inlineSuffix}>{t('onboarding.basicInfo.cm')}</Text>
-            </View>
-          ) : (
-            <View style={styles.inlineSplit}>
-              <View style={styles.inlineField}>
-                <TextInput
-                  style={[styles.input, styles.inlineInput]}
-                  value={heightFeetInput}
-                  onChangeText={(value) => handleImperialHeightChange(value, heightInchesInput)}
-                  keyboardType="numeric"
-                  placeholder="5"
-                />
-                <Text style={styles.inlineSuffix}>{t('onboarding.basicInfo.ft')}</Text>
-              </View>
-              <View style={styles.inlineField}>
-                <TextInput
-                  style={[styles.input, styles.inlineInput]}
-                  value={heightInchesInput}
-                  onChangeText={(value) => handleImperialHeightChange(heightFeetInput, value)}
-                  keyboardType="numeric"
-                  placeholder="7"
-                />
-                <Text style={styles.inlineSuffix}>{t('onboarding.basicInfo.in')}</Text>
-              </View>
-            </View>
-          )}
+          <View style={styles.inlineField}>
+            <TextInput
+              style={[styles.input, styles.inlineInput]}
+              value={heightInput}
+              onChangeText={handleHeightChange}
+              keyboardType="numeric"
+              placeholder="170"
+            />
+            <Text style={styles.inlineSuffix}>{t('onboarding.basicInfo.cm')}</Text>
+          </View>
         </View>
       </View>
       </OnboardingScaffold>
@@ -489,10 +396,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  inlineSplit: {
-    flexDirection: 'row',
-    gap: 12,
-  },
   inlineInput: {
     flex: 1,
   },
@@ -503,10 +406,6 @@ const styles = StyleSheet.create({
   error: {
     ...textStyles.caption,
     color: colors.error,
-  },
-  helperText: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
   },
   modalContainer: {
     flex: 1,
