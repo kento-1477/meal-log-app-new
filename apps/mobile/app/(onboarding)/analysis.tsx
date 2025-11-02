@@ -145,6 +145,7 @@ export default function OnboardingAnalysisScreen() {
       targetWeightKg: draft.targetWeightKg ?? null,
       activityLevel: draft.activityLevel ?? null,
       planIntensity: draft.planIntensity ?? null,
+      goals: draft.goals,
     });
 
     const displayPlan = planSummary ?? (computedPlan

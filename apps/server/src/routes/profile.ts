@@ -48,6 +48,7 @@ profileRouter.put('/profile', async (req, res, next) => {
         : existing?.targetWeightKg ?? null,
       activityLevel: hasOwn(parsed, 'activity_level') ? parsed.activity_level ?? null : existing?.activityLevel ?? null,
       planIntensity: hasOwn(parsed, 'plan_intensity') ? parsed.plan_intensity ?? null : existing?.planIntensity ?? null,
+      goals: hasOwn(parsed, 'goals') ? parsed.goals ?? [] : existing?.goals ?? [],
     };
 
     const autoPlan = computeNutritionPlan(nutritionInput);
