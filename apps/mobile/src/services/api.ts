@@ -304,7 +304,7 @@ export async function updateUserProfile(input: UpdateUserProfileRequest) {
 }
 
 export async function deleteAccount() {
-  return apiFetch<{ ok: boolean }>('/api/account', { method: 'DELETE' });
+  return apiFetch<{ ok: boolean }>('/api/user/account', { method: 'DELETE' });
 }
 
 export async function getDailySummary(days = 7) {
