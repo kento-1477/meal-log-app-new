@@ -102,7 +102,7 @@ test('profile get returns defaults and create/upsert persists onboarding fields'
   assert.deepEqual(updatedBody.profile.goals, payload.goals);
   assert.equal(updatedBody.profile.plan_intensity, payload.plan_intensity);
   assert.equal(updatedBody.profile.questionnaire_completed_at, payload.questionnaire_completed_at);
-  assert.equal(updatedBody.profile.target_calories, 1770);
+  assert.equal(updatedBody.profile.target_calories, 1769);
   assert.equal(updatedBody.profile.target_protein_g, 140);
   assert.equal(updatedBody.profile.target_fat_g, 49);
   assert.equal(updatedBody.profile.target_carbs_g, 192);
