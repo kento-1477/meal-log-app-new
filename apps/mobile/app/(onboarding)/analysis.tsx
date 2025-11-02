@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { UpdateUserProfileRequest } from '@meal-log/shared';
-import { estimateTargetDate } from '@meal-log/shared';
+import type { UpdateUserProfileRequest, UserProfile } from '@meal-log/shared';
+import { computeNutritionPlan, estimateTargetDate } from '@meal-log/shared';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
 import { useOnboardingStep } from '@/hooks/useOnboardingStep';
@@ -28,6 +28,7 @@ export default function OnboardingAnalysisScreen() {
   useOnboardingStep('analysis');
 
   const [progress, setProgress] = useState(20);
+  const [profileResult, setProfileResult] = useState<UserProfile | null>(null);
 
   const plan = PLAN_INTENSITY_OPTIONS.find((item) => item.id === draft.planIntensity) ?? null;
 
@@ -50,13 +51,9 @@ export default function OnboardingAnalysisScreen() {
       gender: draft.gender ?? null,
       birthdate: draft.birthdate ?? null,
       height_cm: draft.heightCm ?? null,
-      unit_preference: draft.unitPreference ?? 'METRIC',
+      unit_preference: 'METRIC',
       marketing_source: draft.marketingSource ? draft.marketingSource.trim() : null,
       goals: draft.goals,
-      target_calories: draft.targetCalories ?? null,
-      target_protein_g: draft.targetProtein ?? null,
-      target_fat_g: draft.targetFat ?? null,
-      target_carbs_g: draft.targetCarbs ?? null,
       body_weight_kg: draft.bodyWeightKg ?? draft.currentWeightKg ?? null,
       current_weight_kg: draft.currentWeightKg ?? null,
       target_weight_kg: draft.targetWeightKg ?? null,
@@ -72,6 +69,7 @@ export default function OnboardingAnalysisScreen() {
   const mutation = useMutation({
     mutationFn: async () => updateUserProfile(submissionPayload),
     onSuccess: (profile) => {
+      setProfileResult(profile);
       const completedAt = profile.questionnaire_completed_at ?? new Date().toISOString();
       setOnboardingStatus({ completed: true, completed_at: completedAt });
       queryClient.setQueryData(['profile'], profile);
@@ -130,10 +128,59 @@ export default function OnboardingAnalysisScreen() {
       );
     }
 
+    const planSummary = profileResult
+      ? {
+          targetCalories: profileResult.target_calories,
+          proteinGrams: profileResult.target_protein_g,
+          fatGrams: profileResult.target_fat_g,
+          carbGrams: profileResult.target_carbs_g,
+        }
+      : null;
+
+    const computedPlan = computeNutritionPlan({
+      gender: draft.gender ?? null,
+      birthdate: draft.birthdate ?? null,
+      heightCm: draft.heightCm ?? null,
+      currentWeightKg: draft.currentWeightKg ?? draft.bodyWeightKg ?? null,
+      targetWeightKg: draft.targetWeightKg ?? null,
+      activityLevel: draft.activityLevel ?? null,
+      planIntensity: draft.planIntensity ?? null,
+    });
+
+    const displayPlan = planSummary ?? (computedPlan
+      ? {
+          targetCalories: computedPlan.targetCalories,
+          proteinGrams: computedPlan.proteinGrams,
+          fatGrams: computedPlan.fatGrams,
+          carbGrams: computedPlan.carbGrams,
+        }
+      : null);
+
     return (
       <View style={styles.centerBlock}>
         <Text style={styles.statusText}>{t('onboarding.analysis.complete')}</Text>
         <Text style={styles.statusSub}>{t('onboarding.analysis.completeSub')}</Text>
+        {displayPlan ? (
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryTitle}>{t('onboarding.analysis.recommendationTitle')}</Text>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>{t('onboarding.analysis.calories')}</Text>
+              <Text style={styles.summaryValue}>{displayPlan.targetCalories} kcal</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>{t('onboarding.analysis.protein')}</Text>
+              <Text style={styles.summaryValue}>{displayPlan.proteinGrams} g</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>{t('onboarding.analysis.fat')}</Text>
+              <Text style={styles.summaryValue}>{displayPlan.fatGrams} g</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>{t('onboarding.analysis.carbs')}</Text>
+              <Text style={styles.summaryValue}>{displayPlan.carbGrams} g</Text>
+            </View>
+          </View>
+        ) : null}
         <Text style={styles.link} onPress={handleContinue}>
           {t('onboarding.analysis.goHome')}
         </Text>
@@ -197,5 +244,35 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  summaryCard: {
+    width: '90%',
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderRadius: 20,
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(10,132,255,0.12)',
+  },
+  summaryTitle: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  summaryValue: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    fontWeight: '600',
   },
 });

@@ -1,11 +1,5 @@
 import { create } from 'zustand';
-import type {
-  ActivityLevelString,
-  Gender,
-  MeasurementSystem,
-  PlanIntensity,
-  UserProfile,
-} from '@meal-log/shared';
+import type { ActivityLevelString, Gender, PlanIntensity, UserProfile } from '@meal-log/shared';
 
 export type OnboardingStep =
   | 'welcome'
@@ -35,7 +29,6 @@ export interface OnboardingDraft {
   gender: Gender | null;
   birthdate: string | null;
   heightCm: number | null;
-  unitPreference: MeasurementSystem;
   marketingSource: string;
   goals: string[];
   targetCalories: number | null;
@@ -56,7 +49,6 @@ const createDefaultDraft = (): OnboardingDraft => ({
   gender: null,
   birthdate: null,
   heightCm: null,
-  unitPreference: 'METRIC',
   marketingSource: '',
   goals: [],
   targetCalories: null,
@@ -116,7 +108,6 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
           gender: (profile.gender as Gender | null | undefined) ?? state.draft.gender,
           birthdate: profile.birthdate ?? state.draft.birthdate,
           heightCm: profile.height_cm ?? state.draft.heightCm,
-          unitPreference: (profile.unit_preference as MeasurementSystem | null | undefined) ?? state.draft.unitPreference,
           marketingSource: profile.marketing_source ?? state.draft.marketingSource,
           goals: Array.isArray(profile.goals) ? profile.goals : state.draft.goals,
           targetCalories: profile.target_calories ?? state.draft.targetCalories,

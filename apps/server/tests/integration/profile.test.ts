@@ -76,10 +76,6 @@ test('profile get returns defaults and create/upsert persists onboarding fields'
     unit_preference: 'METRIC',
     marketing_source: 'instagram',
     goals: ['WEIGHT_LOSS', 'STRESS_MANAGEMENT'],
-    target_calories: 1800,
-    target_protein_g: 120,
-    target_fat_g: 60,
-    target_carbs_g: 190,
     body_weight_kg: 70,
     current_weight_kg: 70,
     target_weight_kg: 62,
@@ -106,6 +102,10 @@ test('profile get returns defaults and create/upsert persists onboarding fields'
   assert.deepEqual(updatedBody.profile.goals, payload.goals);
   assert.equal(updatedBody.profile.plan_intensity, payload.plan_intensity);
   assert.equal(updatedBody.profile.questionnaire_completed_at, payload.questionnaire_completed_at);
+  assert.equal(updatedBody.profile.target_calories, 1770);
+  assert.equal(updatedBody.profile.target_protein_g, 140);
+  assert.equal(updatedBody.profile.target_fat_g, 49);
+  assert.equal(updatedBody.profile.target_carbs_g, 192);
 
   const session = await fetchWithSession('/api/session');
   assert.equal(session.response.status, 200);
