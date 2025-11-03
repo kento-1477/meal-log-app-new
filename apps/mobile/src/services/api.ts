@@ -183,7 +183,7 @@ export interface AuthResponse {
   onboarding: OnboardingStatus;
 }
 
-export async function registerUser(input: { email: string; password: string; username?: string }) {
+export async function registerUser(input: { email: string; password: string }) {
   return apiFetch<AuthResponse>('/api/register', {
     method: 'POST',
     body: JSON.stringify(input),

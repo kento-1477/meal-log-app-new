@@ -65,7 +65,7 @@ authRouter.post('/login', async (req, res, next) => {
   }
 });
 
-function formatValidationError(error: ZodError, type: 'register' | 'login') {
+function formatValidationError(error: ZodError, _type: 'register' | 'login') {
   const issue: ZodIssue | undefined = error.errors[0];
   const field = issue?.path?.[0];
 
@@ -78,15 +78,6 @@ function formatValidationError(error: ZodError, type: 'register' | 'login') {
       return 'パスワードが短すぎます。8文字以上で入力してください。';
     }
     return 'パスワードの入力内容を確認してください。';
-  }
-
-  if (type === 'register' && field === 'username') {
-    if (issue?.code === 'too_small') {
-      return 'ユーザー名は2文字以上で入力してください。';
-    }
-    if (issue?.code === 'too_big') {
-      return 'ユーザー名は40文字以内で入力してください。';
-    }
   }
 
   return '入力内容が正しくありません。';

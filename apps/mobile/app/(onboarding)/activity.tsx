@@ -1,12 +1,14 @@
 import { useRouter } from 'expo-router';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { colors } from '@/theme/colors';
-import { textStyles } from '@/theme/typography';
 import { OnboardingScaffold } from '@/screen-components/onboarding/OnboardingScaffold';
 import { useOnboardingStep } from '@/hooks/useOnboardingStep';
 import { ACTIVITY_OPTIONS } from '@/screen-components/onboarding/constants';
 import { useOnboardingStore } from '@/store/onboarding';
 import { useTranslation } from '@/i18n';
+import { SelectableCard } from '@/components/SelectableCard';
+import type { CardIconRenderer } from '@/components/SelectableCard';
+import { Feather } from '@expo/vector-icons';
 
 export default function OnboardingActivityScreen() {
   const router = useRouter();
@@ -19,6 +21,20 @@ export default function OnboardingActivityScreen() {
   const handleSelect = (id: string) => {
     const next = activityLevel === id ? null : id;
     updateDraft({ activityLevel: next });
+  };
+
+  const iconMap: Record<string, CardIconRenderer> = {
+    SEDENTARY: (selected) => (
+      <Feather name="coffee" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+    LIGHT: (selected) => <Feather name="sun" size={22} color={selected ? '#fff' : colors.textPrimary} />,
+    MODERATE: (selected) => (
+      <Feather name="trending-up" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+    ACTIVE: (selected) => (
+      <Feather name="activity" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+    ATHLETE: (selected) => <Feather name="zap" size={22} color={selected ? '#fff' : colors.textPrimary} />,
   };
 
   return (
@@ -35,18 +51,14 @@ export default function OnboardingActivityScreen() {
         {ACTIVITY_OPTIONS.map((option) => {
           const selected = option.id === activityLevel;
           return (
-            <TouchableOpacity
+            <SelectableCard
               key={option.id}
-              style={[styles.option, selected ? styles.optionSelected : null]}
+              title={t(option.labelKey)}
+              subtitle={t(option.descriptionKey)}
+              selected={selected}
               onPress={() => handleSelect(option.id)}
-            >
-              <Text style={[styles.optionTitle, selected ? styles.optionTitleSelected : null]}>
-                {t(option.labelKey)}
-              </Text>
-              <Text style={[styles.optionSubtitle, selected ? styles.optionSubtitleSelected : null]}>
-                {t(option.descriptionKey)}
-              </Text>
-            </TouchableOpacity>
+              icon={iconMap[option.id]}
+            />
           );
         })}
       </View>
@@ -57,32 +69,5 @@ export default function OnboardingActivityScreen() {
 const styles = StyleSheet.create({
   stack: {
     gap: 16,
-  },
-  option: {
-    backgroundColor: 'rgba(255,255,255,0.75)',
-    borderRadius: 18,
-    padding: 20,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  optionSelected: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentSoft,
-  },
-  optionTitle: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  optionTitleSelected: {
-    color: colors.accent,
-  },
-  optionSubtitle: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-  },
-  optionSubtitleSelected: {
-    color: colors.textPrimary,
   },
 });

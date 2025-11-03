@@ -7,6 +7,9 @@ import { useOnboardingStep } from '@/hooks/useOnboardingStep';
 import { MARKETING_OPTIONS } from '@/screen-components/onboarding/constants';
 import { useOnboardingStore } from '@/store/onboarding';
 import { useTranslation } from '@/i18n';
+import { SelectableCard } from '@/components/SelectableCard';
+import type { CardIconRenderer } from '@/components/SelectableCard';
+import { Feather } from '@expo/vector-icons';
 
 export default function OnboardingMarketingScreen() {
   const router = useRouter();
@@ -19,6 +22,27 @@ export default function OnboardingMarketingScreen() {
   const handleSelect = (id: string) => {
     const next = marketing === id ? '' : id;
     updateDraft({ marketingSource: next });
+  };
+
+  const iconMap: Record<string, CardIconRenderer> = {
+    instagram: (selected) => (
+      <Feather name="camera" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+    facebook: (selected) => (
+      <Feather name="users" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+    tiktok: (selected) => (
+      <Feather name="music" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+    friend: (selected) => (
+      <Feather name="message-circle" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+    app_store: (selected) => (
+      <Feather name="shopping-bag" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+    other: (selected) => (
+      <Feather name="more-horizontal" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
   };
 
   return (
@@ -39,15 +63,13 @@ export default function OnboardingMarketingScreen() {
         {MARKETING_OPTIONS.map((option) => {
           const selected = option.id === marketing;
           return (
-            <TouchableOpacity
+            <SelectableCard
               key={option.id}
-              style={[styles.card, selected ? styles.cardSelected : null]}
+              title={t(option.labelKey)}
+              selected={selected}
               onPress={() => handleSelect(option.id)}
-            >
-              <Text style={[styles.cardLabel, selected ? styles.cardLabelSelected : null]}>
-                {t(option.labelKey)}
-              </Text>
-            </TouchableOpacity>
+              icon={iconMap[option.id]}
+            />
           );
         })}
       </View>
@@ -57,33 +79,7 @@ export default function OnboardingMarketingScreen() {
 
 const styles = StyleSheet.create({
   grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  card: {
-    flexBasis: '48%',
-    backgroundColor: 'rgba(255,255,255,0.75)',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 20,
-    paddingHorizontal: 12,
-  },
-  cardSelected: {
-    backgroundColor: colors.accentSoft,
-    borderColor: colors.accent,
-  },
-  cardLabel: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    textAlign: 'center',
-  },
-  cardLabelSelected: {
-    color: colors.accent,
-    fontWeight: '600',
+    gap: 14,
   },
   skip: {
     ...textStyles.caption,

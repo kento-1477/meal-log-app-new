@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { MAX_GOAL_SELECTION } from '@meal-log/shared';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
@@ -10,6 +10,9 @@ import { GOAL_OPTIONS } from '@/screen-components/onboarding/constants';
 import { useOnboardingStore } from '@/store/onboarding';
 import { useTranslation } from '@/i18n';
 import { trackOnboardingGoalsUpdated } from '@/analytics/events';
+import { SelectableCard } from '@/components/SelectableCard';
+import type { CardIconRenderer } from '@/components/SelectableCard';
+import { Feather } from '@expo/vector-icons';
 
 export default function OnboardingGoalsScreen() {
   const router = useRouter();
@@ -21,6 +24,24 @@ export default function OnboardingGoalsScreen() {
   useOnboardingStep('goals');
 
   const selectedSet = useMemo(() => new Set(goals), [goals]);
+
+  const iconMap: Record<string, CardIconRenderer> = {
+    WEIGHT_LOSS: (selected) => (
+      <Feather name="trending-down" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+    STRESS_MANAGEMENT: (selected) => (
+      <Feather name="wind" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+    HABIT_BUILDING: (selected) => (
+      <Feather name="repeat" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+    WEIGHT_MAINTENANCE: (selected) => (
+      <Feather name="compass" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+    MUSCLE_GAIN: (selected) => (
+      <Feather name="activity" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+  };
 
   const toggleGoal = (id: string) => {
     const next = new Set(selectedSet);
@@ -56,16 +77,13 @@ export default function OnboardingGoalsScreen() {
         {GOAL_OPTIONS.map((option) => {
           const selected = selectedSet.has(option.id);
           return (
-            <TouchableOpacity
+            <SelectableCard
               key={option.id}
-              style={[styles.goalCard, selected ? styles.goalCardSelected : null]}
+              title={t(option.labelKey)}
+              selected={selected}
               onPress={() => toggleGoal(option.id)}
-              activeOpacity={0.85}
-            >
-              <Text style={[styles.goalLabel, selected ? styles.goalLabelSelected : null]}>
-                {t(option.labelKey)}
-              </Text>
-            </TouchableOpacity>
+              icon={iconMap[option.id]}
+            />
           );
         })}
       </View>
@@ -81,35 +99,11 @@ export default function OnboardingGoalsScreen() {
 
 const styles = StyleSheet.create({
   grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  goalCard: {
-    flexBasis: '48%',
-    backgroundColor: 'rgba(255,255,255,0.75)',
-    borderRadius: 18,
-    paddingVertical: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  goalCardSelected: {
-    backgroundColor: colors.accentSoft,
-    borderColor: colors.accent,
-  },
-  goalLabel: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  goalLabelSelected: {
-    color: colors.accent,
+    gap: 14,
   },
   feedback: {
     marginTop: 24,
-    gap: 8,
+    gap: 6,
   },
   selectionCount: {
     ...textStyles.caption,

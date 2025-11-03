@@ -8,10 +8,10 @@ export interface GoalOption {
 
 export const GOAL_OPTIONS: GoalOption[] = [
   { id: 'WEIGHT_LOSS', labelKey: 'onboarding.goals.weightLoss' },
-  { id: 'STRESS_MANAGEMENT', labelKey: 'onboarding.goals.stressManagement' },
+  { id: 'MUSCLE_GAIN', labelKey: 'onboarding.goals.muscleGain' },
   { id: 'HABIT_BUILDING', labelKey: 'onboarding.goals.habitBuilding' },
   { id: 'WEIGHT_MAINTENANCE', labelKey: 'onboarding.goals.weightMaintenance' },
-  { id: 'MUSCLE_GAIN', labelKey: 'onboarding.goals.muscleGain' },
+  { id: 'STRESS_MANAGEMENT', labelKey: 'onboarding.goals.stressManagement' },
 ];
 
 export interface MarketingOption {

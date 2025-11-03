@@ -1,13 +1,15 @@
 import { useRouter } from 'expo-router';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import type { PlanIntensity } from '@meal-log/shared';
-import { colors } from '@/theme/colors';
-import { textStyles } from '@/theme/typography';
 import { useOnboardingStep } from '@/hooks/useOnboardingStep';
 import { OnboardingScaffold } from '@/screen-components/onboarding/OnboardingScaffold';
 import { PLAN_INTENSITY_OPTIONS } from '@/screen-components/onboarding/constants';
 import { useOnboardingStore } from '@/store/onboarding';
 import { useTranslation } from '@/i18n';
+import { colors } from '@/theme/colors';
+import { SelectableCard } from '@/components/SelectableCard';
+import type { CardIconRenderer } from '@/components/SelectableCard';
+import { Feather } from '@expo/vector-icons';
 
 export default function OnboardingPlanModeScreen() {
   const router = useRouter();
@@ -20,6 +22,18 @@ export default function OnboardingPlanModeScreen() {
   const handleSelect = (id: PlanIntensity) => {
     const next: PlanIntensity | null = planIntensity === id ? null : id;
     updateDraft({ planIntensity: next });
+  };
+
+  const iconMap: Record<PlanIntensity, CardIconRenderer> = {
+    GENTLE: (selected) => (
+      <Feather name="feather" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+    STANDARD: (selected) => (
+      <Feather name="wind" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
+    INTENSE: (selected) => (
+      <Feather name="target" size={22} color={selected ? '#fff' : colors.textPrimary} />
+    ),
   };
 
   return (
@@ -36,23 +50,15 @@ export default function OnboardingPlanModeScreen() {
         {PLAN_INTENSITY_OPTIONS.map((option) => {
           const selected = option.id === planIntensity;
           return (
-            <TouchableOpacity
+            <SelectableCard
               key={option.id}
-              style={[styles.option, selected ? styles.optionSelected : null]}
+              title={t(option.labelKey)}
+              subtitle={t(option.descriptionKey)}
+              selected={selected}
               onPress={() => handleSelect(option.id)}
-            >
-              <View style={styles.rowBetween}>
-                <Text style={[styles.optionTitle, selected ? styles.optionTitleSelected : null]}>
-                  {t(option.labelKey)}
-                </Text>
-                <Text style={[styles.badge, selected ? styles.badgeSelected : null]}>
-                  {t('onboarding.plan.perWeek', { value: option.weeklyRateKg })}
-                </Text>
-              </View>
-              <Text style={[styles.optionSubtitle, selected ? styles.optionSubtitleSelected : null]}>
-                {t(option.descriptionKey)}
-              </Text>
-            </TouchableOpacity>
+              icon={iconMap[option.id]}
+              badge={t('onboarding.plan.perWeek', { value: option.weeklyRateKg })}
+            />
           );
         })}
       </View>
@@ -63,49 +69,5 @@ export default function OnboardingPlanModeScreen() {
 const styles = StyleSheet.create({
   stack: {
     gap: 16,
-  },
-  option: {
-    backgroundColor: 'rgba(255,255,255,0.75)',
-    borderRadius: 18,
-    padding: 20,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  optionSelected: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentSoft,
-  },
-  optionTitle: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  optionTitleSelected: {
-    color: colors.accent,
-  },
-  optionSubtitle: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-  },
-  optionSubtitleSelected: {
-    color: colors.textPrimary,
-  },
-  rowBetween: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  badge: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    backgroundColor: 'rgba(255,255,255,0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  badgeSelected: {
-    color: colors.accent,
-    backgroundColor: 'rgba(10,132,255,0.15)',
   },
 });

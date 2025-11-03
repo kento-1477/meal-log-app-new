@@ -73,7 +73,7 @@ export default function SettingsScreen() {
             </View>
             <View style={styles.profileTextContainer}>
               <View style={styles.profileNameRow}>
-                <Text style={styles.profileName}>{user?.username ?? t('settings.profile.namePlaceholder')}</Text>
+                <Text style={styles.profileName}>{user?.email ?? t('settings.profile.namePlaceholder')}</Text>
                 {premiumStatus?.isPremium && (
                   <View style={styles.premiumBadge}>
                     <Feather name="star" size={12} color="#fff" />
