@@ -235,7 +235,6 @@ export type IapPurchaseResponse = z.infer<typeof IapPurchaseResponseSchema>;
 export const RegisterRequestSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
-  username: z.string().min(2).max(40).optional(),
 });
 
 export const LoginRequestSchema = z.object({

@@ -142,7 +142,7 @@ export default function OnboardingPlanSummaryScreen() {
 
 const styles = StyleSheet.create({
   wrapper: {
-    gap: 24,
+    gap: 28,
   },
   field: {
     gap: 12,
@@ -150,6 +150,7 @@ const styles = StyleSheet.create({
   label: {
     ...textStyles.caption,
     color: colors.textSecondary,
+    fontSize: 14,
   },
   inputRow: {
     flexDirection: 'row',
@@ -158,15 +159,20 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(28,28,30,0.08)',
     fontSize: 18,
     fontWeight: '600',
     textAlign: 'center',
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 3,
   },
   unit: {
     ...textStyles.body,
@@ -174,12 +180,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   summaryCard: {
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    borderRadius: 18,
-    padding: 20,
+    backgroundColor: 'rgba(255,255,255,0.97)',
+    borderRadius: 24,
+    padding: 22,
     gap: 12,
     borderWidth: 1,
-    borderColor: 'rgba(10,132,255,0.12)',
+    borderColor: 'rgba(28,28,30,0.06)',
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 4,
   },
   summaryRow: {
     flexDirection: 'row',

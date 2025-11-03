@@ -20,7 +20,6 @@ export default function RegisterScreen() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [username, setUsername] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -41,7 +40,6 @@ export default function RegisterScreen() {
       const response = await registerUser({
         email: email.trim(),
         password: password.trim(),
-        username: username.trim() ? username.trim() : undefined,
       });
       setUser(response.user);
       setUsage(response.usage);
@@ -88,16 +86,6 @@ export default function RegisterScreen() {
               secureTextEntry
               style={styles.input}
               placeholder={t('register.passwordPlaceholder')}
-            />
-          </View>
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>{t('register.usernameLabel')}</Text>
-            <TextInput
-              value={username}
-              onChangeText={setUsername}
-              autoCapitalize="words"
-              style={styles.input}
-              placeholder={t('register.usernamePlaceholder')}
             />
           </View>
           {error ? <Text style={styles.error}>⚠️ {error}</Text> : null}

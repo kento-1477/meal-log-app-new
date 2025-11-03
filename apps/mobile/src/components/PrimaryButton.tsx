@@ -28,18 +28,21 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({ label, onPress, lo
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: colors.accent,
-    borderRadius: 18,
-    paddingVertical: 16,
+    backgroundColor: colors.textPrimary,
+    borderRadius: 26,
+    paddingVertical: 18,
     alignItems: 'center',
     shadowColor: colors.shadow,
-    shadowOpacity: 0.4,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6,
+    minHeight: 56,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
   pressed: {
-    opacity: 0.8,
+    transform: [{ scale: 0.99 }],
   },
   disabled: {
     opacity: 0.4,
@@ -47,5 +50,6 @@ const styles = StyleSheet.create({
   text: {
     ...textStyles.titleMedium,
     color: 'white',
+    fontSize: 18,
   },
 });
