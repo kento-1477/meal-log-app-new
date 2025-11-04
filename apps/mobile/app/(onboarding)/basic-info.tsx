@@ -17,6 +17,7 @@ import { useOnboardingStep } from '@/hooks/useOnboardingStep';
 import { OnboardingScaffold } from '@/screen-components/onboarding/OnboardingScaffold';
 import { useOnboardingStore } from '@/store/onboarding';
 import { useTranslation } from '@/i18n';
+import { onboardingCardStyle, onboardingInputStyle, onboardingTypography } from '@/theme/onboarding';
 
 const GENDER_ORDER: Gender[] = ['FEMALE', 'MALE', 'NON_BINARY', 'UNSPECIFIED'];
 
@@ -155,69 +156,73 @@ export default function OnboardingBasicInfoScreen() {
         onBack={() => router.back()}
       >
         <View style={styles.form}>
-        <View style={styles.field}>
-          <Text style={styles.label}>{t('onboarding.basicInfo.name')}</Text>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={handleNameChange}
-            placeholder={t('onboarding.basicInfo.namePlaceholder')}
-          />
-        </View>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>{t('onboarding.basicInfo.gender')}</Text>
-          <View style={styles.chipRow}>
-            {genderOptions.map((option) => {
-              const selected = option.id === gender;
-              return (
-                <TouchableOpacity
-                  key={option.id}
-                  style={[styles.chip, selected ? styles.chipSelected : null]}
-                  onPress={() => handleGenderSelect(option.id)}
-                >
-                  <Text style={[styles.chipLabel, selected ? styles.chipLabelSelected : null]}>
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>{t('onboarding.basicInfo.birthdate')}</Text>
-          <TouchableOpacity
-            style={styles.inputButton}
-            onPress={openBirthdatePicker}
-            activeOpacity={0.85}
-          >
-            <Text
-              style={[
-                styles.inputButtonText,
-                birthdate ? styles.inputButtonValue : styles.inputButtonPlaceholder,
-              ]}
-            >
-              {birthdate ? birthdateInput : t('onboarding.basicInfo.birthdatePlaceholder')}
-            </Text>
-          </TouchableOpacity>
-          {/* Reserved for future validation errors */}
-        </View>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>{t('onboarding.basicInfo.height')}</Text>
-          <View style={styles.inlineField}>
+          <View style={styles.card}>
+            <Text style={onboardingTypography.label}>{t('onboarding.basicInfo.name')}</Text>
+            <Text style={onboardingTypography.helper}>{t('onboarding.basicInfo.nameHelper')}</Text>
             <TextInput
-              style={[styles.input, styles.inlineInput]}
-              value={heightInput}
-              onChangeText={handleHeightChange}
-              keyboardType="numeric"
-              placeholder="170"
+              style={styles.input}
+              value={name}
+              onChangeText={handleNameChange}
+              placeholder={t('onboarding.basicInfo.namePlaceholder')}
             />
-            <Text style={styles.inlineSuffix}>{t('onboarding.basicInfo.cm')}</Text>
+          </View>
+
+          <View style={styles.card}>
+            <Text style={onboardingTypography.label}>{t('onboarding.basicInfo.gender')}</Text>
+            <Text style={onboardingTypography.helper}>{t('onboarding.basicInfo.genderHelper')}</Text>
+            <View style={styles.chipRow}>
+              {genderOptions.map((option) => {
+                const selected = option.id === gender;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[styles.chip, selected ? styles.chipSelected : null]}
+                    onPress={() => handleGenderSelect(option.id)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.chipLabel, selected ? styles.chipLabelSelected : null]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.card}>
+            <Text style={onboardingTypography.label}>{t('onboarding.basicInfo.birthdate')}</Text>
+            <Text style={onboardingTypography.helper}>{t('onboarding.basicInfo.birthdateHelper')}</Text>
+            <TouchableOpacity
+              style={styles.inputButton}
+              onPress={openBirthdatePicker}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[
+                  styles.inputButtonText,
+                  birthdate ? styles.inputButtonValue : styles.inputButtonPlaceholder,
+                ]}
+              >
+                {birthdate ? birthdateInput : t('onboarding.basicInfo.birthdatePlaceholder')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.card}>
+            <Text style={onboardingTypography.label}>{t('onboarding.basicInfo.height')}</Text>
+            <Text style={onboardingTypography.helper}>{t('onboarding.basicInfo.heightHelper')}</Text>
+            <View style={styles.inlineField}>
+              <TextInput
+                style={[styles.input, styles.inlineInput]}
+                value={heightInput}
+                onChangeText={handleHeightChange}
+                keyboardType="numeric"
+                placeholder="170"
+              />
+              <Text style={styles.inlineSuffix}>{t('onboarding.basicInfo.cm')}</Text>
+            </View>
           </View>
         </View>
-      </View>
       </OnboardingScaffold>
 
       <Modal
@@ -330,41 +335,17 @@ const styles = StyleSheet.create({
   form: {
     gap: 24,
   },
-  field: {
-    gap: 12,
-  },
-  label: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    fontSize: 14,
+  card: {
+    gap: 16,
+    ...onboardingCardStyle,
   },
   input: {
-    backgroundColor: 'rgba(255,255,255,0.98)',
-    borderRadius: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(28,28,30,0.08)',
-    fontSize: 17,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 3,
+    ...onboardingInputStyle,
   },
   inputButton: {
-    height: 52,
-    backgroundColor: 'rgba(255,255,255,0.98)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(28,28,30,0.08)',
+    height: 56,
     justifyContent: 'center',
-    paddingHorizontal: 20,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 3,
+    ...onboardingInputStyle,
   },
   inputButtonText: {
     ...textStyles.body,

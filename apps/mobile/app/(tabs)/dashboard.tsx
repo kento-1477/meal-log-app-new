@@ -361,13 +361,14 @@ function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardP
     <View style={styles.monthlyCard}>
       <View style={styles.monthlyHeader}>
         <Feather name="unlock" size={14} color={colors.success} />
-        <Text
-          style={styles.monthlyLabelMultiline}
-          numberOfLines={2}
-        >
-          {`${t('dashboard.monthlyDeficit.newTitle.line1')}\n${t('dashboard.monthlyDeficit.newTitle.line2')}`}
-        </Text>
+        <Text style={styles.monthlyWhereLabel}>{t('dashboard.monthlyDeficit.premiumOnly')}</Text>
       </View>
+      <Text
+        style={styles.monthlyLabelMultiline}
+        numberOfLines={2}
+      >
+        {`${t('dashboard.monthlyDeficit.newTitle.line1')}\n${t('dashboard.monthlyDeficit.newTitle.line2')}`}
+      </Text>
       <Text style={[styles.monthlyValue, { color: valueColor }]}>{displayValue}</Text>
       <MonthlyProgressMeter progress={progress} isLoading={isLoading} />
     </View>
@@ -381,7 +382,8 @@ interface MonthlyProgressMeterProps {
 
 function MonthlyProgressMeter({ progress, isLoading }: MonthlyProgressMeterProps) {
   const clampedProgress = Math.max(0, Math.min(progress, 1));
-  const fillWidth = `${(clampedProgress * 100).toFixed(1)}%`;
+  const fillPercent = `${(clampedProgress * 100).toFixed(1)}%`;
+  const isComplete = clampedProgress >= 0.995;
 
   return (
     <View style={styles.monthlyProgressContainer}>
@@ -399,7 +401,14 @@ function MonthlyProgressMeter({ progress, isLoading }: MonthlyProgressMeterProps
           colors={[colors.success, '#30d158']}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
-          style={[styles.monthlyProgressFill, { width: fillWidth }]}
+          style={[
+            styles.monthlyProgressFill,
+            {
+              width: fillPercent,
+              borderTopRightRadius: isComplete ? (styles.monthlyProgressContainer.borderRadius ?? 22) : 0,
+              borderBottomRightRadius: isComplete ? (styles.monthlyProgressContainer.borderRadius ?? 22) : 0,
+            },
+          ]}
         />
       ) : null}
       {isLoading ? <ActivityIndicator style={styles.monthlyProgressLoader} size="small" color={colors.success} /> : null}
@@ -721,14 +730,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   monthlyHeader: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'flex-start',
     gap: spacing.xs,
   },
+  monthlyWhereLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    marginLeft: spacing.xs,
+  },
   monthlyLabelMultiline: {
     ...textStyles.caption,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 14,
+    lineHeight: 20,
     color: colors.textSecondary,
     fontWeight: '600',
   },
@@ -758,10 +773,7 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    borderTopLeftRadius: 22,
-    borderBottomLeftRadius: 22,
-    borderTopRightRadius: 22,
-    borderBottomRightRadius: 22,
+    height: '100%',
   },
   monthlyProgressLoader: {
     position: 'absolute',

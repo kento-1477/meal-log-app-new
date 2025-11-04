@@ -66,7 +66,8 @@ const composeTimeline = (messages: ReturnType<typeof useChatStore.getState>['mes
     return [base];
   });
 
-const NETWORK_HINT_DELAY_MS = 30000;
+const NETWORK_HINT_DELAY_IMAGE_MS = 30000;
+const NETWORK_HINT_DELAY_TEXT_MS = 15000;
 const NETWORK_ERROR_PATTERNS = [
   'Network request failed',
   'The network connection was lost',
@@ -109,6 +110,8 @@ export default function ChatScreen() {
   const [limitModalVisible, setLimitModalVisible] = useState(false);
   const [streakModalVisible, setStreakModalVisible] = useState(false);
   const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setUser = useSessionStore((state) => state.setUser);
+  const setStatus = useSessionStore((state) => state.setStatus);
 
   const clearNetworkHintTimer = useCallback(() => {
     if (networkHintTimerRef.current) {
@@ -264,8 +267,15 @@ export default function ChatScreen() {
     const shouldUpdateOnNewUser = userCount > prevUserCount && lastUser !== null;
     const isDifferentUser = lastUser && enhancedExchange && enhancedExchange.user.id !== lastUser.id;
     const assistantNowPresent = lastUser && enhancedExchange && enhancedExchange.user.id === lastUser.id && !enhancedExchange.assistant && assistantAfterUser;
+    const assistantUpdated =
+      lastUser &&
+      enhancedExchange &&
+      assistantAfterUser &&
+      enhancedExchange.user.id === lastUser.id &&
+      enhancedExchange.assistant?.id === assistantAfterUser.id &&
+      enhancedExchange.assistant !== assistantAfterUser;
 
-    if (shouldUpdateOnNewUser || isDifferentUser || assistantNowPresent) {
+    if (shouldUpdateOnNewUser || isDifferentUser || assistantNowPresent || assistantUpdated) {
       if (lastUser) {
         setEnhancedExchange({ user: lastUser, assistant: assistantAfterUser });
         requestAnimationFrame(() => scrollToEnd());
@@ -344,12 +354,13 @@ export default function ChatScreen() {
 
     const userMessage = addUserMessage(displayMessage);
     const assistantPlaceholder = addAssistantMessage('解析中です…', { status: 'sending' });
+    const hintDelay = hasImage ? NETWORK_HINT_DELAY_IMAGE_MS : NETWORK_HINT_DELAY_TEXT_MS;
     networkHintTimerRef.current = setTimeout(() => {
       setMessageText(
         assistantPlaceholder.id,
         `解析中です…\n${t('chat.networkSlowWarning')}`,
       );
-    }, NETWORK_HINT_DELAY_MS);
+    }, hintDelay);
     scrollToEnd();
 
     try {
@@ -384,6 +395,15 @@ export default function ChatScreen() {
           setUsage(payload);
         }
         setError('本日の利用回数が上限に達しました。');
+        setMessageText(assistantPlaceholder.id, t('chat.usageLimitBubble'));
+      } else if (apiError.status === 401) {
+        updateMessageStatus(userMessage.id, 'error');
+        updateMessageStatus(assistantPlaceholder.id, 'error');
+        setUser(null);
+        setUsage(null);
+        setStatus('unauthenticated');
+        setError('セッションの有効期限が切れました。再度ログインしてください。');
+        setMessageText(assistantPlaceholder.id, t('chat.sessionExpiredBubble'));
       } else if (isLikelyNetworkError(apiError)) {
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');
@@ -393,6 +413,7 @@ export default function ChatScreen() {
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');
         setError('エラーが発生しました。もう一度お試しください。');
+        setMessageText(assistantPlaceholder.id, t('chat.genericErrorBubble'));
       }
       return null;
     } finally {

@@ -2,19 +2,18 @@ import type { ReactNode } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import {
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/theme/colors';
-import { textStyles } from '@/theme/typography';
+import { fontFamilies, textStyles } from '@/theme/typography';
+import { onboardingTypography } from '@/theme/onboarding';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import type { OnboardingStep } from '@/store/onboarding';
 import { ONBOARDING_STEPS } from '@/store/onboarding';
@@ -60,9 +59,8 @@ export function OnboardingScaffold({
         style={styles.avoiding}
         keyboardVerticalOffset={keyboardOffset}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top || 12 }]}>
-            <View style={styles.wrapper}>
+        <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top || 12 }]}>
+          <View style={styles.wrapper}>
               <View style={styles.header}>
                 {onBack ? (
                   <TouchableOpacity
@@ -80,7 +78,12 @@ export function OnboardingScaffold({
 
                 <View style={styles.progressArea}>
                   <View style={styles.progressTrack}>
-                    <View style={[styles.progressFill, { width: `${Math.min(1, Math.max(0, progress)) * 100}%` }]} />
+                    <View
+                      style={[styles.progressFill, { width: `${Math.min(1, Math.max(0, progress)) * 100}%` }]}
+                      accessible
+                      accessibilityRole="progressbar"
+                      accessibilityValue={{ min: 0, max: 1, now: Math.min(1, Math.max(0, progress)) }}
+                    />
                   </View>
                   <Text style={styles.stepText}>{`${index + 1}/${total}`}</Text>
                 </View>
@@ -90,10 +93,11 @@ export function OnboardingScaffold({
                 style={styles.scroll}
                 contentContainerStyle={[styles.content, { paddingBottom: Math.max(48, insets.bottom + 32) }]}
                 keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               >
                 <View style={styles.titleBlock}>
-                  <Text style={styles.title}>{title}</Text>
-                  {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+                  <Text style={onboardingTypography.title}>{title}</Text>
+                  {subtitle ? <Text style={onboardingTypography.subtitle}>{subtitle}</Text> : null}
                 </View>
                 {accent ? <View style={styles.accent}>{accent}</View> : null}
                 <View style={styles.children}>{children}</View>
@@ -110,8 +114,7 @@ export function OnboardingScaffold({
                 />
               ) : null}
             </View>
-          </SafeAreaView>
-        </TouchableWithoutFeedback>
+        </SafeAreaView>
       </KeyboardAvoidingView>
     </LinearGradient>
   );
@@ -133,16 +136,16 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingTop: 12,
-    paddingBottom: 24,
+    paddingBottom: 20,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
   },
   progressTrack: {
     flex: 1,
-    height: 6,
+    height: 4,
     borderRadius: 999,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#E7E7EA',
     overflow: 'hidden',
   },
   progressFill: {
@@ -160,23 +163,10 @@ const styles = StyleSheet.create({
   titleBlock: {
     gap: 12,
   },
-  title: {
-    ...textStyles.titleLarge,
-    color: colors.textPrimary,
-    fontSize: 32,
-    lineHeight: 36,
-  },
-  subtitle: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    fontSize: 16,
-    lineHeight: 22,
-  },
   accent: {
     marginTop: 12,
   },
   children: {
-    flex: 1,
     gap: 16,
   },
   footer: {
@@ -196,13 +186,13 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    paddingHorizontal: 16,
+    gap: 12,
   },
   stepText: {
     ...textStyles.caption,
     color: colors.textSecondary,
     fontWeight: '600',
+    fontFamily: fontFamilies.semibold,
   },
   backChip: {
     width: 44,

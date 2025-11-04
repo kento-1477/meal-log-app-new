@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UpdateUserProfileRequest, UserProfile } from '@meal-log/shared';
@@ -14,6 +14,7 @@ import { useSessionStore } from '@/store/session';
 import { useTranslation } from '@/i18n';
 import { updateUserProfile } from '@/services/api';
 import { trackOnboardingCompleted } from '@/analytics/events';
+import { onboardingCardStyle, onboardingTypography } from '@/theme/onboarding';
 
 export default function OnboardingAnalysisScreen() {
   const router = useRouter();
@@ -105,11 +106,14 @@ export default function OnboardingAnalysisScreen() {
     if (mutation.isPending) {
       return (
         <View style={styles.centerBlock}>
-          <View style={styles.progressCircle}>
-            <Text style={styles.progressText}>{`${Math.round(progress)}%`}</Text>
+          <View style={[styles.card, styles.loadingCard]}>
+            <View style={styles.progressCircle}>
+              <Text style={styles.progressText}>{`${Math.round(progress)}%`}</Text>
+            </View>
+            <Text style={styles.statusText}>{t('onboarding.analysis.processing')}</Text>
+            <Text style={styles.statusSub}>{t('onboarding.analysis.processingSub')}</Text>
+            <ActivityIndicator color={colors.accent} style={styles.loadingSpinner} />
           </View>
-          <Text style={styles.statusText}>{t('onboarding.analysis.processing')}</Text>
-          <ActivityIndicator color={colors.accent} style={{ marginTop: 16 }} />
         </View>
       );
     }
@@ -117,12 +121,16 @@ export default function OnboardingAnalysisScreen() {
     if (mutation.isError) {
       return (
         <View style={styles.centerBlock}>
-          <Text style={styles.statusText}>{t('onboarding.analysis.error')}</Text>
-          <Text style={styles.statusSub}>{(mutation.error as Error).message}</Text>
-          <View style={styles.buttonsRow}>
-            <Text style={styles.link} onPress={() => mutation.mutate()}>
-              {t('common.retry')}
-            </Text>
+          <View style={[styles.card, styles.errorCard]}>
+            <Text style={styles.statusText}>{t('onboarding.analysis.error')}</Text>
+            <Text style={styles.statusSub}>{(mutation.error as Error).message}</Text>
+            <TouchableOpacity
+              style={styles.retryChip}
+              onPress={() => mutation.mutate()}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.retryChipLabel}>{t('common.retry')}</Text>
+            </TouchableOpacity>
           </View>
         </View>
       );
@@ -159,32 +167,34 @@ export default function OnboardingAnalysisScreen() {
 
     return (
       <View style={styles.centerBlock}>
-        <Text style={styles.statusText}>{t('onboarding.analysis.complete')}</Text>
-        <Text style={styles.statusSub}>{t('onboarding.analysis.completeSub')}</Text>
-        {displayPlan ? (
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryTitle}>{t('onboarding.analysis.recommendationTitle')}</Text>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>{t('onboarding.analysis.calories')}</Text>
-              <Text style={styles.summaryValue}>{displayPlan.targetCalories} kcal</Text>
+        <View style={[styles.card, styles.successCard]}>
+          <Text style={styles.statusText}>{t('onboarding.analysis.complete')}</Text>
+          <Text style={styles.statusSub}>{t('onboarding.analysis.completeSub')}</Text>
+          {displayPlan ? (
+            <View style={styles.summaryCard}>
+              <Text style={onboardingTypography.cardTitle}>{t('onboarding.analysis.recommendationTitle')}</Text>
+              <View style={styles.summaryRow}>
+                <Text style={onboardingTypography.cardDetail}>{t('onboarding.analysis.calories')}</Text>
+                <Text style={onboardingTypography.cardTitle}>{displayPlan.targetCalories} kcal</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={onboardingTypography.cardDetail}>{t('onboarding.analysis.protein')}</Text>
+                <Text style={onboardingTypography.cardTitle}>{displayPlan.proteinGrams} g</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={onboardingTypography.cardDetail}>{t('onboarding.analysis.fat')}</Text>
+                <Text style={onboardingTypography.cardTitle}>{displayPlan.fatGrams} g</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={onboardingTypography.cardDetail}>{t('onboarding.analysis.carbs')}</Text>
+                <Text style={onboardingTypography.cardTitle}>{displayPlan.carbGrams} g</Text>
+              </View>
             </View>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>{t('onboarding.analysis.protein')}</Text>
-              <Text style={styles.summaryValue}>{displayPlan.proteinGrams} g</Text>
-            </View>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>{t('onboarding.analysis.fat')}</Text>
-              <Text style={styles.summaryValue}>{displayPlan.fatGrams} g</Text>
-            </View>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>{t('onboarding.analysis.carbs')}</Text>
-              <Text style={styles.summaryValue}>{displayPlan.carbGrams} g</Text>
-            </View>
-          </View>
-        ) : null}
-        <Text style={styles.link} onPress={handleContinue}>
-          {t('onboarding.analysis.goHome')}
-        </Text>
+          ) : null}
+          <Text style={styles.link} onPress={handleContinue}>
+            {t('onboarding.analysis.goHome')}
+          </Text>
+        </View>
       </View>
     );
   };
@@ -209,7 +219,22 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  card: {
+    width: '100%',
+    alignItems: 'center',
     gap: 16,
+    ...onboardingCardStyle,
+  },
+  loadingCard: {
+    gap: 20,
+  },
+  errorCard: {
+    gap: 16,
+  },
+  successCard: {
+    gap: 20,
   },
   progressCircle: {
     width: 120,
@@ -235,10 +260,20 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
   },
-  buttonsRow: {
-    flexDirection: 'row',
-    gap: 16,
-    marginTop: 16,
+  loadingSpinner: {
+    marginTop: 4,
+  },
+  retryChip: {
+    marginTop: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 18,
+    backgroundColor: colors.textPrimary,
+  },
+  retryChipLabel: {
+    ...textStyles.body,
+    color: '#fff',
+    fontWeight: '600',
   },
   link: {
     ...textStyles.body,
@@ -247,38 +282,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   summaryCard: {
-    width: '90%',
-    backgroundColor: 'rgba(255,255,255,0.97)',
-    borderRadius: 26,
-    paddingVertical: 22,
-    paddingHorizontal: 24,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(28,28,30,0.06)',
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    elevation: 4,
-  },
-  summaryTitle: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontWeight: '600',
-    textAlign: 'center',
+    width: '100%',
+    backgroundColor: 'rgba(28,28,30,0.04)',
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    gap: 10,
   },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  summaryLabel: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-  },
-  summaryValue: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontWeight: '600',
   },
 });

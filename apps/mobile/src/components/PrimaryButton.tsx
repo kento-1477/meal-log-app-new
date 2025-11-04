@@ -20,6 +20,9 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({ label, onPress, lo
         pressed && !isDisabled ? styles.pressed : null,
         isDisabled ? styles.disabled : null,
       ]}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: isDisabled, busy: Boolean(loading) }}
+      accessibilityLabel={label}
     >
       {loading ? <ActivityIndicator color="white" /> : <Text style={styles.text}>{label}</Text>}
     </Pressable>

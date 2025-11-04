@@ -9,6 +9,7 @@ import { OnboardingScaffold } from '@/screen-components/onboarding/OnboardingSca
 import { useOnboardingStore } from '@/store/onboarding';
 import { useTranslation } from '@/i18n';
 import { roundTo } from '@/utils/units';
+import { onboardingCardStyle, onboardingInputStyle, onboardingTypography } from '@/theme/onboarding';
 
 export default function OnboardingCurrentWeightScreen() {
   const router = useRouter();
@@ -53,9 +54,10 @@ export default function OnboardingCurrentWeightScreen() {
       nextDisabled={!canProceed}
       onBack={() => router.back()}
     >
-      <View style={styles.wrapper}>
-        <View style={styles.field}>
-          <Text style={styles.label}>{t('onboarding.weight.currentLabel')}</Text>
+      <View style={styles.stack}>
+        <View style={styles.card}>
+          <Text style={onboardingTypography.label}>{t('onboarding.weight.currentLabel')}</Text>
+          <Text style={onboardingTypography.helper}>{t('onboarding.weight.currentHelper')}</Text>
           <View style={styles.inputRow}>
             <TextInput
               style={styles.input}
@@ -70,24 +72,26 @@ export default function OnboardingCurrentWeightScreen() {
         </View>
 
         {draft.heightCm ? (
-          <View style={styles.metricsCard}>
-            <Text style={styles.metricsTitle}>{t('onboarding.weight.metricsTitle')}</Text>
+          <View style={[styles.card, styles.metricsCard]}>
+            <Text style={onboardingTypography.cardTitle}>{t('onboarding.weight.metricsTitle')}</Text>
             <View style={styles.metricsRow}>
-              <Text style={styles.metricsLabel}>{t('onboarding.weight.bmi')}</Text>
-              <Text style={styles.metricsValue}>{bmi ? roundTo(bmi, 1) : '--'}</Text>
+              <Text style={onboardingTypography.cardDetail}>{t('onboarding.weight.bmi')}</Text>
+              <Text style={onboardingTypography.cardTitle}>{bmi ? roundTo(bmi, 1) : '--'}</Text>
             </View>
             {idealRange ? (
               <View style={styles.metricsRow}>
-                <Text style={styles.metricsLabel}>{t('onboarding.weight.idealRange')}</Text>
-                <Text style={styles.metricsValue}>
+                <Text style={onboardingTypography.cardDetail}>{t('onboarding.weight.idealRange')}</Text>
+                <Text style={onboardingTypography.cardTitle}>
                   {`${roundTo(idealRange.minKg, 1)} - ${roundTo(idealRange.maxKg, 1)} kg`}
                 </Text>
               </View>
             ) : null}
-            <Text style={styles.metricsFootnote}>{t('onboarding.weight.idealHint')}</Text>
+            <Text style={onboardingTypography.helper}>{t('onboarding.weight.idealHint')}</Text>
           </View>
         ) : (
-          <Text style={styles.notice}>{t('onboarding.weight.needHeight')}</Text>
+          <View style={styles.card}>
+            <Text style={styles.notice}>{t('onboarding.weight.needHeight')}</Text>
+          </View>
         )}
       </View>
     </OnboardingScaffold>
@@ -95,16 +99,12 @@ export default function OnboardingCurrentWeightScreen() {
 }
 
 const styles = StyleSheet.create({
-  wrapper: {
-    gap: 28,
+  stack: {
+    gap: 24,
   },
-  field: {
-    gap: 12,
-  },
-  label: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    fontSize: 14,
+  card: {
+    gap: 16,
+    ...onboardingCardStyle,
   },
   inputRow: {
     flexDirection: 'row',
@@ -113,20 +113,10 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.98)',
-    borderRadius: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(28,28,30,0.08)',
+    ...onboardingInputStyle,
     fontSize: 18,
     fontWeight: '600',
     textAlign: 'center',
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 3,
   },
   unitLabel: {
     ...textStyles.body,
@@ -134,40 +124,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   metricsCard: {
-    backgroundColor: 'rgba(255,255,255,0.97)',
-    borderRadius: 24,
-    padding: 22,
     gap: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(28,28,30,0.06)',
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    elevation: 4,
-  },
-  metricsTitle: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontWeight: '600',
   },
   metricsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  metricsLabel: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-  },
-  metricsValue: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  metricsFootnote: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
   },
   notice: {
     ...textStyles.caption,

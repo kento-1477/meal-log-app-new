@@ -72,20 +72,21 @@ export default function SettingsScreen() {
               <Feather name="user" size={24} color={colors.accent} />
             </View>
             <View style={styles.profileTextContainer}>
-              <View style={styles.profileNameRow}>
-                <Text style={styles.profileName}>{user?.email ?? t('settings.profile.namePlaceholder')}</Text>
-                {premiumStatus?.isPremium && (
-                  <View style={styles.premiumBadge}>
-                    <Feather name="star" size={12} color="#fff" />
-                    <Text style={styles.premiumBadgeText}>{t('premium.badge')}</Text>
-                  </View>
-                )}
+            <View style={styles.profileNameRow}>
+              <Text style={styles.profileName}>{user?.email ?? t('settings.profile.namePlaceholder')}</Text>
+            </View>
+            {premiumStatus?.isPremium ? (
+              <View style={styles.premiumBadge}
+              >
+                <Feather name="star" size={12} color="#fff" />
+                <Text style={styles.premiumBadgeText}>{t('premium.badge')}</Text>
               </View>
-              <Text style={styles.profileSubtitle}>
-                {premiumStatus?.isPremium
-                  ? t('premium.daysRemaining', { days: premiumStatus.daysRemaining })
-                  : t('settings.profile.subtitle')}
-              </Text>
+            ) : null}
+            <Text style={styles.profileSubtitle}>
+              {premiumStatus?.isPremium
+                ? t('premium.daysRemaining', { days: premiumStatus.daysRemaining })
+                : t('settings.profile.subtitle')}
+            </Text>
             </View>
             <Feather name="chevron-right" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
@@ -187,7 +188,6 @@ const styles = StyleSheet.create({
   profileNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
   },
   profileName: {
     ...textStyles.titleMedium,
@@ -197,10 +197,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.accent,
+    alignSelf: 'flex-start',
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     borderRadius: 12,
     gap: 4,
+    marginTop: spacing.xs,
   },
   premiumBadgeText: {
     ...textStyles.caption,
