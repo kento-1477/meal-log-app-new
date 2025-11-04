@@ -10,6 +10,7 @@ import { PLAN_INTENSITY_OPTIONS } from '@/screen-components/onboarding/constants
 import { useOnboardingStore } from '@/store/onboarding';
 import { useTranslation } from '@/i18n';
 import { roundTo } from '@/utils/units';
+import { onboardingCardStyle, onboardingInputStyle, onboardingTypography } from '@/theme/onboarding';
 
 export default function OnboardingPlanSummaryScreen() {
   const router = useRouter();
@@ -100,9 +101,10 @@ export default function OnboardingPlanSummaryScreen() {
       nextDisabled={!canProceed}
       onBack={() => router.back()}
     >
-      <View style={styles.wrapper}>
-        <View style={styles.field}>
-          <Text style={styles.label}>{t('onboarding.summary.targetWeight')}</Text>
+      <View style={styles.stack}>
+        <View style={styles.card}>
+          <Text style={onboardingTypography.label}>{t('onboarding.summary.targetWeight')}</Text>
+          <Text style={onboardingTypography.helper}>{t('onboarding.summary.targetHelper')}</Text>
           <View style={styles.inputRow}>
             <TextInput
               style={styles.input}
@@ -116,24 +118,24 @@ export default function OnboardingPlanSummaryScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>
 
-        <View style={styles.summaryCard}>
+        <View style={[styles.card, styles.summaryCard]}>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>{t('onboarding.summary.planMode')}</Text>
-            <Text style={styles.summaryValue}>
+            <Text style={onboardingTypography.cardDetail}>{t('onboarding.summary.planMode')}</Text>
+            <Text style={[onboardingTypography.cardTitle, styles.summaryValue]}>
               {plan ? t(plan.labelKey) : t('onboarding.summary.unselected')}
             </Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>{t('onboarding.summary.weeklyChange')}</Text>
-            <Text style={styles.summaryValue}>
+            <Text style={onboardingTypography.cardDetail}>{t('onboarding.summary.weeklyChange')}</Text>
+            <Text style={[onboardingTypography.cardTitle, styles.summaryValue]}>
               {weeklyChange != null ? `${roundTo(Math.abs(weeklyChange), 2)} kg / ${t('common.week')}` : '--'}
             </Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>{t('onboarding.summary.projectedDate')}</Text>
-            <Text style={styles.summaryValue}>{targetDateText}</Text>
+            <Text style={onboardingTypography.cardDetail}>{t('onboarding.summary.projectedDate')}</Text>
+            <Text style={[onboardingTypography.cardTitle, styles.summaryValue]}>{targetDateText}</Text>
           </View>
-          <Text style={styles.summaryFootnote}>{t('onboarding.summary.note')}</Text>
+          <Text style={onboardingTypography.helper}>{t('onboarding.summary.note')}</Text>
         </View>
       </View>
     </OnboardingScaffold>
@@ -141,16 +143,12 @@ export default function OnboardingPlanSummaryScreen() {
 }
 
 const styles = StyleSheet.create({
-  wrapper: {
-    gap: 28,
+  stack: {
+    gap: 24,
   },
-  field: {
-    gap: 12,
-  },
-  label: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    fontSize: 14,
+  card: {
+    gap: 16,
+    ...onboardingCardStyle,
   },
   inputRow: {
     flexDirection: 'row',
@@ -159,20 +157,10 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.98)',
-    borderRadius: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(28,28,30,0.08)',
+    ...onboardingInputStyle,
     fontSize: 18,
     fontWeight: '600',
     textAlign: 'center',
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 3,
   },
   unit: {
     ...textStyles.body,
@@ -180,36 +168,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   summaryCard: {
-    backgroundColor: 'rgba(255,255,255,0.97)',
-    borderRadius: 24,
-    padding: 22,
     gap: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(28,28,30,0.06)',
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    elevation: 4,
   },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  summaryLabel: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-  },
   summaryValue: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontWeight: '600',
     textAlign: 'right',
-  },
-  summaryFootnote: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
   },
   error: {
     ...textStyles.caption,

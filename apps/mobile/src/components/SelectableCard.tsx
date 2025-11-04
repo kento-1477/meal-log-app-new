@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors } from '@/theme/colors';
-import { textStyles } from '@/theme/typography';
+import { onboardingTypography } from '@/theme/onboarding';
 
 export type CardIconRenderer = (selected: boolean) => ReactNode;
 
@@ -25,6 +25,7 @@ export function SelectableCard({
   disabled,
 }: SelectableCardProps) {
   const iconNode = icon ? icon(selected) : null;
+  const accessibilityLabel = subtitle ? `${title}. ${subtitle}` : title;
 
   return (
     <TouchableOpacity
@@ -33,19 +34,29 @@ export function SelectableCard({
       style={[styles.card, selected ? styles.cardSelected : null, disabled ? styles.cardDisabled : null]}
       accessibilityRole="button"
       accessibilityState={{ selected, disabled: Boolean(disabled) }}
+      accessibilityLabel={accessibilityLabel}
     >
       {iconNode ? (
         <View style={[styles.iconWrapper, selected ? styles.iconWrapperSelected : null]}>{iconNode}</View>
       ) : null}
       <View style={styles.textBlock}>
-        <Text style={[styles.title, selected ? styles.titleSelected : null]}>{title}</Text>
+        <Text style={[onboardingTypography.cardTitle, selected ? styles.titleSelected : null]}>{title}</Text>
         {subtitle ? (
-          <Text style={[styles.subtitle, selected ? styles.subtitleSelected : null]}>{subtitle}</Text>
+          <Text
+            style={[onboardingTypography.cardDetail, selected ? styles.subtitleSelected : null]}
+            numberOfLines={2}
+          >
+            {subtitle}
+          </Text>
         ) : null}
       </View>
       {badge ? (
         <View style={[styles.badge, selected ? styles.badgeSelected : null]}>
-          <Text style={[styles.badgeText, selected ? styles.badgeTextSelected : null]}>{badge}</Text>
+          <Text
+            style={[onboardingTypography.cardDetail, styles.badgeText, selected ? styles.badgeTextSelected : null]}
+          >
+            {badge}
+          </Text>
         </View>
       ) : null}
     </TouchableOpacity>
@@ -59,7 +70,7 @@ const styles = StyleSheet.create({
     gap: 16,
     backgroundColor: 'rgba(255,255,255,0.95)',
     borderRadius: 22,
-    paddingHorizontal: 20,
+    paddingHorizontal: 22,
     paddingVertical: 18,
     borderWidth: 1,
     borderColor: 'rgba(28,28,30,0.08)',
@@ -68,6 +79,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 16,
     elevation: 4,
+    minHeight: 76,
   },
   cardSelected: {
     backgroundColor: colors.textPrimary,
@@ -93,18 +105,8 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 4,
   },
-  title: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontSize: 18,
-    fontWeight: '600',
-  },
   titleSelected: {
     color: '#ffffff',
-  },
-  subtitle: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
   },
   subtitleSelected: {
     color: 'rgba(255,255,255,0.72)',
@@ -119,7 +121,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.18)',
   },
   badgeText: {
-    ...textStyles.caption,
     color: colors.textSecondary,
     fontWeight: '600',
   },
