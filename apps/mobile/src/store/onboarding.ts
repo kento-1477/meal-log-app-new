@@ -30,6 +30,7 @@ export interface OnboardingDraft {
   birthdate: string | null;
   heightCm: number | null;
   marketingSource: string;
+  marketingReferralCode: string;
   goals: string[];
   targetCalories: number | null;
   targetProtein: number | null;
@@ -50,6 +51,7 @@ const createDefaultDraft = (): OnboardingDraft => ({
   birthdate: null,
   heightCm: null,
   marketingSource: '',
+  marketingReferralCode: '',
   goals: [],
   targetCalories: null,
   targetProtein: null,
@@ -109,6 +111,7 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
           birthdate: profile.birthdate ?? state.draft.birthdate,
           heightCm: profile.height_cm ?? state.draft.heightCm,
           marketingSource: profile.marketing_source ?? state.draft.marketingSource,
+          marketingReferralCode: profile.marketing_referral_code ?? state.draft.marketingReferralCode,
           goals: Array.isArray(profile.goals) ? profile.goals : state.draft.goals,
           targetCalories: profile.target_calories ?? state.draft.targetCalories,
           targetProtein: profile.target_protein_g ?? state.draft.targetProtein,

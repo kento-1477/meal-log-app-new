@@ -1,4 +1,5 @@
 import { API_BASE_URL } from './config';
+import { z } from 'zod';
 import { getLocale } from '@/i18n';
 import { getDeviceTimezone } from '@/utils/timezone';
 import type { NutritionCardPayload } from '@/types/chat';
@@ -290,9 +291,9 @@ export async function getUserProfile() {
   return parsed.profile as UserProfile;
 }
 
-export async function updateUserProfile(input: UpdateUserProfileRequest) {
+export async function updateUserProfile(input: UpdateUserProfileRequest): Promise<z.infer<typeof UserProfileResponseSchema>> {
   const payload = UpdateUserProfileRequestSchema.parse(input);
-  const response = await apiFetch<{ ok: boolean; profile: unknown }>(
+  const response = await apiFetch<z.infer<typeof UserProfileResponseSchema>>(
     '/api/profile',
     {
       method: 'PUT',
@@ -300,11 +301,21 @@ export async function updateUserProfile(input: UpdateUserProfileRequest) {
     },
   );
   const parsed = UserProfileResponseSchema.parse(response);
-  return parsed.profile as UserProfile;
+  return parsed;
 }
 
 export async function deleteAccount() {
   return apiFetch<{ ok: boolean }>('/api/user/account', { method: 'DELETE' });
+}
+
+export async function claimReferralCodeApi(code: string) {
+  return apiFetch<{ ok: boolean; premiumDays: number; premiumUntil: string; referrerUsername: string | null }>(
+    '/api/referral/claim',
+    {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    },
+  );
 }
 
 export async function getDailySummary(days = 7) {

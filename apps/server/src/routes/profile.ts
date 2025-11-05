@@ -10,6 +10,8 @@ import {
 import type { UserProfile as PrismaUserProfile } from '@prisma/client';
 import { prisma } from '../db/prisma.js';
 import { requireAuth } from '../middleware/require-auth.js';
+import { claimReferralCode, generateDeviceFingerprint } from '../services/referral-service.js';
+import { logger } from '../logger.js';
 
 export const profileRouter = Router();
 
@@ -59,13 +61,37 @@ profileRouter.put('/profile', async (req, res, next) => {
       updateData.targetCarbsG = autoPlan.carbGrams;
     }
 
+    let referralClaimed = false;
+    let referralResult: { premiumDays: number; premiumUntil: string; referrerUsername: string | null } | null = null;
+
+    const referralCode = hasOwn(parsed, 'marketing_referral_code') ? parsed.marketing_referral_code ?? null : null;
+
     const profile = await prisma.userProfile.upsert({
       where: { userId },
       update: updateData,
       create: { userId, ...updateData },
     });
+
+    if (referralCode) {
+      try {
+        const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
+        const userAgent = req.headers['user-agent'] || 'unknown';
+        const deviceFingerprint = generateDeviceFingerprint(ip, userAgent);
+        const result = await claimReferralCode({ userId, code: referralCode, deviceFingerprint });
+        referralClaimed = true;
+        referralResult = result;
+      } catch (error) {
+        logger.warn({ userId, referralCode, error }, 'Failed to auto-claim referral code from profile update');
+      }
+    }
+
     const payload = serializeProfile(profile);
-    res.status(StatusCodes.OK).json({ ok: true, profile: payload });
+    res.status(StatusCodes.OK).json({
+      ok: true,
+      profile: payload,
+      referralClaimed,
+      referralResult,
+    });
   } catch (error) {
     next(error);
   }
@@ -79,6 +105,7 @@ function serializeProfile(profile: PrismaUserProfile) {
     height_cm: profile.heightCm ?? null,
     unit_preference: profile.unitPreference ?? null,
     marketing_source: profile.marketingSource ?? null,
+    marketing_referral_code: profile.referralCode ?? null,
     goals: profile.goals ?? [],
     target_calories: profile.targetCalories,
     target_protein_g: profile.targetProteinG,
@@ -117,6 +144,9 @@ function mapProfileInput(input: UpdateUserProfileRequest) {
   }
   if (hasOwn(input, 'marketing_source')) {
     data.marketingSource = input.marketing_source ?? null;
+  }
+  if (hasOwn(input, 'marketing_referral_code')) {
+    data.referralCode = input.marketing_referral_code ?? null;
   }
   if (hasOwn(input, 'goals')) {
     data.goals = input.goals ?? [];

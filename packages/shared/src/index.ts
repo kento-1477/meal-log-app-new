@@ -425,6 +425,7 @@ export const UserProfileSchema = z.object({
   height_cm: z.number().nonnegative().nullable().optional(),
   unit_preference: MeasurementSystemSchema.nullable().optional(),
   marketing_source: z.string().trim().min(1).max(80).nullable().optional(),
+  marketing_referral_code: z.string().trim().min(1).max(80).nullable().optional(),
   goals: z
     .array(z.string().trim().min(1).max(40))
     .max(MAX_GOAL_SELECTION)
@@ -451,6 +452,15 @@ export type UserProfile = z.infer<typeof UserProfileSchema>;
 export const UserProfileResponseSchema = z.object({
   ok: z.literal(true),
   profile: UserProfileSchema,
+  referralClaimed: z.boolean().optional(),
+  referralResult: z
+    .object({
+      premiumDays: z.number().int().nonnegative(),
+      premiumUntil: z.string().datetime(),
+      referrerUsername: z.string().nullable(),
+    })
+    .optional()
+    .nullable(),
 });
 
 export const UpdateUserProfileRequestSchema = z
@@ -461,6 +471,7 @@ export const UpdateUserProfileRequestSchema = z
     height_cm: z.number().nonnegative().nullable().optional(),
     unit_preference: MeasurementSystemSchema.nullable().optional(),
     marketing_source: z.string().trim().min(1).max(80).nullable().optional(),
+    marketing_referral_code: z.string().trim().min(1).max(80).nullable().optional(),
     goals: z
       .array(z.string().trim().min(1).max(40))
       .max(MAX_GOAL_SELECTION)

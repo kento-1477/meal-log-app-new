@@ -18,6 +18,7 @@ export const INITIAL_FORM_STATE = {
   targetWeight: '',
   planIntensity: '',
   marketingSource: '',
+  marketingReferralCode: '',
   goals: '',
 };
 
@@ -35,6 +36,7 @@ export function mapProfileToForm(profile: UserProfile) {
     targetWeight: toInput(profile.target_weight_kg),
     planIntensity: profile.plan_intensity ?? '',
     marketingSource: profile.marketing_source ?? '',
+    marketingReferralCode: profile.marketing_referral_code ?? '',
     goals: Array.isArray(profile.goals) ? profile.goals.join(', ') : '',
   } satisfies typeof INITIAL_FORM_STATE;
 }
@@ -80,6 +82,7 @@ export function buildProfilePayload(form: typeof INITIAL_FORM_STATE): UpdateUser
   payload.target_weight_kg = targetWeight ?? null;
   payload.plan_intensity = form.planIntensity.trim() ? form.planIntensity.trim().toUpperCase() : null;
   payload.marketing_source = form.marketingSource.trim() ? form.marketingSource.trim() : null;
+  payload.marketing_referral_code = form.marketingReferralCode.trim() ? form.marketingReferralCode.trim() : null;
   payload.goals = form.goals
     .split(',')
     .map((goal) => goal.trim())

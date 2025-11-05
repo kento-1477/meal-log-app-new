@@ -8,6 +8,7 @@ CREATE TABLE "UserProfile" (
   "bodyWeightKg" DOUBLE PRECISION,
   "activityLevel" TEXT,
   "language" TEXT,
+  "referralCode" TEXT,
   "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
   "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
   CONSTRAINT "UserProfile_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE
