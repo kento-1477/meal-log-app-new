@@ -11,7 +11,7 @@ import { useSessionStore } from '@/store/session';
 import { trackReferralPremiumClaimedFriend } from '@/analytics/events';
 import { getSession } from '@/services/api';
 
-const REFERRAL_CODE_KEY = '@referral_code';
+export const REFERRAL_CODE_STORAGE_KEY = '@referral_code';
 
 interface ClaimReferralResponse {
   success: boolean;
@@ -112,7 +112,7 @@ export function useReferralDeepLink() {
           }
         } else {
           // 未ログイン：コードを保存してログイン画面へ
-          await AsyncStorage.setItem(REFERRAL_CODE_KEY, code);
+          await AsyncStorage.setItem(REFERRAL_CODE_STORAGE_KEY, code);
           Alert.alert(
             '招待リンクを受け取りました',
             'ログイン後に自動的に14日間のプレミアムが付与されます。'
@@ -135,14 +135,14 @@ export function useReferralDeepLink() {
 
     const checkPendingReferral = async () => {
       try {
-        const savedCode = await AsyncStorage.getItem(REFERRAL_CODE_KEY);
+        const savedCode = await AsyncStorage.getItem(REFERRAL_CODE_STORAGE_KEY);
         if (!savedCode) return;
 
         setIsProcessing(true);
 
         try {
           const result = await claimReferralCode(savedCode);
-          await AsyncStorage.removeItem(REFERRAL_CODE_KEY);
+          await AsyncStorage.removeItem(REFERRAL_CODE_STORAGE_KEY);
           await refreshSessionState();
 
           Alert.alert(
@@ -155,7 +155,7 @@ export function useReferralDeepLink() {
           const message = referralError.message ?? '招待コードの適用に失敗しました';
           Alert.alert('エラー', message);
           if (referralError.status && [400, 403, 404, 409].includes(referralError.status)) {
-            await AsyncStorage.removeItem(REFERRAL_CODE_KEY);
+            await AsyncStorage.removeItem(REFERRAL_CODE_STORAGE_KEY);
           }
         }
       } catch (error) {

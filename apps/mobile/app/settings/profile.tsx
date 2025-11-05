@@ -6,13 +6,15 @@ import { useTranslation } from '@/i18n';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
-import { getUserProfile, updateUserProfile, type UpdateUserProfileRequest } from '@/services/api';
+import { getUserProfile, updateUserProfile, getPremiumStatus, type UpdateUserProfileRequest } from '@/services/api';
+import { usePremiumStore } from '@/store/premium';
 import ProfileField, { mapProfileToForm, buildProfilePayload, INITIAL_FORM_STATE } from '@/screen-components/settings/profile-helpers';
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [form, setForm] = useState(INITIAL_FORM_STATE);
+  const setPremiumStatus = usePremiumStore((state) => state.setStatus);
 
   const profileQuery = useQuery({
     queryKey: ['profile'],
@@ -27,10 +29,19 @@ export default function ProfileScreen() {
 
   const mutation = useMutation({
     mutationFn: (payload: UpdateUserProfileRequest) => updateUserProfile(payload),
-    onSuccess: (profile) => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['profile'] });
-      setForm(mapProfileToForm(profile));
+      setForm(mapProfileToForm(result.profile));
       Alert.alert(t('settings.profile.savedTitle'), t('settings.profile.savedMessage'));
+      if (result.referralClaimed && result.referralResult) {
+        Alert.alert(
+          '🎉 プレミアムを獲得しました！',
+          `${result.referralResult.premiumDays}日間のプレミアムが付与されました。${result.referralResult.referrerUsername ?? ''}`.trim(),
+        );
+        getPremiumStatus()
+          .then((status) => setPremiumStatus(status))
+          .catch((error) => console.warn('Failed to refresh premium status', error));
+      }
     },
     onError: () => {
       Alert.alert(t('settings.profile.errorTitle'), t('settings.profile.errorMessage'));
@@ -137,6 +148,13 @@ export default function ProfileScreen() {
               value={form.marketingSource}
               onChangeText={(value) => setForm((prev) => ({ ...prev, marketingSource: value }))}
               placeholder="Instagram"
+              keyboardType="default"
+            />
+            <ProfileField
+              label={t('settings.profile.referralCode')}
+              value={form.marketingReferralCode}
+              onChangeText={(value) => setForm((prev) => ({ ...prev, marketingReferralCode: value }))}
+              placeholder={t('settings.profile.referralPlaceholder')}
               keyboardType="default"
             />
             <ProfileField

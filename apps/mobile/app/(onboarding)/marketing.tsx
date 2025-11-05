@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
 import { OnboardingScaffold } from '@/screen-components/onboarding/OnboardingScaffold';
@@ -10,12 +11,19 @@ import { useTranslation } from '@/i18n';
 import { SelectableCard } from '@/components/SelectableCard';
 import type { CardIconRenderer } from '@/components/SelectableCard';
 import { Feather } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { onboardingInputStyle } from '@/theme/onboarding';
+import { REFERRAL_CODE_STORAGE_KEY } from '@/hooks/useReferralDeepLink';
+import { isJapaneseLocale } from '@/theme/localeTypography';
 
 export default function OnboardingMarketingScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const marketing = useOnboardingStore((state) => state.draft.marketingSource ?? '');
+  const referralCode = useOnboardingStore((state) => state.draft.marketingReferralCode ?? '');
   const updateDraft = useOnboardingStore((state) => state.updateDraft);
+  const [prefilledCodeLoaded, setPrefilledCodeLoaded] = useState(false);
+  const isJapanese = isJapaneseLocale(locale);
 
   useOnboardingStep('marketing');
 
@@ -23,6 +31,28 @@ export default function OnboardingMarketingScreen() {
     const next = marketing === id ? '' : id;
     updateDraft({ marketingSource: next });
   };
+
+  useEffect(() => {
+    if (prefilledCodeLoaded) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem(REFERRAL_CODE_STORAGE_KEY);
+        if (!cancelled && stored && !referralCode) {
+          updateDraft({ marketingReferralCode: stored });
+        }
+      } catch (error) {
+        console.warn('Failed to preload referral code', error);
+      } finally {
+        if (!cancelled) {
+          setPrefilledCodeLoaded(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [prefilledCodeLoaded, referralCode, updateDraft]);
 
   const iconMap: Record<string, CardIconRenderer> = {
     instagram: (selected) => (
@@ -62,14 +92,32 @@ export default function OnboardingMarketingScreen() {
       <View style={styles.grid}>
         {MARKETING_OPTIONS.map((option) => {
           const selected = option.id === marketing;
+          const isFriendOption = option.id === 'friend';
           return (
-            <SelectableCard
-              key={option.id}
-              title={t(option.labelKey)}
-              selected={selected}
-              onPress={() => handleSelect(option.id)}
-              icon={iconMap[option.id]}
-            />
+            <View key={option.id} style={styles.optionBlock}>
+              <SelectableCard
+                title={t(option.labelKey)}
+                selected={selected}
+                onPress={() => handleSelect(option.id)}
+                icon={iconMap[option.id]}
+              />
+              {isFriendOption && selected ? (
+                <View style={styles.referralContainer}>
+                  <Text style={[styles.referralLabel, isJapanese && styles.referralLabelJapanese]}>
+                    {t('onboarding.marketing.referralLabel')}
+                  </Text>
+                  <TextInput
+                    style={styles.referralInput}
+                    value={referralCode}
+                    onChangeText={(value) => updateDraft({ marketingReferralCode: value })}
+                    placeholder={t('onboarding.marketing.referralPlaceholder')}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                  />
+                </View>
+              ) : null}
+            </View>
           );
         })}
       </View>
@@ -81,9 +129,28 @@ const styles = StyleSheet.create({
   grid: {
     gap: 14,
   },
+  optionBlock: {
+    gap: 12,
+  },
   skip: {
     ...textStyles.caption,
     color: colors.textSecondary,
     textAlign: 'center',
+  },
+  referralContainer: {
+    marginTop: 16,
+    gap: 8,
+  },
+  referralLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  referralLabelJapanese: {
+    letterSpacing: -0.2,
+  },
+  referralInput: {
+    ...onboardingInputStyle,
+    height: 52,
   },
 });

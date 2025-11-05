@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UpdateUserProfileRequest, UserProfile } from '@meal-log/shared';
@@ -11,8 +11,9 @@ import { OnboardingScaffold } from '@/screen-components/onboarding/OnboardingSca
 import { PLAN_INTENSITY_OPTIONS } from '@/screen-components/onboarding/constants';
 import { useOnboardingStore } from '@/store/onboarding';
 import { useSessionStore } from '@/store/session';
+import { usePremiumStore } from '@/store/premium';
 import { useTranslation } from '@/i18n';
-import { updateUserProfile } from '@/services/api';
+import { updateUserProfile, getPremiumStatus } from '@/services/api';
 import { trackOnboardingCompleted } from '@/analytics/events';
 import { onboardingCardStyle, onboardingTypography } from '@/theme/onboarding';
 
@@ -25,6 +26,7 @@ export default function OnboardingAnalysisScreen() {
   const startedAt = useOnboardingStore((state) => state.startedAt);
   const setOnboardingStatus = useSessionStore((state) => state.setOnboarding);
   const locale = useSessionStore((state) => state.locale);
+  const setPremiumStatus = usePremiumStore((state) => state.setStatus);
 
   useOnboardingStep('analysis');
 
@@ -54,6 +56,7 @@ export default function OnboardingAnalysisScreen() {
       height_cm: draft.heightCm ?? null,
       unit_preference: 'METRIC',
       marketing_source: draft.marketingSource ? draft.marketingSource.trim() : null,
+      marketing_referral_code: draft.marketingReferralCode ? draft.marketingReferralCode.trim() : null,
       goals: draft.goals,
       body_weight_kg: draft.bodyWeightKg ?? draft.currentWeightKg ?? null,
       current_weight_kg: draft.currentWeightKg ?? null,
@@ -69,12 +72,21 @@ export default function OnboardingAnalysisScreen() {
 
   const mutation = useMutation({
     mutationFn: async () => updateUserProfile(submissionPayload),
-    onSuccess: (profile) => {
-      setProfileResult(profile);
-      const completedAt = profile.questionnaire_completed_at ?? new Date().toISOString();
+    onSuccess: (result) => {
+      setProfileResult(result.profile);
+      const completedAt = result.profile.questionnaire_completed_at ?? new Date().toISOString();
       setOnboardingStatus({ completed: true, completed_at: completedAt });
-      queryClient.setQueryData(['profile'], profile);
+      queryClient.setQueryData(['profile'], result.profile);
       trackOnboardingCompleted({ durationMs: Date.now() - (startedAt ?? Date.now()) });
+      if (result.referralClaimed && result.referralResult) {
+        Alert.alert(
+          '🎉 プレミアムを獲得しました！',
+          `${result.referralResult.premiumDays}日間のプレミアムが付与されました。${result.referralResult.referrerUsername ?? ''}`.trim(),
+        );
+        getPremiumStatus()
+          .then((status) => setPremiumStatus(status))
+          .catch((error) => console.warn('Failed to refresh premium status', error));
+      }
       resetDraft();
     },
   });
