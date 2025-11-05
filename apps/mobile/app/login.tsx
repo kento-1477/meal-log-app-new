@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { PrimaryButton } from '@/components/PrimaryButton';
@@ -9,6 +19,8 @@ import { GlassCard } from '@/components/GlassCard';
 import { login } from '@/services/api';
 import { useSessionStore } from '@/store/session';
 import { useTranslation } from '@/i18n';
+import { Feather } from '@expo/vector-icons';
+import { SUPPORT_EMAIL } from '@/config/legal';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -20,8 +32,23 @@ export default function LoginScreen() {
 
   const [email, setEmail] = useState('demo@example.com');
   const [password, setPassword] = useState('password123');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const handleForgotPassword = async () => {
+    const url = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Password reset request')}`;
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (!canOpen) {
+        throw new Error('cannot open mailto');
+      }
+      await Linking.openURL(url);
+    } catch (error) {
+      Alert.alert(t('login.forgotPasswordErrorTitle'), t('login.forgotPasswordErrorMessage'));
+      console.warn('Failed to open mail client', error);
+    }
+  };
 
   const handleLogin = async () => {
     try {
@@ -66,13 +93,26 @@ export default function LoginScreen() {
           </View>
           <View style={styles.formGroup}>
             <Text style={styles.label}>{t('login.passwordLabel')}</Text>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              style={styles.input}
-              placeholder={t('login.passwordPlaceholder')}
-            />
+            <View style={styles.passwordRow}>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                style={[styles.input, styles.passwordInput]}
+                placeholder={t('login.passwordPlaceholder')}
+              />
+              <TouchableOpacity
+                style={styles.visibilityToggle}
+                onPress={() => setShowPassword((prev) => !prev)}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+              >
+                <Feather name={showPassword ? 'eye-off' : 'eye'} size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotPasswordLink}>
+              <Text style={styles.forgotPasswordText}>{t('login.forgotPassword')}</Text>
+            </TouchableOpacity>
           </View>
           {error ? <Text style={styles.error}>⚠️ {error}</Text> : null}
           <View style={{ marginTop: 24 }}>
@@ -124,6 +164,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     fontSize: 16,
+  },
+  passwordRow: {
+    position: 'relative',
+  },
+  passwordInput: {
+    paddingRight: 44,
+  },
+  visibilityToggle: {
+    position: 'absolute',
+    right: 12,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  forgotPasswordLink: {
+    alignSelf: 'flex-end',
+    marginTop: 8,
+  },
+  forgotPasswordText: {
+    ...textStyles.caption,
+    color: colors.accent,
+    fontWeight: '600',
   },
   error: {
     color: colors.error,

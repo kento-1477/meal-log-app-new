@@ -23,6 +23,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
+import { getJapaneseHeadlineStyle, isJapaneseLocale } from '@/theme/localeTypography';
 import { ChatBubble } from '@/components/ChatBubble';
 import { NutritionCard } from '@/components/NutritionCard';
 import { ErrorBanner } from '@/components/ErrorBanner';
@@ -624,9 +625,14 @@ export default function ChatScreen() {
     );
   };
 
+  const headerFontStyle = React.useMemo(
+    () => (isJapaneseLocale(locale) ? getJapaneseHeadlineStyle() : null),
+    [locale],
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <Text style={[styles.headerTitle, { paddingHorizontal: 16, marginBottom: 16 }]}>{t('chat.header')}</Text>
+      <Text style={[styles.headerTitle, headerFontStyle, { paddingHorizontal: 16, marginBottom: 16 }]}>{t('chat.header')}</Text>
       {usage ? (
         <View style={styles.usageBanner}>
           <View style={styles.usageBannerText}>

@@ -1,6 +1,7 @@
 import { StyleSheet } from 'react-native';
 import { colors } from '@/theme/colors';
 import { fontFamilies } from '@/theme/typography';
+import { getJapaneseBodyStyle, getJapaneseHeadlineStyle } from './localeTypography';
 
 export const onboardingCardStyle = {
   backgroundColor: 'rgba(255,255,255,0.97)',
@@ -66,6 +67,46 @@ export const onboardingTypography = StyleSheet.create({
   },
   cardDetail: {
     fontFamily: fontFamilies.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textSecondary,
+  },
+});
+
+export const onboardingJapaneseTypography = StyleSheet.create({
+  title: {
+    ...getJapaneseHeadlineStyle(),
+    fontSize: 34,
+    lineHeight: 40,
+    color: colors.textPrimary,
+  },
+  subtitle: {
+    ...getJapaneseBodyStyle(),
+    fontSize: 17,
+    lineHeight: 24,
+    color: colors.textSecondary,
+  },
+  label: {
+    ...getJapaneseBodyStyle(),
+    fontSize: 15,
+    lineHeight: 18,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  helper: {
+    ...getJapaneseBodyStyle(),
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.textSecondary,
+  },
+  cardTitle: {
+    ...getJapaneseHeadlineStyle(),
+    fontSize: 18,
+    lineHeight: 22,
+    color: colors.textPrimary,
+  },
+  cardDetail: {
+    ...getJapaneseBodyStyle(),
     fontSize: 14,
     lineHeight: 20,
     color: colors.textSecondary,

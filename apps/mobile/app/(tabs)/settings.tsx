@@ -8,6 +8,7 @@ import { useTranslation } from '@/i18n';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
+import { getJapaneseHeadlineStyle, isJapaneseLocale } from '@/theme/localeTypography';
 import { useSessionStore } from '@/store/session';
 import { usePremiumStatus } from '@/hooks/usePremiumStatus';
 import { SUPPORT_EMAIL } from '@/config/legal';
@@ -15,10 +16,12 @@ import appManifest from '../../app.json';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const user = useSessionStore((state) => state.user);
   const { status: premiumStatus } = usePremiumStatus();
   const versionLabel = appManifest?.expo?.version ?? '1.0.0';
+
+  const screenTitleStyle = useMemo(() => (isJapaneseLocale(locale) ? getJapaneseHeadlineStyle() : null), [locale]);
 
   const menuItems = useMemo(
     () => [
@@ -65,7 +68,7 @@ export default function SettingsScreen() {
     <LinearGradient colors={[colors.background, '#ffffff']} style={styles.gradient}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <Text style={styles.screenTitle}>{t('settings.title')}</Text>
+          <Text style={[styles.screenTitle, screenTitleStyle]}>{t('settings.title')}</Text>
 
           <TouchableOpacity style={styles.profileCard} activeOpacity={0.8} onPress={() => router.push('/settings/account')}>
             <View style={styles.avatarCircle}>
