@@ -17,13 +17,20 @@ import { useOnboardingStep } from '@/hooks/useOnboardingStep';
 import { OnboardingScaffold } from '@/screen-components/onboarding/OnboardingScaffold';
 import { useOnboardingStore } from '@/store/onboarding';
 import { useTranslation } from '@/i18n';
-import { onboardingCardStyle, onboardingInputStyle, onboardingTypography } from '@/theme/onboarding';
+import {
+  onboardingCardStyle,
+  onboardingInputStyle,
+  onboardingTypography,
+  onboardingJapaneseTypography,
+} from '@/theme/onboarding';
+import { isJapaneseLocale } from '@/theme/localeTypography';
 
 const GENDER_ORDER: Gender[] = ['FEMALE', 'MALE', 'NON_BINARY', 'UNSPECIFIED'];
 
 export default function OnboardingBasicInfoScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isJapanese = isJapaneseLocale(locale);
   const draft = useOnboardingStore((state) => state.draft);
   const updateDraft = useOnboardingStore((state) => state.updateDraft);
 
@@ -157,8 +164,12 @@ export default function OnboardingBasicInfoScreen() {
       >
         <View style={styles.form}>
           <View style={styles.card}>
-            <Text style={onboardingTypography.label}>{t('onboarding.basicInfo.name')}</Text>
-            <Text style={onboardingTypography.helper}>{t('onboarding.basicInfo.nameHelper')}</Text>
+            <Text style={[onboardingTypography.label, isJapanese && onboardingJapaneseTypography.label]}>
+              {t('onboarding.basicInfo.name')}
+            </Text>
+            <Text style={[onboardingTypography.helper, isJapanese && onboardingJapaneseTypography.helper]}>
+              {t('onboarding.basicInfo.nameHelper')}
+            </Text>
             <TextInput
               style={styles.input}
               value={name}
@@ -168,8 +179,12 @@ export default function OnboardingBasicInfoScreen() {
           </View>
 
           <View style={styles.card}>
-            <Text style={onboardingTypography.label}>{t('onboarding.basicInfo.gender')}</Text>
-            <Text style={onboardingTypography.helper}>{t('onboarding.basicInfo.genderHelper')}</Text>
+            <Text style={[onboardingTypography.label, isJapanese && onboardingJapaneseTypography.label]}>
+              {t('onboarding.basicInfo.gender')}
+            </Text>
+            <Text style={[onboardingTypography.helper, isJapanese && onboardingJapaneseTypography.helper]}>
+              {t('onboarding.basicInfo.genderHelper')}
+            </Text>
             <View style={styles.chipRow}>
               {genderOptions.map((option) => {
                 const selected = option.id === gender;
@@ -190,8 +205,12 @@ export default function OnboardingBasicInfoScreen() {
           </View>
 
           <View style={styles.card}>
-            <Text style={onboardingTypography.label}>{t('onboarding.basicInfo.birthdate')}</Text>
-            <Text style={onboardingTypography.helper}>{t('onboarding.basicInfo.birthdateHelper')}</Text>
+            <Text style={[onboardingTypography.label, isJapanese && onboardingJapaneseTypography.label]}>
+              {t('onboarding.basicInfo.birthdate')}
+            </Text>
+            <Text style={[onboardingTypography.helper, isJapanese && onboardingJapaneseTypography.helper]}>
+              {t('onboarding.basicInfo.birthdateHelper')}
+            </Text>
             <TouchableOpacity
               style={styles.inputButton}
               onPress={openBirthdatePicker}
@@ -209,8 +228,12 @@ export default function OnboardingBasicInfoScreen() {
           </View>
 
           <View style={styles.card}>
-            <Text style={onboardingTypography.label}>{t('onboarding.basicInfo.height')}</Text>
-            <Text style={onboardingTypography.helper}>{t('onboarding.basicInfo.heightHelper')}</Text>
+            <Text style={[onboardingTypography.label, isJapanese && onboardingJapaneseTypography.label]}>
+              {t('onboarding.basicInfo.height')}
+            </Text>
+            <Text style={[onboardingTypography.helper, isJapanese && onboardingJapaneseTypography.helper]}>
+              {t('onboarding.basicInfo.heightHelper')}
+            </Text>
             <View style={styles.inlineField}>
               <TextInput
                 style={[styles.input, styles.inlineInput]}

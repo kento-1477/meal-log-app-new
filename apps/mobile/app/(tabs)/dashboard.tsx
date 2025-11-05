@@ -26,6 +26,7 @@ import { RecentLogsList } from '@/features/dashboard/components/RecentLogsList';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
+import { getJapaneseHeadlineStyle, isJapaneseLocale } from '@/theme/localeTypography';
 import { useSessionStore } from '@/store/session';
 import {
   logout,
@@ -71,6 +72,7 @@ export default function DashboardScreen() {
   const setUsage = useSessionStore((state) => state.setUsage);
   const isAuthenticated = status === 'authenticated';
   const { t, locale } = useTranslation();
+  const headlineStyle = useMemo(() => (isJapaneseLocale(locale) ? getJapaneseHeadlineStyle() : null), [locale]);
   const premiumState = usePremiumStore((state) => state.status);
   const isPremium = premiumState?.isPremium ?? userPlan === 'PREMIUM';
 
@@ -183,7 +185,7 @@ const streakQuery = useQuery({
       >
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.title}>{t('dashboard.title')}</Text>
+            <Text style={[styles.title, headlineStyle]}>{t('dashboard.title')}</Text>
             <Text style={styles.subtitle}>{periodLabel(period, t)}</Text>
             {isAuthenticated && streakQuery.data ? (
               <Text style={styles.streakBadge}>🔥 {streakQuery.data.current} {t('streak.days')}</Text>

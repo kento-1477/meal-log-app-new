@@ -13,10 +13,12 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/theme/colors';
 import { fontFamilies, textStyles } from '@/theme/typography';
-import { onboardingTypography } from '@/theme/onboarding';
+import { onboardingTypography, onboardingJapaneseTypography } from '@/theme/onboarding';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import type { OnboardingStep } from '@/store/onboarding';
 import { ONBOARDING_STEPS } from '@/store/onboarding';
+import { useTranslation } from '@/i18n';
+import { isJapaneseLocale } from '@/theme/localeTypography';
 
 interface Props {
   step: OnboardingStep;
@@ -49,6 +51,8 @@ export function OnboardingScaffold({
   const total = ONBOARDING_STEPS.length;
   const progress = (index + 1) / total;
   const insets = useSafeAreaInsets();
+  const { locale } = useTranslation();
+  const isJapanese = isJapaneseLocale(locale);
 
   const keyboardOffset = Platform.OS === 'ios' ? insets.top + 24 : 0;
 
@@ -96,8 +100,12 @@ export function OnboardingScaffold({
                 keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               >
                 <View style={styles.titleBlock}>
-                  <Text style={onboardingTypography.title}>{title}</Text>
-                  {subtitle ? <Text style={onboardingTypography.subtitle}>{subtitle}</Text> : null}
+                  <Text style={[onboardingTypography.title, isJapanese && onboardingJapaneseTypography.title]}>{title}</Text>
+                  {subtitle ? (
+                    <Text style={[onboardingTypography.subtitle, isJapanese && onboardingJapaneseTypography.subtitle]}>
+                      {subtitle}
+                    </Text>
+                  ) : null}
                 </View>
                 {accent ? <View style={styles.accent}>{accent}</View> : null}
                 <View style={styles.children}>{children}</View>
