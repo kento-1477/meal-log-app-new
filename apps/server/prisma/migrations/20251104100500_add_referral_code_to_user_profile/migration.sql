@@ -1,1 +1,1 @@
-ALTER TABLE "UserProfile" ADD COLUMN "referralCode" TEXT;
+ALTER TABLE IF EXISTS "UserProfile" ADD COLUMN IF NOT EXISTS "referralCode" TEXT;
