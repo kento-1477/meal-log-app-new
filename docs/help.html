@@ -15,9 +15,7 @@
       --color-chip: #333333;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -31,7 +29,7 @@
     header {
       background: var(--color-surface);
       border-bottom: 1px solid var(--color-border);
-      padding: 16px 24px;
+      padding: 16px 24px 12px;
       position: sticky;
       top: 0;
       z-index: 10;
@@ -44,6 +42,7 @@
       display: flex;
       align-items: center;
       gap: 16px;
+      flex-wrap: wrap;
     }
 
     .app-logo {
@@ -53,11 +52,7 @@
       object-fit: contain;
     }
 
-    .app-title {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
+    .app-title { display: flex; flex-direction: column; gap: 4px; }
 
     .app-title h1 {
       margin: 0;
@@ -66,7 +61,8 @@
       letter-spacing: 0.02em;
     }
 
-    .app-title span {
+    .page-desc {
+      margin: 0;
       font-size: 12px;
       color: var(--color-text-sub);
     }
@@ -89,25 +85,10 @@
       align-items: center;
       gap: 4px;
     }
+    nav a:hover { border-color: var(--color-border); background: #fafafa; color: var(--color-text-main); }
+    nav a span.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); }
 
-    nav a:hover {
-      border-color: var(--color-border);
-      background: #fafafa;
-      color: var(--color-text-main);
-    }
-
-    nav a span.dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--color-accent);
-    }
-
-    main {
-      max-width: 960px;
-      margin: 0 auto;
-      padding: 32px 16px 64px;
-    }
+    main { max-width: 960px; margin: 0 auto; padding: 32px 16px 64px; }
 
     .hero {
       background: var(--color-surface);
@@ -119,25 +100,10 @@
       gap: 16px;
     }
 
-    .hero h2 {
-      margin-top: 0;
-      font-size: 24px;
-      margin-bottom: 8px;
-    }
+    .hero h2 { margin-top: 0; font-size: 24px; margin-bottom: 8px; }
+    .hero p  { margin: 0 0 8px; font-size: 14px; color: var(--color-text-sub); }
 
-    .hero p {
-      margin: 0 0 8px;
-      font-size: 14px;
-      color: var(--color-text-sub);
-    }
-
-    .hero-callouts {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 8px;
-    }
-
+    .hero-callouts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
     .chip {
       background: var(--color-chip);
       color: #ffffff;
@@ -148,13 +114,7 @@
       align-items: center;
       gap: 6px;
     }
-
-    .chip span.dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--color-accent);
-    }
+    .chip span.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); }
 
     .hero-steps {
       font-size: 13px;
@@ -162,15 +122,8 @@
       padding-left: 12px;
       color: var(--color-text-sub);
     }
-
-    .hero-steps p {
-      margin: 0 0 4px;
-    }
-
-    .hero-steps ol {
-      margin: 0;
-      padding-left: 20px;
-    }
+    .hero-steps p { margin: 0 0 4px; }
+    .hero-steps ol { margin: 0; padding-left: 20px; }
 
     section {
       margin-top: 32px;
@@ -179,110 +132,27 @@
       padding: 24px 20px;
       border: 1px solid var(--color-border);
     }
+    section h3 { margin-top: 0; font-size: 18px; border-left: 4px solid var(--color-accent); padding-left: 10px; }
+    section p  { font-size: 14px; color: var(--color-text-main); margin: 0 0 10px; }
 
-    section h3 {
-      margin-top: 0;
-      font-size: 18px;
-      border-left: 4px solid var(--color-accent);
-      padding-left: 10px;
-    }
+    .sub-text { font-size: 13px; color: var(--color-text-sub); }
+    .for-whom { font-size: 13px; color: var(--color-text-sub); background: #f7f7f7; border: 1px dashed var(--color-border); border-radius: 10px; padding: 8px 10px; margin: 6px 0 10px; }
 
-    section p {
-      font-size: 14px;
-      color: var(--color-text-main);
-      margin: 0 0 10px;
-    }
+    .two-column { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 8px; }
+    .card { border-radius: 18px; border: 1px solid var(--color-border); padding: 14px 14px 12px; background: #fcfcfc; }
+    .card h4 { margin: 0 0 6px; font-size: 14px; }
+    .card p  { margin: 0 0 4px; font-size: 13px; }
 
-    .sub-text {
-      font-size: 13px;
-      color: var(--color-text-sub);
-    }
+    ul, ol { padding-left: 20px; margin: 4px 0 10px; font-size: 13px; }
+    li + li { margin-top: 3px; }
 
-    .two-column {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 16px;
-      margin-top: 8px;
-    }
+    .faq-item + .faq-item { margin-top: 12px; border-top: 1px dashed var(--color-border); padding-top: 12px; }
+    .faq-q { font-weight: 600; font-size: 14px; }
+    .faq-a { font-size: 13px; color: var(--color-text-sub); margin-top: 4px; }
 
-    .card {
-      border-radius: 18px;
-      border: 1px solid var(--color-border);
-      padding: 14px 14px 12px;
-      background: #fcfcfc;
-    }
-
-    .card h4 {
-      margin: 0 0 6px;
-      font-size: 14px;
-    }
-
-    .card p {
-      margin: 0 0 4px;
-      font-size: 13px;
-    }
-
-    ul,
-    ol {
-      padding-left: 20px;
-      margin: 4px 0 10px;
-      font-size: 13px;
-    }
-
-    li + li {
-      margin-top: 3px;
-    }
-
-    .faq-item + .faq-item {
-      margin-top: 12px;
-      border-top: 1px dashed var(--color-border);
-      padding-top: 12px;
-    }
-
-    .faq-q {
-      font-weight: 600;
-      font-size: 14px;
-    }
-
-    .faq-a {
-      font-size: 13px;
-      color: var(--color-text-sub);
-      margin-top: 4px;
-    }
-
-    .tag-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 4px;
-    }
-
-    .tag {
-      font-size: 11px;
-      border-radius: 999px;
-      padding: 2px 8px;
-      background: #f2f2f2;
-      color: var(--color-text-sub);
-    }
-
-    .notice {
-      font-size: 12px;
-      padding: 10px 12px;
-      border-radius: 12px;
-      background: #fffaf1;
-      border: 1px solid rgba(245, 166, 35, 0.4);
-      margin-top: 6px;
-    }
-
-    .kbd {
-      display: inline-block;
-      border-radius: 4px;
-      border: 1px solid var(--color-border);
-      padding: 1px 4px;
-      font-size: 11px;
-      background: #f5f5f5;
-      vertical-align: middle;
-    }
+    .tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+    .tag { font-size: 11px; border-radius: 999px; padding: 2px 8px; background: #f2f2f2; color: var(--color-text-sub); }
+    .notice { font-size: 12px; padding: 10px 12px; border-radius: 12px; background: #fffaf1; border: 1px solid rgba(245, 166, 35, 0.4); margin-top: 6px; }
 
     footer {
       max-width: 960px;
@@ -292,22 +162,14 @@
       color: var(--color-text-sub);
       text-align: right;
     }
+    footer .links { display: flex; gap: 14px; justify-content: flex-end; flex-wrap: wrap; }
+    footer a { color: inherit; }
 
     @media (max-width: 720px) {
-      .hero {
-        grid-template-columns: minmax(0, 1fr);
-      }
-      header {
-        padding: 12px 16px;
-      }
-      .header-inner {
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-      nav {
-        width: 100%;
-        justify-content: flex-start;
-      }
+      .hero { grid-template-columns: minmax(0, 1fr); }
+      header { padding: 12px 16px; }
+      .header-inner { flex-wrap: wrap; gap: 8px; }
+      nav { width: 100%; justify-content: flex-start; }
     }
   </style>
 </head>
@@ -315,10 +177,12 @@
   <header>
     <div class="header-inner">
       <!-- ロゴ画像のパスはアプリ側で差し替えてください -->
-      <img src="meal-chat-logo.png" alt="Meal Chat ロゴ" class="app-logo" />
+      <img src="Meal_Chat_logo.png" alt="Meal Chat ロゴ" class="app-logo" />
       <div class="app-title">
         <h1>Meal Chat ヘルプセンター</h1>
-        <span>チャットでかんたん食事記録アプリ「Meal Chat（ミーチャ）」の使い方ガイド</span>
+        <p class="page-desc">
+          Meal Chat の基本的な使い方と、よくある質問をまとめたヘルプページです。はじめての方は「2. はじめかた」から読むのがおすすめです。
+        </p>
       </div>
       <nav>
         <a href="#about"><span class="dot"></span>概要</a>
@@ -338,7 +202,7 @@
         <h2>ようこそ、Meal Chat へ</h2>
         <p>
           Meal Chat は、チャットで話すように入力するだけで、食事内容を記録できるアプリです。
-          ごはんの写真やテキストを送ると、AI が栄養を読み取り、1日のバランスをわかりやすくまとめます。
+          ごはんの写真やテキストを送ると、AI が目安のカロリーと PFC（炭水化物・タンパク質・脂質）を推定します。
         </p>
         <p class="sub-text">
           このページでは、インストール直後から毎日の記録、トラブル時の対処まで、順番に説明します。
@@ -346,7 +210,7 @@
         </p>
         <div class="hero-callouts">
           <div class="chip"><span class="dot"></span>チャットで食事を記録</div>
-          <div class="chip"><span class="dot"></span>画像から自動で栄養解析</div>
+          <div class="chip"><span class="dot"></span>画像から自動で栄養推定</div>
           <div class="chip"><span class="dot"></span>1日のバランスをダッシュボードで表示</div>
         </div>
       </div>
@@ -358,8 +222,7 @@
           <li>ダッシュボードで、その日の摂取カロリーやバランスを確認します。</li>
         </ol>
         <p class="sub-text">
-          1 日 1 食だけでもかまいません。
-          「とりあえず記録する習慣」をつくるところから始めましょう。
+          1 日 1 食だけでもかまいません。「とりあえず記録する習慣」をつくるところから始めましょう。
         </p>
       </div>
     </section>
@@ -368,14 +231,14 @@
       <h3>1. アプリの概要</h3>
       <p>
         Meal Chat は、専用のサーバーと AI を組み合わせて動いています。
-        食事内容はサーバーに安全に保存され、AI がカロリーや栄養バランスを計算し、アプリ内のダッシュボードに反映します。:contentReference[oaicite:0]{index=0}
+        食事内容はサーバーに安全に保存され、AI ができるだけ現実に近いカロリーや栄養バランスを計算し、アプリ内のダッシュボードに反映します。
       </p>
       <div class="two-column">
         <div class="card">
           <h4>主な機能</h4>
           <ul>
             <li>チャット形式での食事入力（テキスト）</li>
-            <li>写真を送って自動解析</li>
+            <li>写真を送って自動推定</li>
             <li>1 日の摂取カロリーと栄養バランスの表示</li>
             <li>過去の食事ログの一覧表示</li>
           </ul>
@@ -384,13 +247,10 @@
           <h4>想定している利用シーン</h4>
           <p>
             ダイエット中の人、筋トレをしている人、なんとなく食事を整えたい人など、
-            「カロリー計算が面倒だけど、ざっくりは知りたい」という人を想定しています。
+            「計算は面倒だけど、ざっくりは知りたい」人のためのツールです。
           </p>
           <div class="tag-list">
-            <span class="tag">ダイエット</span>
-            <span class="tag">筋トレ</span>
-            <span class="tag">健康管理</span>
-            <span class="tag">食事の見える化</span>
+            <span class="tag">ダイエット</span><span class="tag">筋トレ</span><span class="tag">健康管理</span><span class="tag">食事の見える化</span>
           </div>
         </div>
       </div>
@@ -398,9 +258,8 @@
 
     <section id="start">
       <h3>2. はじめかた</h3>
-      <p>
-        ここでは、アプリをインストールしてから、最初の食事を記録するまでの流れを説明します。
-      </p>
+      <p class="for-whom">はじめて Meal Chat を使う方向けに、最初のセットアップ手順を説明します。</p>
+      <p>ここでは、アプリをインストールしてから、最初の食事を記録するまでの流れを説明します。</p>
 
       <div class="two-column">
         <div class="card">
@@ -411,9 +270,7 @@
             <li>利用規約とプライバシーポリシーを確認します。</li>
             <li>「アカウントを作成」ボタンをタップします。</li>
           </ol>
-          <p class="sub-text">
-            パスワードは、第三者に推測されにくいものを使ってください。
-          </p>
+          <p class="sub-text">パスワードは、第三者に推測されにくいものを使ってください。</p>
         </div>
 
         <div class="card">
@@ -423,20 +280,14 @@
             <li>「ログイン状態を保存」がある場合は、共有端末では使わないようにしてください。</li>
             <li>パスワードを忘れたときは、「パスワードをお忘れの方」から再設定してください。</li>
           </ul>
-          <div class="notice">
-            公開テスト中などで運営から「テスト用アカウント」が共有されている場合は、
-            指定されたメールアドレスとパスワードを入力してください。
-          </div>
+          <div class="notice">公開テスト中などで運営から「テスト用アカウント」が共有されている場合は、指定された情報を入力してください。</div>
         </div>
       </div>
     </section>
 
     <section id="logging">
       <h3>3. 食事をチャットで記録する</h3>
-      <p>
-        Meal Chat の中心となる画面が「チャット画面」です。
-        ここにメッセージを送るだけで、食事ログが作成されます。
-      </p>
+      <p>Meal Chat の中心となる画面が「チャット画面」です。ここにメッセージを送るだけで、食事ログが作成されます。</p>
 
       <div class="two-column">
         <div class="card">
@@ -444,35 +295,26 @@
           <p>入力欄に、食べたものをそのまま書きます。</p>
           <ul>
             <li>例：「朝ごはん：ごはん 1 杯、鮭、味噌汁」</li>
-            <li>1 日の中で、食事ごとに分けて送っても、まとめて送っても大丈夫です。</li>
+            <li>食事ごとに分けても、まとめて送っても大丈夫です。</li>
             <li>量がわからないときは「大盛り」「少なめ」などでも構いません。</li>
           </ul>
-          <p class="sub-text">
-            完璧な量を入力しようとすると続かなくなるので、
-            「だいたい」を書くくらいの気持ちで使ってください。
-          </p>
+          <p class="sub-text">完璧を目指すより「だいたい」を書くほうが続きます。</p>
         </div>
 
         <div class="card">
           <h4>3-2. 写真での記録</h4>
           <p>カメラアイコンや画像添付ボタンから、食事の写真を送れます。</p>
           <ul>
-            <li>お皿全体が見えるように撮ると、AI の解析がしやすくなります。</li>
+            <li>お皿全体が見えるように撮ると、AI の推定がしやすくなります。</li>
             <li>外食では、メニュー名も一緒に送ると、より近い内容で推定できます。</li>
           </ul>
-          <p class="sub-text">
-            写真だけでも記録はできますが、
-            「ラーメン塩・チャーシュー増し」など一言添えると、より正確になります。
-          </p>
+          <p class="sub-text">写真だけでも記録はできますが、一言添えると、より正確になります。</p>
         </div>
       </div>
 
       <div class="card">
         <h4>3-3. AI からの返信について</h4>
-        <p>
-          送信後、数秒〜十数秒ほどで AI から返信が届きます。
-          ここには、その食事のおおよそのカロリーや、炭水化物・タンパク質・脂質のバランスが表示されます。:contentReference[oaicite:1]{index=1}
-        </p>
+        <p>送信後、数秒〜十数秒ほどで AI から返信が届きます。ここには、その食事のおおよそのカロリーや PFC のバランスが表示されます。</p>
         <ul>
           <li>通信環境が悪いときは、返信まで時間がかかることがあります。</li>
           <li>「再解析」ボタンがある場合は、うまく読み取れなかったときに押してみてください。</li>
@@ -483,31 +325,19 @@
 
     <section id="dashboard">
       <h3>4. ダッシュボードで 1 日のバランスを見る</h3>
-      <p>
-        ダッシュボードでは、記録した内容をまとめて確認できます。
-        チャットで送ったログが自動で集計され、グラフや数値として表示されます。:contentReference[oaicite:2]{index=2}
-      </p>
+      <p class="for-whom">すでに何回か食事を記録したあとに、1 日のバランスを振り返るための画面です。</p>
+      <p>ダッシュボードでは、記録した内容をまとめて確認できます。チャットで送ったログが自動で集計され、グラフや数値として表示されます。</p>
       <div class="two-column">
         <div class="card">
           <h4>4-1. 今日の合計カロリー</h4>
-          <p>
-            その日に記録した食事の合計カロリーが表示されます。
-            目安の消費カロリーより少なければ「マイナス」、多ければ「プラス」として表示されることがあります。
-          </p>
-          <p class="sub-text">
-            数値はあくまで目安です。日ごとの上下を見るより、
-            1 週間くらいの平均を見ながら調整するイメージで使ってください。
-          </p>
+          <p>その日に記録した食事の合計カロリーを表示します。目安の消費カロリーより少なければ「残り」、多ければ「超過」として表示されることがあります。</p>
+          <p class="sub-text">数値は目安です。日ごとの上下より、1 週間平均を見ながら調整するのがおすすめです。</p>
         </div>
-
         <div class="card">
           <h4>4-2. 栄養バランスのリングやグラフ</h4>
-          <p>
-            炭水化物・タンパク質・脂質のバランスを円グラフやリングで表示します。
-            どの栄養が多めか、少なめかをひと目で確認できます。
-          </p>
+          <p>PFC のバランスを円グラフやリングで表示します。どの栄養が多めか、少なめかをひと目で確認できます。</p>
           <ul>
-            <li>リングが大きく出ている栄養は「多め」です。</li>
+            <li>リングが大きい栄養は「多め」です。</li>
             <li>ほとんど色がついていない栄養は「少なめ」です。</li>
           </ul>
         </div>
@@ -519,26 +349,16 @@
       <div class="two-column">
         <div class="card">
           <h4>5-1. プロフィールと目標</h4>
-          <p>
-            アカウント設定で、体重や目標などを入力できる場合があります。
-            ここで設定した情報は、カロリーの目安を出すときに使われます。
-          </p>
+          <p>アカウント設定で、体重や目標などを入力できる場合があります。ここで設定した情報は、カロリーの目安を出すときに使われます。</p>
           <ul>
             <li>身長・体重・年齢・性別などを入力すると、目安の消費カロリーが変わります。</li>
             <li>目標体重を変えると、表示される「理想との差」も変わります。</li>
           </ul>
         </div>
-
         <div class="card">
           <h4>5-2. データの保存とプライバシー</h4>
-          <p>
-            食事ログやチャット内容は、アプリのサーバー上に保存されます。
-            これらのデータは、栄養計算とグラフ表示のために使われます。
-          </p>
-          <p class="sub-text">
-            くわしい取り扱いについては、アプリ内の「プライバシーポリシー」を確認してください。
-            不安な点があれば、サポート窓口にお問い合わせください。
-          </p>
+          <p>食事ログやチャット内容は、アプリのサーバー上に保存されます。これらのデータは、栄養計算とグラフ表示のために使われます。</p>
+          <p class="sub-text">取り扱いは「プライバシーポリシー」に従います。疑問があれば、下記のサポート窓口へご連絡ください。</p>
         </div>
       </div>
     </section>
@@ -548,34 +368,29 @@
       <div class="faq-item">
         <div class="faq-q">Q. どのくらい正確なカロリー・栄養値ですか？</div>
         <div class="faq-a">
-          A. 実際の栄養成分表と完全に同じではありませんが、
-          多くの料理データとルールを元にした「推定値」です。
-          正確な数値を知るためではなく、「大まかなバランスを見る道具」として使ってください。
+          A. 実際の栄養成分表と完全に同じにはなりませんが、できるだけ現実に近い数値を目指した「推定値」です。
+          体重管理や病気の治療の判断には使わず、あくまで日々の食事を振り返るための参考としてお使いください。
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-q">Q. 1 日に何回まで記録できますか？</div>
         <div class="faq-a">
-          A. 利用プランによって、1 日に記録できる回数に上限がつく場合があります。
-          無料プランでは回数が少なめで、有料プランでは回数が増えたり、画像解析機能が開放されることがあります。
+          A. 利用プランによって、1 日に記録できる回数に上限がつく場合があります。無料プランは回数が少なめで、有料プランでは回数が増えたり、画像解析機能が開放されることがあります。
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-q">Q. 機種変更したら、データは消えますか？</div>
         <div class="faq-a">
-          A. メールアドレスとパスワードでログインするタイプのアカウントであれば、
-          新しい端末で同じアカウントにログインすると、食事ログを引き継げます。
+          A. メールアドレスとパスワードでログインするタイプのアカウントであれば、新しい端末で同じアカウントにログインすると、食事ログを引き継げます。
         </div>
       </div>
 
       <div class="faq-item">
         <div class="faq-q">Q. オフラインでも使えますか？</div>
         <div class="faq-a">
-          A. AI 解析やログの保存にはインターネット通信が必要です。
-          オフラインの間に入力した内容は、一時的に端末内に保存され、
-          通信が回復したときにまとめて送信される場合があります。
+          A. AI の推定やログの保存にはインターネット通信が必要です。オフラインの間に入力した内容は、一時的に端末内に保存され、通信が回復したときにまとめて送信される場合があります。
         </div>
       </div>
     </section>
@@ -584,53 +399,54 @@
       <h3>7. トラブルが起きたとき</h3>
       <div class="two-column">
         <div class="card">
-          <h4>7-1. AI の返答がこない / 途中で止まる</h4>
-          <ol>
-            <li>電波状況（Wi-Fi / モバイル通信）を確認します。</li>
-            <li>アプリを一度閉じて、再度開きます。</li>
-            <li>時間をあけて再度送信します。</li>
-          </ol>
-          <p class="sub-text">
-            何度も同じ不具合が起きる場合は、
-            発生した時間と操作内容をメモしてサポートまでお知らせください。
-          </p>
+          <h4>7-1. アプリが開かないとき</h4>
+          <ul>
+            <li>端末の再起動と、アプリの再インストールを試します。</li>
+            <li>OS とアプリを最新に更新します。</li>
+            <li>ストレージの空き容量を確認します。</li>
+          </ul>
         </div>
 
         <div class="card">
-          <h4>7-2. ログインできない</h4>
+          <h4>7-2. ログインできないとき</h4>
           <ul>
-            <li>メールアドレスとパスワードに誤字がないか確認します。</li>
-            <li>大文字・小文字や全角・半角が混じっていないか確認します。</li>
-            <li>「パスワードをお忘れの方」から再設定を試してください。</li>
+            <li>メールアドレスとパスワードの誤字を確認します。</li>
+            <li>大文字・小文字／全角・半角が混じっていないか確認します。</li>
+            <li>「パスワードをお忘れの方」から再設定を試します。</li>
           </ul>
-          <div class="notice">
-            再設定メールが届かない場合は、迷惑メールフォルダを確認し、
-            それでも届かないときは、別のメールアドレスからお問い合わせください。
-          </div>
         </div>
       </div>
 
-      <div class="card">
-        <h4>7-3. 開発者・テスター向け TIPS</h4>
-        <p>
-          アプリはサーバーとモバイルアプリの 2 つの部分に分かれています。
-          開発環境では、Node.js・Express・Prisma・Expo などを利用して動作しています。
-        </p>
-        <ul>
-          <li>バックエンドは、ユーザー認証、食事ログ保存、AI 解析の API を担当します。:contentReference[oaicite:4]{index=4}</li>
-          <li>モバイルアプリは、チャット画面やダッシュボード UI を表示し、API と通信します。</li>
-        </ul>
-        <p class="sub-text">
-          技術的な詳細が必要な場合は、開発チームから共有されている
-          リポジトリの README やドキュメントをご参照ください。
-        </p>
+      <div class="two-column" style="margin-top: 8px;">
+        <div class="card">
+          <h4>7-3. 解析が明らかにおかしいとき</h4>
+          <ul>
+            <li>写真が暗い／一部しか写っていない場合は、撮り直して再送します。</li>
+            <li>メニュー名や量を一言添えて再送します。</li>
+            <li>何度も再現する場合は、発生時刻と内容をメモしてご連絡ください。</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h4>7-4. それでも解決しないとき</h4>
+          <p>下記のサポート宛にご連絡ください。できれば次の情報を添えてください。</p>
+          <ul>
+            <li>発生した日時と操作手順</li>
+            <li>端末名・OS バージョン・アプリのバージョン</li>
+            <li>可能ならスクリーンショット</li>
+          </ul>
+          <p class="notice">サポート：<a href="mailto:kento1477@icloud.com">kento1477@icloud.com</a></p>
+        </div>
       </div>
     </section>
   </main>
 
   <footer>
-    Meal Chat ヘルプセンター<br />
-    ご意見・ご要望は、アプリ内のお問い合わせフォームからお送りください。
+    <div class="links">
+      <span>サポート：<a href="mailto:kento1477@icloud.com">kento1477@icloud.com</a></span>
+      <span>プライバシーポリシー：<a href="https://kento-1477.github.io/meal-log-app-new/privacy-policy.html" target="_blank" rel="noopener">リンク</a></span>
+    </div>
+    <div>Meal Chat ヘルプセンター</div>
   </footer>
 </body>
 </html>
