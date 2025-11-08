@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   FlatList,
@@ -178,7 +179,6 @@ export default function ChatScreen() {
   const quickActions: QuickAction[] = [
     { key: 'photo', icon: 'camera', label: t('chat.quickActions.photo'), onPress: handleAttach },
     { key: 'favorite', icon: 'star', label: t('chat.quickActions.favorite'), onPress: () => setFavoritesVisible(true) },
-    { key: 'template', icon: 'align-left', label: t('chat.quickActions.template'), onPress: handleTemplateInsert },
   ];
 
   const favoritesQuery = useQuery({
@@ -359,8 +359,11 @@ export default function ChatScreen() {
   }, [enhancedExchange, inset.top, tabBarHeight, windowHeight]);
 
   const canSend = !usage || usage.remaining > 0 || usage.credits > 0;
+  const hasTypedInput = input.trim().length > 0;
+  const sendButtonDisabled = sending || !canSend || !hasTypedInput;
 
   const favoritesList = favoritesQuery.data ?? [];
+  const sendLabel = canSend ? t('chat.send') : t('chat.send.limit');
 
   const resetComposer = () => {
     setInput('');
@@ -608,6 +611,33 @@ export default function ChatScreen() {
     }
   };
 
+  const handlePlusPress = () => {
+    const templateLabel = t('chat.actions.insertTemplate');
+    const photoLabel = t('chat.actions.attachPhoto');
+    const cancelLabel = t('common.cancel');
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: [templateLabel, photoLabel, cancelLabel],
+          cancelButtonIndex: 2,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 0) {
+            handleTemplateInsert();
+          } else if (buttonIndex === 1) {
+            void handleAttach();
+          }
+        },
+      );
+    } else {
+      Alert.alert('', '', [
+        { text: templateLabel, onPress: () => handleTemplateInsert() },
+        { text: photoLabel, onPress: () => void handleAttach() },
+        { text: cancelLabel, style: 'cancel' },
+      ]);
+    }
+  };
+
   const handleShareCard = async (payload: NutritionCardPayload, cardKey: string) => {
     try {
       setSharingId(cardKey);
@@ -743,13 +773,7 @@ export default function ChatScreen() {
               </Text>
             </View>
           ) : null}
-          <View
-            style={[
-              styles.quickActionsRow,
-              !canSend && styles.quickActionsCollapsed,
-            ]}
-            pointerEvents={canSend ? 'auto' : 'none'}
-          >
+          <View style={styles.quickActionsRow}>
             {quickActions.map((action) => (
               <TouchableOpacity key={action.key} style={styles.quickAction} onPress={action.onPress}>
                 <Feather name={action.icon} size={14} color={colors.textPrimary} />
@@ -761,7 +785,7 @@ export default function ChatScreen() {
             style={[styles.composerArea, styles.composerDocked, { paddingBottom: Math.max(12, inset.bottom) }]}
           >
             <View style={styles.inputRow}>
-              <TouchableOpacity onPress={handleAttach} style={styles.attachButton}>
+              <TouchableOpacity onPress={handlePlusPress} style={styles.attachButton}>
                 <Text style={styles.attachIcon}>＋</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setFavoritesVisible(true)} style={styles.favoriteButton}>
@@ -769,13 +793,30 @@ export default function ChatScreen() {
               </TouchableOpacity>
               <TextInput
                 style={styles.textInput}
-                placeholder="食事内容を入力..."
+                placeholder={t('chat.placeholder')}
                 value={input}
                 onChangeText={setInput}
-                multiline
+                multiline={false}
+                numberOfLines={1}
+                blurOnSubmit={false}
+                returnKeyType={canSend ? 'send' : 'done'}
+                enablesReturnKeyAutomatically
+                onSubmitEditing={() => {
+                  if (!sendButtonDisabled) {
+                    void handleSend();
+                  }
+                }}
               />
-              <TouchableOpacity onPress={handleSend} disabled={sending || !canSend} style={[styles.sendButton, (!canSend || sending) && styles.sendButtonDisabled]}>
-                {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>{canSend ? '送信' : '上限'}</Text>}
+              <TouchableOpacity
+                onPress={() => {
+                  if (!sendButtonDisabled) {
+                    void handleSend();
+                  }
+                }}
+                disabled={sendButtonDisabled}
+                style={[styles.sendButton, sendButtonDisabled && styles.sendButtonDisabled]}
+              >
+                {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>{sendLabel}</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -1051,12 +1092,6 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingTop: 12,
   },
-  quickActionsCollapsed: {
-    height: 0,
-    opacity: 0,
-    marginTop: 0,
-    paddingTop: 0,
-  },
   quickAction: {
     flex: 1,
     flexDirection: 'row',
@@ -1094,13 +1129,13 @@ const styles = StyleSheet.create({
   },
   inputRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 12,
+    alignItems: 'center',
+    gap: 10,
   },
   attachButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1112,9 +1147,9 @@ const styles = StyleSheet.create({
     color: colors.accent,
   },
   favoriteButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1127,19 +1162,20 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    maxHeight: 120,
-    borderRadius: 16,
+    height: 50,
+    borderRadius: 14,
     backgroundColor: '#fff',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 0,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     fontSize: 16,
+    textAlignVertical: 'center',
   },
   sendButton: {
-    height: 40,
-    borderRadius: 12,
-    paddingHorizontal: 18,
+    height: 48,
+    borderRadius: 14,
+    paddingHorizontal: 20,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
