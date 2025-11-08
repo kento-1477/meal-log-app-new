@@ -177,7 +177,7 @@ export default function ChatScreen() {
   };
 
   const quickActions: QuickAction[] = [
-    { key: 'photo', icon: 'camera', label: t('chat.quickActions.photo'), onPress: handleAttach },
+    { key: 'photo', icon: 'camera', label: t('chat.quickActions.photo'), onPress: handlePhotoQuickAction },
     { key: 'favorite', icon: 'star', label: t('chat.quickActions.favorite'), onPress: () => setFavoritesVisible(true) },
   ];
 
@@ -569,7 +569,7 @@ export default function ChatScreen() {
     Keyboard.dismiss();
   };
 
-  const ensureMediaLibraryPermission = async () => {
+  const ensureMediaLibraryPermission = useCallback(async () => {
     const current = mediaPermission ?? (await ImagePicker.getMediaLibraryPermissionsAsync());
     if (current?.granted) {
       return current;
@@ -579,9 +579,9 @@ export default function ChatScreen() {
       return updated ?? current;
     }
     return current;
-  };
+  }, [mediaPermission, requestMediaPermission]);
 
-  const handleAttach = async () => {
+  const handleAttach = useCallback(async () => {
     try {
       const permission = await ensureMediaLibraryPermission();
       if (!permission?.granted) {
@@ -610,7 +610,7 @@ export default function ChatScreen() {
       console.warn('Failed to open media library', error);
       setError('写真の読み込みに失敗しました。もう一度お試しください。');
     }
-  };
+  }, [ensureMediaLibraryPermission, setError, setComposingImage]);
 
   const handlePlusPress = () => {
     const templateLabel = t('chat.actions.insertTemplate');
@@ -638,6 +638,23 @@ export default function ChatScreen() {
       ]);
     }
   };
+  const handlePhotoQuickAction = useCallback(() => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: [t('chat.actions.attachPhoto'), t('common.cancel')],
+          cancelButtonIndex: 1,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 0) {
+            void handleAttach();
+          }
+        },
+      );
+    } else {
+      void handleAttach();
+    }
+  }, [handleAttach, t]);
 
   const handleShareCard = async (payload: NutritionCardPayload, cardKey: string) => {
     try {
