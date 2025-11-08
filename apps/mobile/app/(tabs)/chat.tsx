@@ -113,6 +113,7 @@ export default function ChatScreen() {
   const [limitModalVisible, setLimitModalVisible] = useState(false);
   const [streakModalVisible, setStreakModalVisible] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [bottomSectionHeight, setBottomSectionHeight] = useState(0);
   const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
@@ -670,15 +671,11 @@ export default function ChatScreen() {
     () => (isJapaneseLocale(locale) ? getJapaneseHeadlineStyle() : null),
     [locale],
   );
-  const composerBottomPadding = Math.max(inset.bottom, 12);
-  const keyboardVerticalOffset = Platform.OS === 'ios' ? tabBarHeight : 0;
-
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={keyboardVerticalOffset}
       >
         <Text style={[styles.headerTitle, headerFontStyle, { paddingHorizontal: 16, marginBottom: 16 }]}>{t('chat.header')}</Text>
         {usage ? (
@@ -720,22 +717,15 @@ export default function ChatScreen() {
               />
             )
           }
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(bottomSectionHeight, 120) }]}
           ListFooterComponent={renderEnhancedFooter}
           onContentSizeChange={scrollToEnd}
           showsVerticalScrollIndicator={false}
         />
-        <View style={styles.bottomSection}>
-          {canSend ? (
-            <View style={[styles.quickActionsRow, keyboardVisible && styles.quickActionsHidden]}>
-              {quickActions.map((action) => (
-                <TouchableOpacity key={action.key} style={styles.quickAction} onPress={action.onPress}>
-                  <Feather name={action.icon} size={14} color={colors.textPrimary} />
-                  <Text style={styles.quickActionLabel}>{action.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ) : null}
+        <View
+          style={styles.bottomSection}
+          onLayout={(event) => setBottomSectionHeight(event.nativeEvent.layout.height)}
+        >
           {composingImageUri ? (
             <View style={[styles.previewContainer, keyboardVisible && styles.previewHidden]}>
               <Image source={{ uri: composingImageUri }} style={styles.preview} />
@@ -751,7 +741,23 @@ export default function ChatScreen() {
               </Text>
             </View>
           ) : null}
-          <View style={[styles.composerArea, styles.composerDocked, { paddingBottom: composerBottomPadding }]}>
+          <View
+            style={[
+              styles.quickActionsRow,
+              !canSend && styles.quickActionsCollapsed,
+            ]}
+            pointerEvents={canSend ? 'auto' : 'none'}
+          >
+            {quickActions.map((action) => (
+              <TouchableOpacity key={action.key} style={styles.quickAction} onPress={action.onPress}>
+                <Feather name={action.icon} size={14} color={colors.textPrimary} />
+                <Text style={styles.quickActionLabel}>{action.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View
+            style={[styles.composerArea, styles.composerDocked, { paddingBottom: Math.max(12, inset.bottom) }]}
+          >
             <View style={styles.inputRow}>
               <TouchableOpacity onPress={handleAttach} style={styles.attachButton}>
                 <Text style={styles.attachIcon}>＋</Text>
@@ -1057,10 +1063,11 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingTop: 12,
   },
-  quickActionsHidden: {
+  quickActionsCollapsed: {
     height: 0,
     opacity: 0,
-    marginBottom: 0,
+    marginTop: 0,
+    paddingTop: 0,
   },
   quickAction: {
     flex: 1,
