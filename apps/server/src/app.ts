@@ -88,7 +88,7 @@ export function createApp() {
         } else if (layer.name === 'router' && layer.handle?.stack) {
           const routePath = layer.regexp?.fast_slash
             ? ''
-            : layer.regexp?.source?.replace('^\\/', '/').replace('\/?(?=\/|$)', '') ?? '';
+            : layer.regexp?.source?.replace('^\\/', '/').replace('\\/?(?=\\/|$)', '') ?? '';
           collect(layer.handle.stack, prefix + routePath);
         }
       }

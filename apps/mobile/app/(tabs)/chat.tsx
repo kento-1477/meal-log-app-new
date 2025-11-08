@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -21,6 +22,7 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
 import { getJapaneseHeadlineStyle, isJapaneseLocale } from '@/theme/localeTypography';
@@ -110,6 +112,7 @@ export default function ChatScreen() {
   const [addingFavoriteId, setAddingFavoriteId] = useState<string | null>(null);
   const [limitModalVisible, setLimitModalVisible] = useState(false);
   const [streakModalVisible, setStreakModalVisible] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
@@ -148,6 +151,34 @@ export default function ChatScreen() {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
 
+  const handleTemplateInsert = useCallback(() => {
+    const template = [t('meal.breakfast'), t('meal.lunch'), t('meal.dinner')]
+      .map((label) => `${label}: `)
+      .join('\n');
+    setInput((prev) => {
+      if (!prev.trim()) {
+        return template;
+      }
+      const trimmed = prev.trimEnd();
+      const spacer = trimmed.endsWith('\n') ? '' : '\n\n';
+      return `${trimmed}${spacer}${template}`;
+    });
+    requestAnimationFrame(() => scrollToEnd());
+  }, [t, setInput, scrollToEnd]);
+
+  type QuickAction = {
+    key: string;
+    icon: React.ComponentProps<typeof Feather>['name'];
+    label: string;
+    onPress: () => void;
+  };
+
+  const quickActions: QuickAction[] = [
+    { key: 'photo', icon: 'camera', label: t('chat.quickActions.photo'), onPress: handleAttach },
+    { key: 'favorite', icon: 'star', label: t('chat.quickActions.favorite'), onPress: () => setFavoritesVisible(true) },
+    { key: 'template', icon: 'align-left', label: t('chat.quickActions.template'), onPress: handleTemplateInsert },
+  ];
+
   const favoritesQuery = useQuery({
     queryKey: ['favorites'],
     queryFn: async () => {
@@ -168,6 +199,16 @@ export default function ChatScreen() {
   });
 
   useEffect(() => () => clearNetworkHintTimer(), [clearNetworkHintTimer]);
+  useEffect(() => {
+    const showEvent = Platform.select({ ios: 'keyboardWillShow', android: 'keyboardDidShow', default: 'keyboardDidShow' })!;
+    const hideEvent = Platform.select({ ios: 'keyboardWillHide', android: 'keyboardDidHide', default: 'keyboardDidHide' })!;
+    const show = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const streak = streakQuery.data;
   const hasStreak = Boolean(streak);
@@ -629,39 +670,42 @@ export default function ChatScreen() {
     () => (isJapaneseLocale(locale) ? getJapaneseHeadlineStyle() : null),
     [locale],
   );
+  const composerBottomPadding = Math.max(inset.bottom, 12);
+  const keyboardVerticalOffset = Platform.OS === 'ios' ? tabBarHeight : 0;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <Text style={[styles.headerTitle, headerFontStyle, { paddingHorizontal: 16, marginBottom: 16 }]}>{t('chat.header')}</Text>
-      {usage ? (
-        <View style={styles.usageBanner}>
-          <View style={styles.usageBannerText}>
-            <Text style={styles.usageText}>
-              {userPlan === 'PREMIUM' ? t('usage.plan.standard') : t('usage.plan.free')} ｜{' '}
-              {t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}
-            </Text>
-            {usage.credits > 0 ? (
-              <Text style={styles.usageCredits}>{t('usage.banner.credits', { credits: usage.credits })}</Text>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={keyboardVerticalOffset}
+      >
+        <Text style={[styles.headerTitle, headerFontStyle, { paddingHorizontal: 16, marginBottom: 16 }]}>{t('chat.header')}</Text>
+        {usage ? (
+          <View style={styles.usageBanner}>
+            <View style={styles.usageBannerText}>
+              <Text style={styles.usageText}>
+                {userPlan === 'PREMIUM' ? t('usage.plan.standard') : t('usage.plan.free')} ｜{' '}
+                {t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}
+              </Text>
+              {usage.credits > 0 ? (
+                <Text style={styles.usageCredits}>{t('usage.banner.credits', { credits: usage.credits })}</Text>
+              ) : null}
+            </View>
+            {userPlan === 'FREE' ? (
+              <TouchableOpacity style={styles.usageAction} onPress={handleOpenPaywall}>
+                <Text style={styles.usageActionLabel}>{t('usage.limitModal.purchase')}</Text>
+              </TouchableOpacity>
             ) : null}
           </View>
-          {userPlan === 'FREE' ? (
-            <TouchableOpacity style={styles.usageAction} onPress={handleOpenPaywall}>
-              <Text style={styles.usageActionLabel}>{t('usage.limitModal.purchase')}</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      ) : null}
-      {error ? <ErrorBanner message={error} /> : null}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.flex}
-        keyboardVerticalOffset={tabBarHeight}
-      >
+        ) : null}
+        {error ? <ErrorBanner message={error} /> : null}
         <FlatList
+          style={styles.flex}
           ref={listRef}
           data={filteredTimeline}
           keyExtractor={(item) => item.id}
-          contentInsetAdjustmentBehavior="automatic"
+          contentInsetAdjustmentBehavior="never"
           renderItem={({ item }) =>
             item.type === 'message' ? (
               <ChatBubble message={item.payload} />
@@ -676,39 +720,57 @@ export default function ChatScreen() {
               />
             )
           }
-          contentContainerStyle={[styles.listContent, { paddingBottom: 120 + inset.bottom }]}
+          contentContainerStyle={styles.listContent}
           ListFooterComponent={renderEnhancedFooter}
           onContentSizeChange={scrollToEnd}
           showsVerticalScrollIndicator={false}
         />
-        <View style={[styles.composer, { paddingBottom: 16 }]}>
+        <View style={styles.bottomSection}>
+          {canSend ? (
+            <View style={[styles.quickActionsRow, keyboardVisible && styles.quickActionsHidden]}>
+              {quickActions.map((action) => (
+                <TouchableOpacity key={action.key} style={styles.quickAction} onPress={action.onPress}>
+                  <Feather name={action.icon} size={14} color={colors.textPrimary} />
+                  <Text style={styles.quickActionLabel}>{action.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
           {composingImageUri ? (
-            <View style={styles.previewContainer}>
+            <View style={[styles.previewContainer, keyboardVisible && styles.previewHidden]}>
               <Image source={{ uri: composingImageUri }} style={styles.preview} />
               <TouchableOpacity onPress={() => setComposingImage(null)} style={styles.removeImage}>
                 <Text style={{ color: '#fff' }}>✕</Text>
               </TouchableOpacity>
             </View>
           ) : null}
-          <View style={styles.inputRow}>
-            <TouchableOpacity onPress={handleAttach} style={styles.attachButton}>
-              <Text style={styles.attachIcon}>＋</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setFavoritesVisible(true)} style={styles.favoriteButton}>
-              <Text style={styles.favoriteIcon}>★</Text>
-            </TouchableOpacity>
-            <TextInput
-              style={styles.textInput}
-              placeholder="食事内容を入力..."
-              value={input}
-              onChangeText={setInput}
-              multiline
-            />
-            <TouchableOpacity onPress={handleSend} disabled={sending || !canSend} style={[styles.sendButton, (!canSend || sending) && styles.sendButtonDisabled]}>
-              {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>{canSend ? '送信' : '上限'}</Text>}
-            </TouchableOpacity>
+          {!canSend ? (
+            <View style={styles.limitBanner}>
+              <Text style={styles.limitHint} numberOfLines={2} ellipsizeMode="tail">
+                {t('usage.limitHint')}
+              </Text>
+            </View>
+          ) : null}
+          <View style={[styles.composerArea, styles.composerDocked, { paddingBottom: composerBottomPadding }]}>
+            <View style={styles.inputRow}>
+              <TouchableOpacity onPress={handleAttach} style={styles.attachButton}>
+                <Text style={styles.attachIcon}>＋</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setFavoritesVisible(true)} style={styles.favoriteButton}>
+                <Text style={styles.favoriteIcon}>★</Text>
+              </TouchableOpacity>
+              <TextInput
+                style={styles.textInput}
+                placeholder="食事内容を入力..."
+                value={input}
+                onChangeText={setInput}
+                multiline
+              />
+              <TouchableOpacity onPress={handleSend} disabled={sending || !canSend} style={[styles.sendButton, (!canSend || sending) && styles.sendButtonDisabled]}>
+                {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>{canSend ? '送信' : '上限'}</Text>}
+              </TouchableOpacity>
+            </View>
           </View>
-          {!canSend ? <Text style={styles.limitHint}>{t('usage.limitHint')}</Text> : null}
         </View>
       </KeyboardAvoidingView>
       <Modal
@@ -716,19 +778,41 @@ export default function ChatScreen() {
         animationType="slide"
         onRequestClose={() => setFavoritesVisible(false)}
       >
-        <SafeAreaView style={styles.favoritesModalContainer} edges={['top', 'left', 'right']}>
+        <SafeAreaView
+          style={[
+            styles.favoritesModalContainer,
+            { paddingTop: inset.top + 12, paddingBottom: Math.max(inset.bottom, 16) },
+          ]}
+          edges={['left', 'right']}
+        >
           <View style={styles.favoritesHeader}>
-            <Text style={styles.favoritesTitle}>{t('recentLogs.heading')}</Text>
-            <TouchableOpacity onPress={() => setFavoritesVisible(false)}>
-              <Text style={styles.favoritesClose}>閉じる</Text>
+            <TouchableOpacity
+              onPress={() => setFavoritesVisible(false)}
+              style={styles.favoritesBackButton}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="戻る"
+            >
+              <Feather name="chevron-left" size={20} color={colors.textPrimary} />
+              <Text style={styles.favoritesBackLabel}>戻る</Text>
             </TouchableOpacity>
+            <Text style={styles.favoritesTitle} numberOfLines={1}>
+              {t('recentLogs.heading')}
+            </Text>
+            <View style={styles.favoritesHeaderSpacer} />
           </View>
           {favoritesQuery.isLoading ? (
             <View style={styles.favoritesLoading}>
               <ActivityIndicator color={colors.accent} />
             </View>
           ) : favoritesList.length ? (
-            <ScrollView contentContainerStyle={styles.favoritesList}>
+            <ScrollView
+              contentContainerStyle={[
+                styles.favoritesList,
+                { paddingBottom: Math.max(inset.bottom, 16) + 24 },
+              ]}
+              showsVerticalScrollIndicator={false}
+            >
               {favoritesList.map((favorite) => (
                 <TouchableOpacity
                   key={favorite.id}
@@ -737,7 +821,8 @@ export default function ChatScreen() {
                 >
                   <Text style={styles.favoritesItemName}>{favorite.name}</Text>
                   <Text style={styles.favoritesItemMeta}>
-                    {Math.round(favorite.totals.kcal)} kcal ／ P {formatMacro(favorite.totals.protein_g)}g ／ F {formatMacro(favorite.totals.fat_g)}g ／ C {formatMacro(favorite.totals.carbs_g)}g
+                    {Math.round(favorite.totals.kcal)} kcal ／ P {formatMacro(favorite.totals.protein_g)}g ／ F {formatMacro(favorite.totals.fat_g)}g ／
+                    C {formatMacro(favorite.totals.carbs_g)}g
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -951,6 +1036,48 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  bottomSection: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    gap: 12,
+    backgroundColor: colors.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: -2 },
+    elevation: 6,
+  },
+  quickActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingTop: 12,
+  },
+  quickActionsHidden: {
+    height: 0,
+    opacity: 0,
+    marginBottom: 0,
+  },
+  quickAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  quickActionLabel: {
+    ...textStyles.caption,
+    color: colors.textPrimary,
+    fontWeight: '600',
   },
   enhancedContainer: {
     justifyContent: 'flex-end',
@@ -959,12 +1086,16 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     gap: 12,
   },
-  composer: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+  composerArea: {
+    borderRadius: 20,
     paddingTop: 12,
     paddingHorizontal: 16,
     gap: 8,
+  },
+  composerDocked: {
+    backgroundColor: 'rgba(247,247,250,0.95)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
   inputRow: {
     flexDirection: 'row',
@@ -1030,6 +1161,10 @@ const styles = StyleSheet.create({
     position: 'relative',
     alignSelf: 'flex-start',
   },
+  previewHidden: {
+    height: 0,
+    opacity: 0,
+  },
   preview: {
     width: 120,
     height: 120,
@@ -1044,27 +1179,55 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
+  limitBanner: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
   limitHint: {
     ...textStyles.caption,
     color: colors.textSecondary,
+    textAlign: 'center',
   },
   favoritesModalContainer: {
     flex: 1,
     backgroundColor: colors.background,
+    paddingHorizontal: 16,
   },
   favoritesHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingBottom: 16,
+    gap: 12,
   },
   favoritesTitle: {
     ...textStyles.titleMedium,
+    flex: 1,
+    textAlign: 'center',
   },
-  favoritesClose: {
+  favoritesHeaderSpacer: {
+    width: 52,
+  },
+  favoritesBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    minWidth: 52,
+    height: 44,
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    gap: 4,
+  },
+  favoritesBackLabel: {
     ...textStyles.body,
-    color: colors.accent,
+    color: colors.textPrimary,
     fontWeight: '600',
   },
   favoritesLoading: {
@@ -1073,7 +1236,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   favoritesList: {
-    padding: 16,
+    paddingHorizontal: 0,
+    paddingTop: 8,
     gap: 12,
   },
   favoritesItem: {
