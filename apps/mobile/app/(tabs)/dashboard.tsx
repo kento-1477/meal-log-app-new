@@ -502,10 +502,10 @@ function formatDelta(value: number) {
   return `${sign}${absValue} kcal`;
 }
 
-const LARGE_RING_SIZE = 140;
-const LARGE_STROKE_WIDTH = 12;
-const SMALL_RING_SIZE = 120;
-const SMALL_STROKE_WIDTH = 10;
+const LARGE_RING_SIZE = 132;
+const LARGE_STROKE_WIDTH = 10;
+const SMALL_RING_SIZE = 110;
+const SMALL_STROKE_WIDTH = 9;
 
 interface CalorieRingProps {
   data: MacroRingProps;
@@ -661,7 +661,7 @@ const styles = StyleSheet.create({
   headerLogo: {
     width: 32,
     height: 32,
-    tintColor: colors.textPrimary,
+    resizeMode: 'contain',
   },
   headerTitle: {
     fontSize: 24,
@@ -791,7 +791,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 10 },
-    minHeight: 220,
+    minHeight: 230,
   },
   metricCardTall: {
     minHeight: 240,
@@ -813,7 +813,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
-    minHeight: 220,
+    minHeight: 210,
   },
   macroCardContent: {
     flex: 1,
