@@ -25,7 +25,7 @@
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		CC560836EF325CB9BD6F49C2 /* Pods-MealLog.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MealLog.release.xcconfig"; path = "Target Support Files/Pods-MealLog/Pods-MealLog.release.xcconfig"; sourceTree = "<group>"; };
 		D3E2791E288BD1D1C1E45A2F /* Pods-MealLog.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MealLog.debug.xcconfig"; path = "Target Support Files/Pods-MealLog/Pods-MealLog.debug.xcconfig"; sourceTree = "<group>"; };
-		E2B7FE3A3AA07906C1A2CB36 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = MealLog/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		E2B7FE3A3AA07906C1A2CB36 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = MealLog/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		EB912ED2141764E88C115AA2 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-MealLog/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = MealLog/AppDelegate.swift; sourceTree = "<group>"; };
@@ -120,7 +120,6 @@
 				D3E2791E288BD1D1C1E45A2F /* Pods-MealLog.debug.xcconfig */,
 				CC560836EF325CB9BD6F49C2 /* Pods-MealLog.release.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -341,6 +340,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = MealLog/MealLog.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4WGP26B48H;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -377,6 +377,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = MealLog/MealLog.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4WGP26B48H;
 				INFOPLIST_FILE = MealLog/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (

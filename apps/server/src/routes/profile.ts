@@ -17,6 +17,10 @@ export const profileRouter = Router();
 
 profileRouter.use(requireAuth);
 
+if (process.env.NODE_ENV !== 'production') {
+  console.log('[profileRouter] registered');
+}
+
 profileRouter.get('/profile', async (req, res, next) => {
   try {
     const userId = req.session.userId!;

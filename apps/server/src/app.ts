@@ -21,6 +21,8 @@ import referralRouter from './routes/referral.js';
 export function createApp() {
   const app = express();
 
+  console.log('[app] NODE_ENV:', env.NODE_ENV);
+
   app.disable('x-powered-by');
 
   app.use(
@@ -73,6 +75,27 @@ export function createApp() {
   app.use('/debug', debugRouter);
 
   app.use(errorHandler);
+
+  if (env.NODE_ENV !== 'production') {
+    const routes: string[] = [];
+    const collect = (stack: any, prefix = '') => {
+      if (!Array.isArray(stack)) return;
+      for (const layer of stack) {
+        if (layer.route) {
+          const path = prefix + layer.route.path;
+          const methods = Object.keys(layer.route.methods).join(',');
+          routes.push(`${methods} ${path}`);
+        } else if (layer.name === 'router' && layer.handle?.stack) {
+          const routePath = layer.regexp?.fast_slash
+            ? ''
+            : layer.regexp?.source?.replace('^\\/', '/').replace('\/?(?=\/|$)', '') ?? '';
+          collect(layer.handle.stack, prefix + routePath);
+        }
+      }
+    };
+    collect((app as any)._router.stack);
+    console.log('[app] registered routes:', routes);
+  }
 
   return app;
 }

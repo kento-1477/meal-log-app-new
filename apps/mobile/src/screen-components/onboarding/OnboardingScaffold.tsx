@@ -30,6 +30,9 @@ interface Props {
   nextDisabled?: boolean;
   onBack?: () => void;
   backLabel?: string;
+  headerActionLabel?: string;
+  onHeaderAction?: () => void;
+  headerActionPosition?: 'left' | 'right';
   footer?: ReactNode;
   accent?: ReactNode;
 }
@@ -44,6 +47,9 @@ export function OnboardingScaffold({
   nextDisabled,
   onBack,
   backLabel,
+  headerActionLabel,
+  onHeaderAction,
+  headerActionPosition = 'right',
   footer,
   accent,
 }: Props) {
@@ -55,6 +61,41 @@ export function OnboardingScaffold({
   const isJapanese = isJapaneseLocale(locale);
 
   const keyboardOffset = Platform.OS === 'ios' ? insets.top + 24 : 0;
+  const hasHeaderAction = Boolean(headerActionLabel && onHeaderAction);
+  const showTopAction = hasHeaderAction && headerActionPosition === 'left';
+  const showRightAction = hasHeaderAction && !showTopAction;
+
+  const renderHeaderAction = (placement: 'right' | 'top') => {
+    if (!headerActionLabel || !onHeaderAction) {
+      return null;
+    }
+
+    if (placement === 'top') {
+      return (
+        <TouchableOpacity
+          onPress={onHeaderAction}
+          style={styles.headerTopButton}
+          accessibilityRole="button"
+          accessibilityLabel={headerActionLabel}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.headerTopButtonText}>{headerActionLabel}</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <TouchableOpacity
+        onPress={onHeaderAction}
+        style={styles.headerAction}
+        accessibilityRole="button"
+        accessibilityLabel={headerActionLabel}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.headerActionText}>{headerActionLabel}</Text>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <LinearGradient colors={[colors.background, '#ffffff']} style={styles.gradient}>
@@ -65,7 +106,10 @@ export function OnboardingScaffold({
       >
         <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top || 12 }]}>
           <View style={styles.wrapper}>
-              <View style={styles.header}>
+            <View style={styles.headerContainer}>
+              {showTopAction ? <View style={styles.headerTopRow}>{renderHeaderAction('top')}</View> : null}
+
+              <View style={styles.headerRow}>
                 {onBack ? (
                   <TouchableOpacity
                     onPress={onBack}
@@ -91,7 +135,14 @@ export function OnboardingScaffold({
                   </View>
                   <Text style={styles.stepText}>{`${index + 1}/${total}`}</Text>
                 </View>
+
+                {showRightAction ? (
+                  renderHeaderAction('right')
+                ) : (
+                  <View style={styles.headerActionPlaceholder} />
+                )}
               </View>
+            </View>
 
               <ScrollView
                 style={styles.scroll}
@@ -142,9 +193,15 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 24,
   },
-  header: {
+  headerContainer: {
+    gap: 12,
     paddingTop: 12,
     paddingBottom: 20,
+  },
+  headerTopRow: {
+    alignItems: 'flex-end',
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
@@ -201,6 +258,40 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: '600',
     fontFamily: fontFamilies.semibold,
+  },
+  headerAction: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  headerActionPlaceholder: {
+    minWidth: 44,
+    height: 44,
+  },
+  headerTopButton: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 10,
+    backgroundColor: 'transparent',
+  },
+  headerTopButtonText: {
+    ...textStyles.caption,
+    color: colors.accent,
+    fontFamily: fontFamilies.semibold,
+  },
+  headerActionText: {
+    ...textStyles.caption,
+    fontFamily: fontFamilies.semibold,
+    color: colors.textPrimary,
   },
   backChip: {
     width: 44,
