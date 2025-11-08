@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -13,7 +15,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { DashboardPeriod, MealLogSummary, MealLogRange, DashboardSummary, DashboardTargets } from '@meal-log/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDashboardSummary, type MacroComparison } from '@/features/dashboard/useDashboardSummary';
-import { PeriodSelector } from '@/features/dashboard/components/PeriodSelector';
 import { CalorieLineChart } from '@/features/dashboard/components/CalorieLineChart';
 import { MealPeriodBreakdown } from '@/features/dashboard/components/MealPeriodBreakdown';
 
@@ -30,12 +31,10 @@ import { useSessionStore } from '@/store/session';
 import {
   logout,
   getMealLogs,
-  getStreak,
   createFavoriteMeal,
   deleteFavoriteMeal,
   getDashboardSummary,
 } from '@/services/api';
-import { cacheStreak } from '@/services/streak-storage';
 import { useTranslation } from '@/i18n';
 import { buildFavoriteDraftFromSummary } from '@/utils/favorites';
 import { DateTime } from 'luxon';
@@ -44,9 +43,10 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AuroraBackground } from '@/components/AuroraBackground';
-import { BrandHeader } from '@/components/BrandHeader';
 
 const DEFAULT_PERIOD: DashboardPeriod = 'today';
+const brandLogo = require('../../assets/brand/logo.png');
+type SegmentKey = 'today' | 'week' | 'month';
 
 const MACRO_ORDER: Array<MacroComparison['key']> = ['protein_g', 'carbs_g', 'fat_g'];
 const MACRO_LABEL_KEY: Record<MacroComparison['key'], string> = {
@@ -65,6 +65,10 @@ type Translate = (key: string, params?: Record<string, string | number>) => stri
 export default function DashboardScreen() {
   const router = useRouter();
   const [period, setPeriod] = useState<DashboardPeriod>(DEFAULT_PERIOD);
+  const [segmentKey, setSegmentKey] = useState<SegmentKey>('today');
+  const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null);
+  const [sortOrder, setSortOrder] = useState<'calorieFirst' | 'macroFirst'>('calorieFirst');
+  const [sortModalVisible, setSortModalVisible] = useState(false);
   const [logsRange, setLogsRange] = useState<MealLogRange>('today');
   const status = useSessionStore((state) => state.status);
   const userPlan = useSessionStore((state) => state.user?.plan ?? 'FREE');
@@ -75,9 +79,47 @@ export default function DashboardScreen() {
   const { t, locale } = useTranslation();
   const premiumState = usePremiumStore((state) => state.status);
   const isPremium = premiumState?.isPremium ?? userPlan === 'PREMIUM';
+  const segmentOptions = useMemo(
+    () => [
+      { key: 'today' as SegmentKey, label: t('dashboard.segment.today') },
+      { key: 'week' as SegmentKey, label: t('dashboard.segment.week') },
+      { key: 'month' as SegmentKey, label: t('dashboard.segment.month') },
+    ],
+    [t],
+  );
+
+  const sortOptions = useMemo(
+    () => [
+      { key: 'calorieFirst' as const, label: t('dashboard.sort.option.calorieFirst') },
+      { key: 'macroFirst' as const, label: t('dashboard.sort.option.macroFirst') },
+    ],
+    [t],
+  );
+
+  const handleSegmentChange = (key: SegmentKey) => {
+    setSegmentKey(key);
+    if (key === 'today') {
+      setPeriod('today');
+      setCustomRange(null);
+    } else if (key === 'week') {
+      setPeriod('thisWeek');
+      setCustomRange(null);
+    } else {
+      const now = DateTime.now();
+      const startDate = now.startOf('month').toISODate();
+      const endDate = now.endOf('day').toISODate();
+      setPeriod('custom');
+      if (startDate && endDate) {
+        setCustomRange({ from: startDate, to: endDate });
+      } else {
+        setCustomRange(null);
+      }
+    }
+  };
 
   const { data, isLoading, isFetching, error, refetch, isStaleFromCache } = useDashboardSummary(period, {
     enabled: isAuthenticated,
+    range: customRange ?? undefined,
   });
 
   const showEmpty = data ? !data.calories.hasData : false;
@@ -88,17 +130,6 @@ export default function DashboardScreen() {
     queryFn: () => getMealLogs({ range: logsRange, limit: 100 }),
     enabled: isAuthenticated,
   });
-
-const streakQuery = useQuery({
-  queryKey: ['streak', locale],
-  queryFn: async () => {
-    const response = await getStreak();
-    await cacheStreak(response.streak);
-    return response.streak;
-  },
-  enabled: isAuthenticated,
-  staleTime: 1000 * 60 * 15,
-});
 
   const queryClient = useQueryClient();
   const [favoriteToggleId, setFavoriteToggleId] = useState<string | null>(null);
@@ -185,19 +216,42 @@ const streakQuery = useQuery({
           refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => refetch()} tintColor={colors.accent} />}
           showsVerticalScrollIndicator={false}
         >
-          <BrandHeader
-            title={t('dashboard.title')}
-            subtitle={periodLabel(period, t)}
-            actionLabel={isAuthenticated ? t('dashboard.logout') : undefined}
-            onAction={isAuthenticated ? handleLogout : undefined}
-          />
-          <View style={styles.metaRow}>
-            <PeriodSelector period={period} onChange={setPeriod} />
-            {isAuthenticated && streakQuery.data ? (
-              <View style={styles.streakChip}>
-                <Text style={styles.streakLabel}>🔥 {streakQuery.data.current} {t('streak.days')}</Text>
+          <View style={styles.headerBlock}>
+            <View style={styles.headerRow}>
+              <View style={styles.headerLead}>
+                <Image source={brandLogo} style={styles.headerLogo} />
+                <Text style={styles.headerTitle} numberOfLines={1} ellipsizeMode="tail">
+                  {t('dashboard.title')}
+                </Text>
               </View>
-            ) : null}
+              {isAuthenticated ? (
+                <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+                  <Text style={styles.logoutText}>{t('dashboard.logout')}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+          <View style={styles.segmentRow}>
+            <View style={styles.segmentGroup}>
+              {segmentOptions.map((option) => {
+                const active = option.key === segmentKey;
+                return (
+                  <TouchableOpacity
+                    key={option.key}
+                    style={[styles.segmentButton, active && styles.segmentButtonActive]}
+                    onPress={() => handleSegmentChange(option.key)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                  >
+                    <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>{option.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TouchableOpacity style={styles.sortButton} onPress={() => setSortModalVisible(true)} accessibilityRole="button">
+              <Feather name="arrow-up" size={14} color={colors.textPrimary} />
+              <Feather name="arrow-down" size={14} color={colors.textPrimary} />
+            </TouchableOpacity>
           </View>
 
         {!isAuthenticated ? (
@@ -220,30 +274,42 @@ const streakQuery = useQuery({
 
             {ringData ? (
               <>
-                <View style={styles.topRow}>
-                  <View style={styles.calorieRingContainer}>
-                    <CalorieRing data={ringData.total} t={t} />
-                  </View>
-                  {isPremium ? (
-                    <MonthlyDeficitCard summary={data.summary} targets={data.targets} t={t} locale={locale} />
-                  ) : (
-                    <View style={[styles.monthlyCard, styles.lockedCard]}>
-                      <View style={styles.premiumLockHeader}>
-                        <Feather name="lock" size={16} color={colors.textSecondary} />
-                        <Text style={styles.lockedTitle}>{t('dashboard.premiumLocked.monthlyTitle')}</Text>
+                {(sortOrder === 'calorieFirst' ? ['primary', 'macro'] : ['macro', 'primary']).map((section) => {
+                  if (section === 'primary') {
+                    return (
+                      <View style={styles.metricRow} key="primary">
+                        <View style={[styles.metricCardShell, styles.metricCardTall]}>
+                          <CalorieRing data={ringData.total} t={t} />
+                        </View>
+                        <View style={[styles.metricCardShell, styles.metricCardTall]}>
+                          {isPremium ? (
+                            <MonthlyDeficitCard summary={data.summary} targets={data.targets} t={t} locale={locale} />
+                          ) : (
+                            <View style={[styles.metricCardContent, styles.lockedCard]}>
+                              <View style={styles.premiumLockHeader}>
+                                <Feather name="lock" size={16} color={colors.textSecondary} />
+                                <Text style={styles.lockedTitle}>{t('dashboard.premiumLocked.monthlyTitle')}</Text>
+                              </View>
+                              <Text style={styles.lockedSubtitle}>{t('dashboard.premiumLocked.monthlyDescription')}</Text>
+                              <TouchableOpacity style={styles.lockedButton} onPress={() => router.push('/paywall')}>
+                                <Text style={styles.lockedButtonLabel}>{t('dashboard.premiumLocked.cta')}</Text>
+                              </TouchableOpacity>
+                            </View>
+                          )}
+                        </View>
                       </View>
-                      <Text style={styles.lockedSubtitle}>{t('dashboard.premiumLocked.monthlyDescription')}</Text>
-                      <TouchableOpacity style={styles.lockedButton} onPress={() => router.push('/paywall')}>
-                        <Text style={styles.lockedButtonLabel}>{t('dashboard.premiumLocked.cta')}</Text>
-                      </TouchableOpacity>
+                    );
+                  }
+                  return (
+                    <View style={styles.macroRow} key="macro">
+                      {ringData.macros.map((macro) => (
+                        <View style={styles.macroCardShell} key={`${macro.label}-${macro.colorToken}`}>
+                          <MacroRing data={macro} t={t} />
+                        </View>
+                      ))}
                     </View>
-                  )}
-                </View>
-                <View style={styles.macroRow}>
-                  {ringData.macros.map((macro) => (
-                    <MacroRing key={macro.label} data={macro} t={t} />
-                  ))}
-                </View>
+                  );
+                })}
               </>
             ) : null}
 
@@ -276,25 +342,33 @@ const streakQuery = useQuery({
         )}
         </ScrollView>
       </SafeAreaView>
+      <Modal transparent visible={sortModalVisible} animationType="fade" onRequestClose={() => setSortModalVisible(false)}>
+        <View style={styles.sortModalBackdrop}>
+          <View style={styles.sortModalCard}>
+            <Text style={styles.sortModalTitle}>{t('dashboard.sort.title')}</Text>
+            {sortOptions.map((option) => {
+              const active = option.key === sortOrder;
+              return (
+                <TouchableOpacity
+                  key={option.key}
+                  style={[styles.sortOption, active && styles.sortOptionActive]}
+                  onPress={() => {
+                    setSortOrder(option.key);
+                    setSortModalVisible(false);
+                  }}
+                >
+                  <Text style={[styles.sortOptionLabel, active && styles.sortOptionLabelActive]}>{option.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity onPress={() => setSortModalVisible(false)}>
+              <Text style={styles.sortModalClose}>{t('dashboard.sort.close')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </AuroraBackground>
   );
-}
-
-function periodLabel(period: DashboardPeriod, t: (key: string, params?: Record<string, string | number>) => string) {
-  switch (period) {
-    case 'today':
-      return t('period.today');
-    case 'yesterday':
-      return t('period.yesterday');
-    case 'thisWeek':
-      return t('period.thisWeek');
-    case 'lastWeek':
-      return t('period.lastWeek');
-    case 'custom':
-      return t('period.custom');
-    default:
-      return '';
-  }
 }
 
 interface MonthlyDeficitCardProps {
@@ -360,7 +434,7 @@ function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardP
   const isLoading = monthlySummaryQuery.isLoading && !monthlySummary;
 
   return (
-    <View style={styles.monthlyCard}>
+    <View style={[styles.metricCardContent, styles.monthlyCard]}>
       <View style={styles.monthlyHeader}>
         <Feather name="unlock" size={14} color={colors.success} />
         <Text style={styles.monthlyWhereLabel}>{t('dashboard.monthlyDeficit.premiumOnly')}</Text>
@@ -430,8 +504,8 @@ function formatDelta(value: number) {
 
 const LARGE_RING_SIZE = 140;
 const LARGE_STROKE_WIDTH = 12;
-const SMALL_RING_SIZE = 110;
-const SMALL_STROKE_WIDTH = 9;
+const SMALL_RING_SIZE = 120;
+const SMALL_STROKE_WIDTH = 10;
 
 interface CalorieRingProps {
   data: MacroRingProps;
@@ -443,7 +517,7 @@ function CalorieRing({ data, t }: CalorieRingProps) {
   const percentage = Math.round(state.progress * 100);
 
   return (
-    <View style={styles.calorieCard}>
+    <View style={styles.metricCardContent}>
       <Text style={styles.cardLabel}>{data.label}</Text>
       <View style={styles.ringWrapper}>
         <Ring
@@ -484,7 +558,7 @@ function MacroRing({ data, t }: MacroRingComponentProps) {
   const percentage = Math.round(state.progress * 100);
 
   return (
-    <View style={styles.macroCard}>
+    <View style={styles.macroCardContent}>
       <Text style={styles.cardLabel}>{data.label}</Text>
       <View style={styles.ringWrapper}>
         <Ring
@@ -564,32 +638,98 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    paddingHorizontal: spacing.xl,
-    paddingBottom: 160,
-    gap: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl * 4,
+    gap: spacing.md,
   },
-  metaRow: {
+  headerBlock: {
+    paddingBottom: 12,
+  },
+  headerRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.md,
+    justifyContent: 'space-between',
+    gap: spacing.md,
   },
-  streakChip: {
-    borderRadius: 999,
-    paddingHorizontal: spacing.md,
+  headerLead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    flex: 1,
+  },
+  headerLogo: {
+    width: 32,
+    height: 32,
+    tintColor: colors.textPrimary,
+  },
+  headerTitle: {
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    flexShrink: 1,
+  },
+  logoutButton: {
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
-    backgroundColor: colors.surface,
+  },
+  logoutText: {
+    ...textStyles.caption,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  segmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: 4,
+  },
+  segmentGroup: {
+    flexDirection: 'row',
+    flex: 1,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 999,
+    padding: 4,
+    gap: 4,
+  },
+  segmentButton: {
+    flex: 1,
+    borderRadius: 999,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentButtonActive: {
+    backgroundColor: colors.surfaceStrong,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  segmentLabel: {
+    ...textStyles.caption,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  segmentLabelActive: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  sortButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-  },
-  streakLabel: {
-    ...textStyles.caption,
-    color: colors.accent,
-    fontWeight: '600',
+    backgroundColor: colors.surfaceStrong,
+    alignItems: 'center',
+    justifyContent: 'space-evenly',
+    flexDirection: 'column',
   },
   dashboardBody: {
     gap: spacing.lg,
+    paddingTop: spacing.sm,
   },
   premiumLockHeader: {
     flexDirection: 'row',
@@ -619,7 +759,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   lockedCard: {
-    opacity: 0.4,
+    opacity: 0.85,
     justifyContent: 'center',
     alignItems: 'flex-start',
     gap: spacing.sm,
@@ -633,45 +773,55 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceStrong,
     borderRadius: 16,
     padding: spacing.md,
     gap: spacing.md,
   },
-  topRow: {
+  metricRow: {
     flexDirection: 'row',
     gap: spacing.md,
   },
-  calorieRingContainer: {
+  metricCardShell: {
     flex: 1,
+    borderRadius: 16,
+    padding: spacing.md,
+    backgroundColor: colors.surfaceStrong,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    minHeight: 220,
   },
-  calorieCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.lg,
-    alignItems: 'center',
+  metricCardTall: {
+    minHeight: 240,
+  },
+  metricCardContent: {
+    flex: 1,
     gap: spacing.md,
   },
   macroRow: {
     flexDirection: 'row',
     gap: spacing.md,
   },
-  macroCard: {
+  macroCardShell: {
     flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.lg,
+    borderRadius: 16,
+    padding: spacing.md,
+    backgroundColor: colors.surfaceStrong,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    minHeight: 220,
+  },
+  macroCardContent: {
+    flex: 1,
     alignItems: 'center',
     gap: spacing.sm,
   },
   monthlyCard: {
     flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 24,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
     gap: spacing.md,
   },
   cardLabel: {
