@@ -671,14 +671,19 @@ export default function ChatScreen() {
     const assistantCard = enhancedExchange.assistant?.card ?? null;
     const assistantCardId = enhancedExchange.assistant ? `${enhancedExchange.assistant.id}-card` : null;
 
+    const assistantHasCard = Boolean(enhancedExchange.assistant?.card);
+    const assistantBubbleMessage =
+      assistantHasCard && enhancedExchange.assistant
+        ? { ...enhancedExchange.assistant, text: t('chat.recordComplete') }
+        : enhancedExchange.assistant;
     return (
       <View style={[styles.enhancedContainer, { minHeight: enhancedContainerMinHeight }]}
         key={enhancedExchange.user.id}
       >
         <ChatBubble message={enhancedExchange.user} />
-        {enhancedExchange.assistant ? (
+        {assistantBubbleMessage ? (
           <>
-            <ChatBubble message={enhancedExchange.assistant} />
+            <ChatBubble message={assistantBubbleMessage} />
             {assistantCard && assistantCardId ? (
               <NutritionCard
                 payload={assistantCard}
