@@ -25,10 +25,11 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
-import { getJapaneseHeadlineStyle, isJapaneseLocale } from '@/theme/localeTypography';
 import { ChatBubble } from '@/components/ChatBubble';
 import { NutritionCard } from '@/components/NutritionCard';
 import { ErrorBanner } from '@/components/ErrorBanner';
+import { AuroraBackground } from '@/components/AuroraBackground';
+import { BrandHeader } from '@/components/BrandHeader';
 import { useChatStore } from '@/store/chat';
 import { useSessionStore } from '@/store/session';
 import {
@@ -667,36 +668,37 @@ export default function ChatScreen() {
     );
   };
 
-  const headerFontStyle = React.useMemo(
-    () => (isJapaneseLocale(locale) ? getJapaneseHeadlineStyle() : null),
-    [locale],
-  );
+  const planLabel = userPlan === 'PREMIUM' ? t('usage.plan.standard') : t('usage.plan.free');
+  const headerSubtitle = usage ? `${planLabel} ｜ ${t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}` : planLabel;
+
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <Text style={[styles.headerTitle, headerFontStyle, { paddingHorizontal: 16, marginBottom: 16 }]}>{t('chat.header')}</Text>
-        {usage ? (
-          <View style={styles.usageBanner}>
-            <View style={styles.usageBannerText}>
-              <Text style={styles.usageText}>
-                {userPlan === 'PREMIUM' ? t('usage.plan.standard') : t('usage.plan.free')} ｜{' '}
-                {t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}
-              </Text>
-              {usage.credits > 0 ? (
-                <Text style={styles.usageCredits}>{t('usage.banner.credits', { credits: usage.credits })}</Text>
-              ) : null}
-            </View>
-            {userPlan === 'FREE' ? (
-              <TouchableOpacity style={styles.usageAction} onPress={handleOpenPaywall}>
-                <Text style={styles.usageActionLabel}>{t('usage.limitModal.purchase')}</Text>
-              </TouchableOpacity>
+    <AuroraBackground style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.headerWrap}>
+            <BrandHeader
+              title={t('chat.header')}
+              subtitle={headerSubtitle}
+              actionLabel={userPlan === 'FREE' ? t('usage.limitModal.purchase') : undefined}
+              onAction={userPlan === 'FREE' ? handleOpenPaywall : undefined}
+            />
+            {usage ? (
+              <View style={styles.statusPillRow}>
+                <View style={styles.statusPill}>
+                  <Text style={styles.statusLabel}>{t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}</Text>
+                </View>
+                {usage.credits > 0 ? (
+                  <View style={styles.statusPill}>
+                    <Text style={styles.statusLabel}>{t('usage.banner.credits', { credits: usage.credits })}</Text>
+                  </View>
+                ) : null}
+              </View>
             ) : null}
           </View>
-        ) : null}
-        {error ? <ErrorBanner message={error} /> : null}
+          {error ? <ErrorBanner message={error} /> : null}
         <FlatList
           style={styles.flex}
           ref={listRef}
@@ -897,6 +899,7 @@ export default function ChatScreen() {
         </View>
       </Modal>
     </SafeAreaView>
+    </AuroraBackground>
   );
 }
 
@@ -953,47 +956,30 @@ function formatMacro(value: number) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
-  headerTitle: {
-    ...textStyles.titleLarge,
-    color: colors.textPrimary,
+  headerWrap: {
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
-  usageBanner: {
+  statusPillRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    marginBottom: 8,
-    gap: 12,
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
-  usageBannerText: {
-    flex: 1,
-    gap: 4,
-  },
-  usageText: {
+  statusLabel: {
     ...textStyles.caption,
-    color: colors.textSecondary,
-  },
-  usageCredits: {
-    ...textStyles.caption,
-    color: colors.accent,
-  },
-  usageAction: {
-    backgroundColor: colors.accent,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    minWidth: 120,
-    alignItems: 'center',
-  },
-  usageActionLabel: {
-    ...textStyles.caption,
-    color: '#fff',
     fontWeight: '600',
+    color: colors.textPrimary,
   },
   usageModalBackdrop: {
     flex: 1,
@@ -1041,15 +1027,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 24,
     paddingBottom: 24,
   },
   bottomSection: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 24,
     paddingTop: 12,
     paddingBottom: 12,
     gap: 12,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surfaceMuted,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     shadowColor: '#000',

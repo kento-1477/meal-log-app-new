@@ -1,27 +1,26 @@
 import { useMemo } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useTranslation } from '@/i18n';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
-import { getJapaneseHeadlineStyle, isJapaneseLocale } from '@/theme/localeTypography';
 import { useSessionStore } from '@/store/session';
 import { usePremiumStatus } from '@/hooks/usePremiumStatus';
 import { SUPPORT_EMAIL } from '@/config/legal';
 import appManifest from '../../app.json';
+import { AuroraBackground } from '@/components/AuroraBackground';
+import { BrandHeader } from '@/components/BrandHeader';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
   const user = useSessionStore((state) => state.user);
   const { status: premiumStatus } = usePremiumStatus();
   const versionLabel = appManifest?.expo?.version ?? '1.0.0';
-
-  const screenTitleStyle = useMemo(() => (isJapaneseLocale(locale) ? getJapaneseHeadlineStyle() : null), [locale]);
 
   const menuItems = useMemo(
     () => [
@@ -65,10 +64,15 @@ export default function SettingsScreen() {
   };
 
   return (
-    <LinearGradient colors={[colors.background, '#ffffff']} style={styles.gradient}>
+    <AuroraBackground>
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <Text style={[styles.screenTitle, screenTitleStyle]}>{t('settings.title')}</Text>
+          <BrandHeader
+            title={t('settings.title')}
+            subtitle={user?.email ?? t('settings.profile.subtitle')}
+            actionLabel={t('settings.invite.cta')}
+            onAction={() => router.push('/referral-status')}
+          />
 
           <TouchableOpacity style={styles.profileCard} activeOpacity={0.8} onPress={() => router.push('/settings/account')}>
             <View style={styles.avatarCircle}>
@@ -91,7 +95,7 @@ export default function SettingsScreen() {
                 : t('settings.profile.subtitle')}
             </Text>
             </View>
-            <Feather name="chevron-right" size={20} color={colors.textSecondary} />
+              <Feather name="chevron-right" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.inviteCard} activeOpacity={0.9} onPress={() => router.push('/referral-status')}>
@@ -143,29 +147,21 @@ export default function SettingsScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
-    </LinearGradient>
+    </AuroraBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  gradient: {
-    flex: 1,
-  },
   safeArea: {
     flex: 1,
   },
   content: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xl * 2,
     gap: spacing.lg,
   },
-  screenTitle: {
-    ...textStyles.heading,
-    fontSize: 34,
-    color: colors.textPrimary,
-  },
   profileCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surfaceStrong,
     borderRadius: 24,
     padding: spacing.lg,
     flexDirection: 'row',
@@ -181,7 +177,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#f3f4f8',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -226,6 +222,7 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 12 },
     elevation: 3,
+    backgroundColor: colors.surfaceStrong,
   },
   inviteGradient: {
     padding: spacing.lg,
@@ -266,7 +263,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   menuCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surfaceStrong,
     borderRadius: 24,
     paddingVertical: spacing.sm,
     shadowColor: colors.shadow,
@@ -286,7 +283,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#f3f4f8',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -301,7 +298,7 @@ const styles = StyleSheet.create({
     marginLeft: spacing.lg + 36,
   },
   sectionCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surfaceStrong,
     borderRadius: 24,
     padding: spacing.lg,
     gap: spacing.md,

@@ -10,12 +10,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
 import { GlassCard } from '@/components/GlassCard';
+import { AuroraBackground } from '@/components/AuroraBackground';
+import { BrandHeader } from '@/components/BrandHeader';
 import { login } from '@/services/api';
 import { useSessionStore } from '@/store/session';
 import { useTranslation } from '@/i18n';
@@ -73,57 +75,56 @@ export default function LoginScreen() {
   };
 
   return (
-    <LinearGradient colors={[colors.background, '#ffffff']} style={styles.container}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.inner}>
-        <View style={styles.header}> 
-          <Text style={styles.title}>{t('login.title')}</Text>
-          <Text style={styles.subtitle}>{t('login.subtitle')}</Text>
-        </View>
-        <GlassCard>
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>{t('login.emailLabel')}</Text>
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              inputMode="email"
-              autoCapitalize="none"
-              style={styles.input}
-              placeholder={t('login.emailPlaceholder')}
-            />
-          </View>
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>{t('login.passwordLabel')}</Text>
-            <View style={styles.passwordRow}>
+    <AuroraBackground style={styles.container}>
+      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.inner}>
+          <BrandHeader title={t('login.title')} subtitle={t('login.subtitle')} align="center" />
+          <GlassCard style={styles.formCard}>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>{t('login.emailLabel')}</Text>
               <TextInput
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                style={[styles.input, styles.passwordInput]}
-                placeholder={t('login.passwordPlaceholder')}
+                value={email}
+                onChangeText={setEmail}
+                inputMode="email"
+                autoCapitalize="none"
+                style={styles.input}
+                placeholder={t('login.emailPlaceholder')}
               />
-              <TouchableOpacity
-                style={styles.visibilityToggle}
-                onPress={() => setShowPassword((prev) => !prev)}
-                accessibilityRole="button"
-                accessibilityLabel={showPassword ? t('login.hidePassword') : t('login.showPassword')}
-              >
-                <Feather name={showPassword ? 'eye-off' : 'eye'} size={18} color={colors.textSecondary} />
+            </View>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>{t('login.passwordLabel')}</Text>
+              <View style={styles.passwordRow}>
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  style={[styles.input, styles.passwordInput]}
+                  placeholder={t('login.passwordPlaceholder')}
+                />
+                <TouchableOpacity
+                  style={styles.visibilityToggle}
+                  onPress={() => setShowPassword((prev) => !prev)}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+                >
+                  <Feather name={showPassword ? 'eye-off' : 'eye'} size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotPasswordLink}>
+                <Text style={styles.forgotPasswordText}>{t('login.forgotPassword')}</Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotPasswordLink}>
-              <Text style={styles.forgotPasswordText}>{t('login.forgotPassword')}</Text>
-            </TouchableOpacity>
-          </View>
-          {error ? <Text style={styles.error}>⚠️ {error}</Text> : null}
-          <View style={{ marginTop: 24 }}>
-            <PrimaryButton label={t('login.submit')} onPress={handleLogin} loading={loading} />
-          </View>
+            {error ? <Text style={styles.error}>⚠️ {error}</Text> : null}
+            <View style={styles.primaryAction}>
+              <PrimaryButton label={t('login.submit')} onPress={handleLogin} loading={loading} />
+            </View>
+          </GlassCard>
           <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/register')}>
             <Text style={styles.secondaryButtonLabel}>{t('login.register')}</Text>
           </TouchableOpacity>
-        </GlassCard>
-      </KeyboardAvoidingView>
-    </LinearGradient>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </AuroraBackground>
   );
 }
 
@@ -131,23 +132,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  safe: {
+    flex: 1,
+  },
   inner: {
     flex: 1,
-    padding: 24,
-    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingBottom: 32,
+    justifyContent: 'space-between',
   },
-  header: {
-    marginBottom: 32,
+  formCard: {
+    paddingVertical: 28,
   },
-  title: {
-    ...textStyles.titleLarge,
-    fontSize: 36,
-    color: colors.textPrimary,
-  },
-  subtitle: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    marginTop: 12,
+  primaryAction: {
+    marginTop: 24,
   },
   formGroup: {
     marginBottom: 18,
@@ -192,7 +190,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   secondaryButton: {
-    marginTop: 16,
+    marginTop: 24,
     paddingVertical: 12,
     alignItems: 'center',
   },

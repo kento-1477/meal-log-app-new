@@ -26,7 +26,6 @@ import { RecentLogsList } from '@/features/dashboard/components/RecentLogsList';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
-import { getJapaneseHeadlineStyle, isJapaneseLocale } from '@/theme/localeTypography';
 import { useSessionStore } from '@/store/session';
 import {
   logout,
@@ -44,6 +43,8 @@ import { usePremiumStore } from '@/store/premium';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { AuroraBackground } from '@/components/AuroraBackground';
+import { BrandHeader } from '@/components/BrandHeader';
 
 const DEFAULT_PERIOD: DashboardPeriod = 'today';
 
@@ -72,7 +73,6 @@ export default function DashboardScreen() {
   const setUsage = useSessionStore((state) => state.setUsage);
   const isAuthenticated = status === 'authenticated';
   const { t, locale } = useTranslation();
-  const headlineStyle = useMemo(() => (isJapaneseLocale(locale) ? getJapaneseHeadlineStyle() : null), [locale]);
   const premiumState = usePremiumStore((state) => state.status);
   const isPremium = premiumState?.isPremium ?? userPlan === 'PREMIUM';
 
@@ -177,29 +177,28 @@ const streakQuery = useQuery({
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => refetch()} tintColor={colors.accent} />}
-      >
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={[styles.title, headlineStyle]}>{t('dashboard.title')}</Text>
-            <Text style={styles.subtitle}>{periodLabel(period, t)}</Text>
-            {isAuthenticated && streakQuery.data ? (
-              <Text style={styles.streakBadge}>🔥 {streakQuery.data.current} {t('streak.days')}</Text>
-            ) : null}
-          </View>
-          <View style={styles.headerActions}>
+    <AuroraBackground>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.content}
+          refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => refetch()} tintColor={colors.accent} />}
+          showsVerticalScrollIndicator={false}
+        >
+          <BrandHeader
+            title={t('dashboard.title')}
+            subtitle={periodLabel(period, t)}
+            actionLabel={isAuthenticated ? t('dashboard.logout') : undefined}
+            onAction={isAuthenticated ? handleLogout : undefined}
+          />
+          <View style={styles.metaRow}>
             <PeriodSelector period={period} onChange={setPeriod} />
-            {isAuthenticated ? (
-              <Text style={styles.logoutLink} onPress={handleLogout}>
-                {t('dashboard.logout')}
-              </Text>
+            {isAuthenticated && streakQuery.data ? (
+              <View style={styles.streakChip}>
+                <Text style={styles.streakLabel}>🔥 {streakQuery.data.current} {t('streak.days')}</Text>
+              </View>
             ) : null}
           </View>
-        </View>
 
         {!isAuthenticated ? (
           <View style={styles.errorContainer}>
@@ -275,8 +274,9 @@ const streakQuery = useQuery({
         ) : (
           <EmptyStateCard message={emptyMessage} />
         )}
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </AuroraBackground>
   );
 }
 
@@ -564,38 +564,29 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    padding: spacing.lg,
-    gap: spacing.lg,
+    paddingHorizontal: spacing.xl,
     paddingBottom: 160,
+    gap: spacing.lg,
   },
-  headerRow: {
+  metaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.md,
   },
-  streakBadge: {
+  streakChip: {
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  streakLabel: {
     ...textStyles.caption,
     color: colors.accent,
-    marginTop: 4,
     fontWeight: '600',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  logoutLink: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    textDecorationLine: 'underline',
-  },
-  title: {
-    ...textStyles.titleMedium,
-    color: colors.textPrimary,
-  },
-  subtitle: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
   },
   dashboardBody: {
     gap: spacing.lg,

@@ -1,5 +1,6 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
 
@@ -15,44 +16,58 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({ label, onPress, lo
   return (
     <Pressable
       onPress={isDisabled ? undefined : onPress}
-      style={({ pressed }) => [
-        styles.button,
-        pressed && !isDisabled ? styles.pressed : null,
-        isDisabled ? styles.disabled : null,
-      ]}
+      style={({ pressed }) => [styles.button, pressed && !isDisabled ? styles.pressed : null]}
       accessibilityRole="button"
       accessibilityState={{ disabled: isDisabled, busy: Boolean(loading) }}
       accessibilityLabel={label}
+      disabled={isDisabled}
     >
-      {loading ? <ActivityIndicator color="white" /> : <Text style={styles.text}>{label}</Text>}
+      <LinearGradient
+        colors={isDisabled ? ['#d9dbe3', '#cfd2dd'] : [colors.accent, '#FFC857']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.gradient, isDisabled && styles.disabled]}
+      >
+        <View style={styles.content}>
+          {loading ? <ActivityIndicator color={colors.accentInk} /> : <Text style={styles.text}>{label}</Text>}
+        </View>
+      </LinearGradient>
     </Pressable>
   );
 };
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: colors.textPrimary,
     borderRadius: 26,
-    paddingVertical: 18,
-    alignItems: 'center',
+    overflow: 'hidden',
     shadowColor: colors.shadow,
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
-    minHeight: 56,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
+    shadowOpacity: 0.24,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 8,
   },
   pressed: {
     transform: [{ scale: 0.99 }],
   },
   disabled: {
-    opacity: 0.4,
+    opacity: 0.8,
+  },
+  gradient: {
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    minHeight: 56,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   text: {
     ...textStyles.titleMedium,
-    color: 'white',
+    color: colors.accentInk,
     fontSize: 18,
+    fontWeight: '600',
   },
 });
