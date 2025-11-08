@@ -566,6 +566,7 @@ export default function ChatScreen() {
     if (!response) {
       return;
     }
+    Keyboard.dismiss();
   };
 
   const ensureMediaLibraryPermission = async () => {
