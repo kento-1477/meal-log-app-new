@@ -56,37 +56,41 @@ export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, 
           </View>
         </View>
         <View style={styles.headerActions}>
-          {onEdit ? (
-            <TouchableOpacity style={styles.editButton} onPress={onEdit}>
-              <Text style={styles.editLabel}>{t('card.edit')}</Text>
-            </TouchableOpacity>
-          ) : null}
-          <View style={styles.kcalBadge}>
-            <Text style={styles.kcalValue}>{Math.round(payload.totals.kcal)}</Text>
-            <Text style={styles.kcalLabel}>{t('unit.kcal')}</Text>
+          <View style={styles.primaryActions}>
+            {onEdit ? (
+              <TouchableOpacity style={styles.editButton} onPress={onEdit}>
+                <Text style={styles.editLabel}>{t('card.edit')}</Text>
+              </TouchableOpacity>
+            ) : null}
+            <View style={styles.kcalBadge}>
+              <Text style={styles.kcalValue}>{Math.round(payload.totals.kcal)}</Text>
+              <Text style={styles.kcalLabel}>{t('unit.kcal')}</Text>
+            </View>
           </View>
-          {canAddFavorite ? (
-            <TouchableOpacity
-              style={styles.favoriteButton}
-              onPress={() => payload.favoriteCandidate && onAddFavorite?.(payload.favoriteCandidate)}
-              disabled={addingFavorite}
-            >
-              {addingFavorite ? (
-                <ActivityIndicator size="small" color={colors.accent} />
-              ) : (
-                <Text style={styles.favoriteLabel}>★</Text>
-              )}
-            </TouchableOpacity>
-          ) : null}
-          {onShare ? (
-            <TouchableOpacity style={styles.shareButton} onPress={onShare} disabled={sharing}>
-              {sharing ? (
-                <ActivityIndicator size="small" color={colors.accent} />
-              ) : (
-                <Text style={styles.shareLabel}>{t('card.share')}</Text>
-              )}
-            </TouchableOpacity>
-          ) : null}
+          <View style={styles.secondaryActions}>
+            {canAddFavorite ? (
+              <TouchableOpacity
+                style={styles.favoriteButton}
+                onPress={() => payload.favoriteCandidate && onAddFavorite?.(payload.favoriteCandidate)}
+                disabled={addingFavorite}
+              >
+                {addingFavorite ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <Text style={styles.favoriteLabel}>★</Text>
+                )}
+              </TouchableOpacity>
+            ) : null}
+            {onShare ? (
+              <TouchableOpacity style={styles.shareButton} onPress={onShare} disabled={sharing}>
+                {sharing ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <Text style={styles.shareLabel}>{t('card.share')}</Text>
+                )}
+              </TouchableOpacity>
+            ) : null}
+          </View>
         </View>
       </View>
       <View style={styles.divider} />
@@ -163,6 +167,16 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   headerActions: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  primaryActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  secondaryActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
