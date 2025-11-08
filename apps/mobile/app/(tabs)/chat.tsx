@@ -669,7 +669,7 @@ export default function ChatScreen() {
   };
 
   const planLabel = userPlan === 'PREMIUM' ? t('usage.plan.standard') : t('usage.plan.free');
-  const headerSubtitle = usage ? `${planLabel} ｜ ${t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}` : planLabel;
+  const headerSubtitle = planLabel;
 
   return (
     <AuroraBackground style={styles.container}>
@@ -685,6 +685,18 @@ export default function ChatScreen() {
               actionLabel={userPlan === 'FREE' ? t('usage.limitModal.purchase') : undefined}
               onAction={userPlan === 'FREE' ? handleOpenPaywall : undefined}
             />
+            {usage ? (
+              <View style={styles.statusPillRow}>
+                <View style={styles.statusPill}>
+                  <Text style={styles.statusLabel}>{t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}</Text>
+                </View>
+                {usage.credits > 0 ? (
+                  <View style={styles.statusPill}>
+                    <Text style={styles.statusLabel}>{t('usage.banner.credits', { credits: usage.credits })}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
           </View>
           {error ? <ErrorBanner message={error} /> : null}
         <FlatList
@@ -949,6 +961,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 12,
     paddingBottom: 4,
+  },
+  statusPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+    paddingHorizontal: 24,
+    paddingBottom: 8,
+  },
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  statusLabel: {
+    ...textStyles.caption,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
   usageModalBackdrop: {
     flex: 1,
