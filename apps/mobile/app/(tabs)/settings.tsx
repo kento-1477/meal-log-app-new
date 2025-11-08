@@ -71,10 +71,6 @@ export default function SettingsScreen() {
             title={t('settings.title')}
             subtitle={user?.email ?? t('settings.profile.subtitle')}
           />
-          <TouchableOpacity style={styles.inviteTopButton} onPress={() => router.push('/referral-status')}>
-            <Feather name="share-2" size={14} color={colors.accent} />
-            <Text style={styles.inviteTopButtonLabel}>{t('settings.invite.cta')}</Text>
-          </TouchableOpacity>
 
           <TouchableOpacity style={styles.profileCard} activeOpacity={0.8} onPress={() => router.push('/settings/account')}>
             <View style={styles.avatarCircle}>
@@ -161,27 +157,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xl * 2,
     gap: spacing.lg,
-  },
-  inviteTopButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    alignSelf: 'flex-start',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: 999,
-    backgroundColor: colors.surfaceStrong,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    shadowColor: colors.shadow,
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  inviteTopButtonLabel: {
-    ...textStyles.caption,
-    color: colors.accent,
-    fontWeight: '600',
   },
   profileCard: {
     backgroundColor: colors.surfaceStrong,
