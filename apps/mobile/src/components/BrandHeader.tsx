@@ -41,7 +41,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: 32,
+    paddingBottom: 16,
   },
   centerAligned: {
     justifyContent: 'center',
@@ -66,10 +66,13 @@ const styles = StyleSheet.create({
   },
   textBlock: {
     flex: 1,
-    gap: 6,
+    gap: 4,
   },
   title: {
-    ...textStyles.heading,
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
   subtitle: {
     ...textStyles.body,
