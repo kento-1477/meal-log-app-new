@@ -154,21 +154,6 @@ export default function ChatScreen() {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
 
-  const handleTemplateInsert = useCallback(() => {
-    const template = [t('meal.breakfast'), t('meal.lunch'), t('meal.dinner')]
-      .map((label) => `${label}: `)
-      .join('\n');
-    setInput((prev) => {
-      if (!prev.trim()) {
-        return template;
-      }
-      const trimmed = prev.trimEnd();
-      const spacer = trimmed.endsWith('\n') ? '' : '\n\n';
-      return `${trimmed}${spacer}${template}`;
-    });
-    requestAnimationFrame(() => scrollToEnd());
-  }, [t, setInput, scrollToEnd]);
-
 
   const favoritesQuery = useQuery({
     queryKey: ['favorites'],
@@ -633,9 +618,8 @@ export default function ChatScreen() {
     () => [
       { key: 'photo', icon: 'camera', label: t('chat.quickActions.photo'), onPress: handlePhotoQuickAction },
       { key: 'favorite', icon: 'star', label: t('chat.quickActions.favorite'), onPress: () => setFavoritesVisible(true) },
-      { key: 'template', icon: 'align-left', label: t('chat.quickActions.template'), onPress: handleTemplateInsert },
     ],
-    [handlePhotoQuickAction, handleTemplateInsert, t],
+    [handlePhotoQuickAction, t],
   );
 
   const handleShareCard = async (payload: NutritionCardPayload, cardKey: string) => {
