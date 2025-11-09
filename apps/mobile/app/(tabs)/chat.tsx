@@ -169,17 +169,6 @@ export default function ChatScreen() {
     requestAnimationFrame(() => scrollToEnd());
   }, [t, setInput, scrollToEnd]);
 
-  type QuickAction = {
-    key: string;
-    icon: React.ComponentProps<typeof Feather>['name'];
-    label: string;
-    onPress: () => void;
-  };
-
-  const quickActions: QuickAction[] = [
-    { key: 'photo', icon: 'camera', label: t('chat.quickActions.photo'), onPress: handlePhotoQuickAction },
-    { key: 'favorite', icon: 'star', label: t('chat.quickActions.favorite'), onPress: () => setFavoritesVisible(true) },
-  ];
 
   const favoritesQuery = useQuery({
     queryKey: ['favorites'],
@@ -639,6 +628,7 @@ export default function ChatScreen() {
     }
   };
   const handlePhotoQuickAction = useCallback(() => {
+    console.log('[chat] photo quick action tapped');
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
@@ -647,14 +637,31 @@ export default function ChatScreen() {
         },
         (buttonIndex) => {
           if (buttonIndex === 0) {
+            console.log('[chat] opening image picker from quick action');
             void handleAttach();
           }
         },
       );
     } else {
+      console.log('[chat] opening image picker on Android');
       void handleAttach();
     }
   }, [handleAttach, t]);
+
+  type QuickAction = {
+    key: string;
+    icon: React.ComponentProps<typeof Feather>['name'];
+    label: string;
+    onPress: () => void;
+  };
+
+  const quickActions = useMemo<QuickAction[]>(
+    () => [
+      { key: 'photo', icon: 'camera', label: t('chat.quickActions.photo'), onPress: handlePhotoQuickAction },
+      { key: 'favorite', icon: 'star', label: t('chat.quickActions.favorite'), onPress: () => setFavoritesVisible(true) },
+    ],
+    [handlePhotoQuickAction, t],
+  );
 
   const handleShareCard = async (payload: NutritionCardPayload, cardKey: string) => {
     try {
