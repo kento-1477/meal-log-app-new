@@ -601,32 +601,6 @@ export default function ChatScreen() {
     }
   }, [ensureMediaLibraryPermission, setError, setComposingImage]);
 
-  const handlePlusPress = () => {
-    const templateLabel = t('chat.actions.insertTemplate');
-    const photoLabel = t('chat.actions.attachPhoto');
-    const cancelLabel = t('common.cancel');
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: [templateLabel, photoLabel, cancelLabel],
-          cancelButtonIndex: 2,
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 0) {
-            handleTemplateInsert();
-          } else if (buttonIndex === 1) {
-            void handleAttach();
-          }
-        },
-      );
-    } else {
-      Alert.alert('', '', [
-        { text: templateLabel, onPress: () => handleTemplateInsert() },
-        { text: photoLabel, onPress: () => void handleAttach() },
-        { text: cancelLabel, style: 'cancel' },
-      ]);
-    }
-  };
   const handlePhotoQuickAction = useCallback(() => {
     console.log('[chat] photo quick action tapped');
     if (Platform.OS === 'ios') {
@@ -659,8 +633,9 @@ export default function ChatScreen() {
     () => [
       { key: 'photo', icon: 'camera', label: t('chat.quickActions.photo'), onPress: handlePhotoQuickAction },
       { key: 'favorite', icon: 'star', label: t('chat.quickActions.favorite'), onPress: () => setFavoritesVisible(true) },
+      { key: 'template', icon: 'align-left', label: t('chat.quickActions.template'), onPress: handleTemplateInsert },
     ],
-    [handlePhotoQuickAction, t],
+    [handlePhotoQuickAction, handleTemplateInsert, t],
   );
 
   const handleShareCard = async (payload: NutritionCardPayload, cardKey: string) => {
@@ -815,12 +790,6 @@ export default function ChatScreen() {
             style={[styles.composerArea, styles.composerDocked, { paddingBottom: Math.max(12, inset.bottom) }]}
           >
             <View style={styles.inputRow}>
-              <TouchableOpacity onPress={handlePlusPress} style={styles.attachButton}>
-                <Text style={styles.attachIcon}>＋</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setFavoritesVisible(true)} style={styles.favoriteButton}>
-                <Text style={styles.favoriteIcon}>★</Text>
-              </TouchableOpacity>
               <TextInput
                 style={styles.textInput}
                 placeholder={t('chat.placeholder')}
@@ -1161,34 +1130,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-  },
-  attachButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  attachIcon: {
-    fontSize: 22,
-    color: colors.accent,
-  },
-  favoriteButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  favoriteIcon: {
-    fontSize: 20,
-    color: colors.accent,
   },
   textInput: {
     flex: 1,
