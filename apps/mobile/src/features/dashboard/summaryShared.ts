@@ -86,11 +86,15 @@ export function buildViewModel(summary: DashboardSummary, targets: DashboardTarg
   const targetCalories = targets.calories;
   const timezone = summary.range.timezone;
 
-  const points = summary.calories.daily.map((entry) => ({
-    label: formatDayLabel(entry.date, timezone),
-    value: entry.total,
-    isoDate: entry.date,
-  }));
+  const points = summary.calories.daily.map((entry, index) => {
+    const normalizedDate = normalizeDailyDate(entry.date, timezone);
+    const fallbackLabel = formatFallbackDayLabel(index);
+    return {
+      label: formatDayLabel(normalizedDate, fallbackLabel, timezone),
+      value: entry.total,
+      isoDate: normalizedDate ?? '',
+    };
+  });
 
   const breakdown = computeMealPeriodBreakdown(summary.calories.daily);
   const macros = buildMacroStats(summary.macros.total, summary.macros.targets, summary.macros.delta);
@@ -207,17 +211,33 @@ export function roundNumber(value: number, decimals: number) {
   return Math.round(value * factor) / factor;
 }
 
-export function formatDayLabel(isoDate: string, timezone: string) {
-  if (!isoDate || typeof isoDate !== 'string' || isoDate.toLowerCase() === 'null') {
-    return '';
+export function formatDayLabel(isoDate: string | null | undefined, fallbackLabel: string, timezone: string) {
+  if (!isoDate || typeof isoDate !== 'string') {
+    return fallbackLabel;
   }
   const date = DateTime.fromISO(isoDate, { zone: timezone });
   if (!date.isValid) {
-    const fallback = DateTime.fromISO(isoDate);
-    return fallback.isValid ? fallback.toFormat('MM/dd') : isoDate;
+    return fallbackLabel;
   }
   const weekday = date.setLocale(getIntlLocale()).toFormat('ccc');
   return `${weekday} ${date.day}`;
+}
+
+function normalizeDailyDate(raw: string | null | undefined, timezone: string): string | null {
+  if (!raw || typeof raw !== 'string') {
+    return null;
+  }
+  const parsed = DateTime.fromISO(raw, { zone: timezone });
+  if (!parsed.isValid) {
+    return null;
+  }
+  return parsed.startOf('day').toISODate();
+}
+
+function formatFallbackDayLabel(index: number) {
+  const locale = getIntlLocale();
+  const dayNumber = index + 1;
+  return locale.startsWith('ja') ? `${dayNumber}日目` : `Day ${dayNumber}`;
 }
 
 export function buildTargetComparison(summary: DashboardSummary, targets: DashboardTargets): PeriodComparison {
