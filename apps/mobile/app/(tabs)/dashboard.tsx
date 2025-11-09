@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
   Image,
   RefreshControl,
   ScrollView,
@@ -66,6 +68,8 @@ export default function DashboardScreen() {
   const [period, setPeriod] = useState<DashboardPeriod>(DEFAULT_PERIOD);
   const [segmentKey, setSegmentKey] = useState<SegmentKey>('today');
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null);
+  const [segmentGroupWidth, setSegmentGroupWidth] = useState(0);
+  const segmentHighlight = useRef(new Animated.Value(4)).current;
   const [logsRange, setLogsRange] = useState<MealLogRange>('today');
   const status = useSessionStore((state) => state.status);
   const userPlan = useSessionStore((state) => state.user?.plan ?? 'FREE');
@@ -84,7 +88,29 @@ export default function DashboardScreen() {
     ],
     [t],
   );
+  const activeSegmentIndex = segmentOptions.findIndex((option) => option.key === segmentKey);
+  const segmentButtonWidth = useMemo(() => {
+    if (segmentGroupWidth <= 0 || segmentOptions.length === 0) {
+      return 0;
+    }
+    const gap = 4;
+    const horizontalPadding = 8; // segmentGroup padding (left+right)
+    return (segmentGroupWidth - horizontalPadding - gap * (segmentOptions.length - 1)) / segmentOptions.length;
+  }, [segmentGroupWidth, segmentOptions.length]);
 
+  useEffect(() => {
+    if (segmentButtonWidth <= 0 || activeSegmentIndex < 0) {
+      return;
+    }
+    const gap = 4;
+    const target = 4 + activeSegmentIndex * (segmentButtonWidth + gap);
+    Animated.timing(segmentHighlight, {
+      toValue: target,
+      duration: 220,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start();
+  }, [activeSegmentIndex, segmentButtonWidth, segmentHighlight]);
   const handleSegmentChange = (key: SegmentKey) => {
     setSegmentKey(key);
     if (key === 'today') {
@@ -221,7 +247,22 @@ export default function DashboardScreen() {
             </View>
           </View>
           <View style={styles.segmentRow}>
-            <View style={styles.segmentGroup}>
+            <View
+              style={styles.segmentGroup}
+              onLayout={(event) => setSegmentGroupWidth(event.nativeEvent.layout.width)}
+            >
+              {segmentButtonWidth > 0 ? (
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.segmentHighlight,
+                    {
+                      width: segmentButtonWidth,
+                      transform: [{ translateX: segmentHighlight }],
+                    },
+                  ]}
+                />
+              ) : null}
               {segmentOptions.map((option) => {
                 const active = option.key === segmentKey;
                 return (
@@ -652,21 +693,19 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     padding: 4,
     gap: 4,
+    position: 'relative',
+    overflow: 'hidden',
   },
   segmentButton: {
     flex: 1,
     borderRadius: 999,
-    paddingVertical: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 1,
   },
-  segmentButtonActive: {
-    backgroundColor: colors.surfaceStrong,
-    shadowColor: colors.shadow,
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-  },
+  segmentButtonActive: {},
   segmentLabel: {
     ...textStyles.caption,
     fontWeight: '500',
@@ -675,6 +714,19 @@ const styles = StyleSheet.create({
   segmentLabelActive: {
     color: colors.textPrimary,
     fontWeight: '700',
+  },
+  segmentHighlight: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    borderRadius: 999,
+    backgroundColor: '#fff',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
   },
   dashboardBody: {
     gap: spacing.lg,
