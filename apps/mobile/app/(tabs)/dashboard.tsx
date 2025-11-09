@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -67,8 +66,6 @@ export default function DashboardScreen() {
   const [period, setPeriod] = useState<DashboardPeriod>(DEFAULT_PERIOD);
   const [segmentKey, setSegmentKey] = useState<SegmentKey>('today');
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null);
-  const [sortOrder, setSortOrder] = useState<'calorieFirst' | 'macroFirst'>('calorieFirst');
-  const [sortModalVisible, setSortModalVisible] = useState(false);
   const [logsRange, setLogsRange] = useState<MealLogRange>('today');
   const status = useSessionStore((state) => state.status);
   const userPlan = useSessionStore((state) => state.user?.plan ?? 'FREE');
@@ -84,14 +81,6 @@ export default function DashboardScreen() {
       { key: 'today' as SegmentKey, label: t('dashboard.segment.today') },
       { key: 'week' as SegmentKey, label: t('dashboard.segment.week') },
       { key: 'month' as SegmentKey, label: t('dashboard.segment.month') },
-    ],
-    [t],
-  );
-
-  const sortOptions = useMemo(
-    () => [
-      { key: 'calorieFirst' as const, label: t('dashboard.sort.option.calorieFirst') },
-      { key: 'macroFirst' as const, label: t('dashboard.sort.option.macroFirst') },
     ],
     [t],
   );
@@ -248,10 +237,6 @@ export default function DashboardScreen() {
                 );
               })}
             </View>
-            <TouchableOpacity style={styles.sortButton} onPress={() => setSortModalVisible(true)} accessibilityRole="button">
-              <Feather name="arrow-up" size={14} color={colors.textPrimary} />
-              <Feather name="arrow-down" size={14} color={colors.textPrimary} />
-            </TouchableOpacity>
           </View>
 
         {!isAuthenticated ? (
@@ -274,7 +259,7 @@ export default function DashboardScreen() {
 
             {ringData ? (
               <>
-                {(sortOrder === 'calorieFirst' ? ['primary', 'macro'] : ['macro', 'primary']).map((section) => {
+                {(['primary', 'macro'] as const).map((section) => {
                   if (section === 'primary') {
                     return (
                       <View style={styles.metricRow} key="primary">
@@ -342,31 +327,6 @@ export default function DashboardScreen() {
         )}
         </ScrollView>
       </SafeAreaView>
-      <Modal transparent visible={sortModalVisible} animationType="fade" onRequestClose={() => setSortModalVisible(false)}>
-        <View style={styles.sortModalBackdrop}>
-          <View style={styles.sortModalCard}>
-            <Text style={styles.sortModalTitle}>{t('dashboard.sort.title')}</Text>
-            {sortOptions.map((option) => {
-              const active = option.key === sortOrder;
-              return (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[styles.sortOption, active && styles.sortOptionActive]}
-                  onPress={() => {
-                    setSortOrder(option.key);
-                    setSortModalVisible(false);
-                  }}
-                >
-                  <Text style={[styles.sortOptionLabel, active && styles.sortOptionLabelActive]}>{option.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-            <TouchableOpacity onPress={() => setSortModalVisible(false)}>
-              <Text style={styles.sortModalClose}>{t('dashboard.sort.close')}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </AuroraBackground>
   );
 }
@@ -715,17 +675,6 @@ const styles = StyleSheet.create({
   segmentLabelActive: {
     color: colors.textPrimary,
     fontWeight: '700',
-  },
-  sortButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceStrong,
-    alignItems: 'center',
-    justifyContent: 'space-evenly',
-    flexDirection: 'column',
   },
   dashboardBody: {
     gap: spacing.lg,
