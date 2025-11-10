@@ -41,11 +41,11 @@ function createSummary(overrides: Partial<DashboardSummary> = {}): DashboardSumm
 }
 
 test('formatDayLabel respects timezone and falls back gracefully', () => {
-  const label = formatDayLabel('2025-01-10', 'Asia/Tokyo');
+  const label = formatDayLabel('2025-01-10', 'Day 1', 'Asia/Tokyo');
   assert.equal(label, '金 10');
 
-  const fallback = formatDayLabel('invalid-date', 'Asia/Tokyo');
-  assert.equal(fallback, 'invalid-date');
+  const fallback = formatDayLabel('invalid-date', 'Day 1', 'Asia/Tokyo');
+  assert.equal(fallback, 'Day 1');
 });
 
 test('buildTargetComparison reports target deltas and percentages', () => {

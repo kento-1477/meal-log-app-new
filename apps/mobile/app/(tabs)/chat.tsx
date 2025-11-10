@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   FlatList,
@@ -25,10 +26,11 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
-import { getJapaneseHeadlineStyle, isJapaneseLocale } from '@/theme/localeTypography';
 import { ChatBubble } from '@/components/ChatBubble';
 import { NutritionCard } from '@/components/NutritionCard';
 import { ErrorBanner } from '@/components/ErrorBanner';
+import { AuroraBackground } from '@/components/AuroraBackground';
+import { BrandHeader } from '@/components/BrandHeader';
 import { useChatStore } from '@/store/chat';
 import { useSessionStore } from '@/store/session';
 import {
@@ -152,33 +154,6 @@ export default function ChatScreen() {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
 
-  const handleTemplateInsert = useCallback(() => {
-    const template = [t('meal.breakfast'), t('meal.lunch'), t('meal.dinner')]
-      .map((label) => `${label}: `)
-      .join('\n');
-    setInput((prev) => {
-      if (!prev.trim()) {
-        return template;
-      }
-      const trimmed = prev.trimEnd();
-      const spacer = trimmed.endsWith('\n') ? '' : '\n\n';
-      return `${trimmed}${spacer}${template}`;
-    });
-    requestAnimationFrame(() => scrollToEnd());
-  }, [t, setInput, scrollToEnd]);
-
-  type QuickAction = {
-    key: string;
-    icon: React.ComponentProps<typeof Feather>['name'];
-    label: string;
-    onPress: () => void;
-  };
-
-  const quickActions: QuickAction[] = [
-    { key: 'photo', icon: 'camera', label: t('chat.quickActions.photo'), onPress: handleAttach },
-    { key: 'favorite', icon: 'star', label: t('chat.quickActions.favorite'), onPress: () => setFavoritesVisible(true) },
-    { key: 'template', icon: 'align-left', label: t('chat.quickActions.template'), onPress: handleTemplateInsert },
-  ];
 
   const favoritesQuery = useQuery({
     queryKey: ['favorites'],
@@ -358,8 +333,11 @@ export default function ChatScreen() {
   }, [enhancedExchange, inset.top, tabBarHeight, windowHeight]);
 
   const canSend = !usage || usage.remaining > 0 || usage.credits > 0;
+  const hasTypedInput = input.trim().length > 0;
+  const sendButtonDisabled = sending || !canSend || !hasTypedInput;
 
   const favoritesList = favoritesQuery.data ?? [];
+  const sendLabel = canSend ? t('chat.send') : t('chat.send.limit');
 
   const resetComposer = () => {
     setInput('');
@@ -562,9 +540,10 @@ export default function ChatScreen() {
     if (!response) {
       return;
     }
+    Keyboard.dismiss();
   };
 
-  const ensureMediaLibraryPermission = async () => {
+  const ensureMediaLibraryPermission = useCallback(async () => {
     const current = mediaPermission ?? (await ImagePicker.getMediaLibraryPermissionsAsync());
     if (current?.granted) {
       return current;
@@ -574,9 +553,9 @@ export default function ChatScreen() {
       return updated ?? current;
     }
     return current;
-  };
+  }, [mediaPermission, requestMediaPermission]);
 
-  const handleAttach = async () => {
+  const handleAttach = useCallback(async () => {
     try {
       const permission = await ensureMediaLibraryPermission();
       if (!permission?.granted) {
@@ -605,7 +584,43 @@ export default function ChatScreen() {
       console.warn('Failed to open media library', error);
       setError('写真の読み込みに失敗しました。もう一度お試しください。');
     }
+  }, [ensureMediaLibraryPermission, setError, setComposingImage]);
+
+  const handlePhotoQuickAction = useCallback(() => {
+    console.log('[chat] photo quick action tapped');
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: [t('chat.actions.attachPhoto'), t('common.cancel')],
+          cancelButtonIndex: 1,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 0) {
+            console.log('[chat] opening image picker from quick action');
+            void handleAttach();
+          }
+        },
+      );
+    } else {
+      console.log('[chat] opening image picker on Android');
+      void handleAttach();
+    }
+  }, [handleAttach, t]);
+
+  type QuickAction = {
+    key: string;
+    icon: React.ComponentProps<typeof Feather>['name'];
+    label: string;
+    onPress: () => void;
   };
+
+  const quickActions = useMemo<QuickAction[]>(
+    () => [
+      { key: 'photo', icon: 'camera', label: t('chat.quickActions.photo'), onPress: handlePhotoQuickAction },
+      { key: 'favorite', icon: 'star', label: t('chat.quickActions.favorite'), onPress: () => setFavoritesVisible(true) },
+    ],
+    [handlePhotoQuickAction, t],
+  );
 
   const handleShareCard = async (payload: NutritionCardPayload, cardKey: string) => {
     try {
@@ -639,14 +654,19 @@ export default function ChatScreen() {
     const assistantCard = enhancedExchange.assistant?.card ?? null;
     const assistantCardId = enhancedExchange.assistant ? `${enhancedExchange.assistant.id}-card` : null;
 
+    const assistantHasCard = Boolean(enhancedExchange.assistant?.card);
+    const assistantBubbleMessage =
+      assistantHasCard && enhancedExchange.assistant
+        ? { ...enhancedExchange.assistant, text: t('chat.recordComplete') }
+        : enhancedExchange.assistant;
     return (
       <View style={[styles.enhancedContainer, { minHeight: enhancedContainerMinHeight }]}
         key={enhancedExchange.user.id}
       >
         <ChatBubble message={enhancedExchange.user} />
-        {enhancedExchange.assistant ? (
+        {assistantBubbleMessage ? (
           <>
-            <ChatBubble message={enhancedExchange.assistant} />
+            <ChatBubble message={assistantBubbleMessage} />
             {assistantCard && assistantCardId ? (
               <NutritionCard
                 payload={assistantCard}
@@ -667,36 +687,37 @@ export default function ChatScreen() {
     );
   };
 
-  const headerFontStyle = React.useMemo(
-    () => (isJapaneseLocale(locale) ? getJapaneseHeadlineStyle() : null),
-    [locale],
-  );
+  const planLabel = userPlan === 'PREMIUM' ? t('usage.plan.standard') : t('usage.plan.free');
+  const headerSubtitle = planLabel;
+
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <Text style={[styles.headerTitle, headerFontStyle, { paddingHorizontal: 16, marginBottom: 16 }]}>{t('chat.header')}</Text>
-        {usage ? (
-          <View style={styles.usageBanner}>
-            <View style={styles.usageBannerText}>
-              <Text style={styles.usageText}>
-                {userPlan === 'PREMIUM' ? t('usage.plan.standard') : t('usage.plan.free')} ｜{' '}
-                {t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}
-              </Text>
-              {usage.credits > 0 ? (
-                <Text style={styles.usageCredits}>{t('usage.banner.credits', { credits: usage.credits })}</Text>
-              ) : null}
-            </View>
-            {userPlan === 'FREE' ? (
-              <TouchableOpacity style={styles.usageAction} onPress={handleOpenPaywall}>
-                <Text style={styles.usageActionLabel}>{t('usage.limitModal.purchase')}</Text>
-              </TouchableOpacity>
+    <AuroraBackground style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.headerWrap}>
+            <BrandHeader
+              title={t('chat.header')}
+              subtitle={headerSubtitle}
+              actionLabel={userPlan === 'FREE' ? t('usage.limitModal.purchase') : undefined}
+              onAction={userPlan === 'FREE' ? handleOpenPaywall : undefined}
+            />
+            {usage ? (
+              <View style={styles.statusPillRow}>
+                <View style={styles.statusPill}>
+                  <Text style={styles.statusLabel}>{t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}</Text>
+                </View>
+                {usage.credits > 0 ? (
+                  <View style={styles.statusPill}>
+                    <Text style={styles.statusLabel}>{t('usage.banner.credits', { credits: usage.credits })}</Text>
+                  </View>
+                ) : null}
+              </View>
             ) : null}
           </View>
-        ) : null}
-        {error ? <ErrorBanner message={error} /> : null}
+          {error ? <ErrorBanner message={error} /> : null}
         <FlatList
           style={styles.flex}
           ref={listRef}
@@ -741,13 +762,7 @@ export default function ChatScreen() {
               </Text>
             </View>
           ) : null}
-          <View
-            style={[
-              styles.quickActionsRow,
-              !canSend && styles.quickActionsCollapsed,
-            ]}
-            pointerEvents={canSend ? 'auto' : 'none'}
-          >
+          <View style={styles.quickActionsRow}>
             {quickActions.map((action) => (
               <TouchableOpacity key={action.key} style={styles.quickAction} onPress={action.onPress}>
                 <Feather name={action.icon} size={14} color={colors.textPrimary} />
@@ -759,21 +774,32 @@ export default function ChatScreen() {
             style={[styles.composerArea, styles.composerDocked, { paddingBottom: Math.max(12, inset.bottom) }]}
           >
             <View style={styles.inputRow}>
-              <TouchableOpacity onPress={handleAttach} style={styles.attachButton}>
-                <Text style={styles.attachIcon}>＋</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setFavoritesVisible(true)} style={styles.favoriteButton}>
-                <Text style={styles.favoriteIcon}>★</Text>
-              </TouchableOpacity>
               <TextInput
                 style={styles.textInput}
-                placeholder="食事内容を入力..."
+                placeholder={t('chat.placeholder')}
                 value={input}
                 onChangeText={setInput}
-                multiline
+                multiline={false}
+                numberOfLines={1}
+                blurOnSubmit={false}
+                returnKeyType={canSend ? 'send' : 'done'}
+                enablesReturnKeyAutomatically
+                onSubmitEditing={() => {
+                  if (!sendButtonDisabled) {
+                    void handleSend();
+                  }
+                }}
               />
-              <TouchableOpacity onPress={handleSend} disabled={sending || !canSend} style={[styles.sendButton, (!canSend || sending) && styles.sendButtonDisabled]}>
-                {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>{canSend ? '送信' : '上限'}</Text>}
+              <TouchableOpacity
+                onPress={() => {
+                  if (!sendButtonDisabled) {
+                    void handleSend();
+                  }
+                }}
+                disabled={sendButtonDisabled}
+                style={[styles.sendButton, sendButtonDisabled && styles.sendButtonDisabled]}
+              >
+                {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>{sendLabel}</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -897,6 +923,7 @@ export default function ChatScreen() {
         </View>
       </Modal>
     </SafeAreaView>
+    </AuroraBackground>
   );
 }
 
@@ -953,47 +980,32 @@ function formatMacro(value: number) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
-  headerTitle: {
-    ...textStyles.titleLarge,
-    color: colors.textPrimary,
+  headerWrap: {
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
-  usageBanner: {
+  statusPillRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginBottom: 8,
-    gap: 12,
+    gap: 8,
+    flexWrap: 'wrap',
+    paddingHorizontal: 24,
+    paddingBottom: 8,
+  },
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
-  usageBannerText: {
-    flex: 1,
-    gap: 4,
-  },
-  usageText: {
+  statusLabel: {
     ...textStyles.caption,
-    color: colors.textSecondary,
-  },
-  usageCredits: {
-    ...textStyles.caption,
-    color: colors.accent,
-  },
-  usageAction: {
-    backgroundColor: colors.accent,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    minWidth: 120,
-    alignItems: 'center',
-  },
-  usageActionLabel: {
-    ...textStyles.caption,
-    color: '#fff',
     fontWeight: '600',
+    color: colors.textPrimary,
   },
   usageModalBackdrop: {
     flex: 1,
@@ -1041,15 +1053,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 24,
     paddingBottom: 24,
   },
   bottomSection: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 24,
     paddingTop: 12,
     paddingBottom: 12,
     gap: 12,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surfaceMuted,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     shadowColor: '#000',
@@ -1062,12 +1074,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     paddingTop: 12,
-  },
-  quickActionsCollapsed: {
-    height: 0,
-    opacity: 0,
-    marginTop: 0,
-    paddingTop: 0,
   },
   quickAction: {
     flex: 1,
@@ -1106,52 +1112,25 @@ const styles = StyleSheet.create({
   },
   inputRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 12,
-  },
-  attachButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  attachIcon: {
-    fontSize: 22,
-    color: colors.accent,
-  },
-  favoriteButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  favoriteIcon: {
-    fontSize: 20,
-    color: colors.accent,
+    gap: 10,
   },
   textInput: {
     flex: 1,
-    maxHeight: 120,
-    borderRadius: 16,
+    height: 50,
+    borderRadius: 14,
     backgroundColor: '#fff',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 0,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     fontSize: 16,
+    textAlignVertical: 'center',
   },
   sendButton: {
-    height: 40,
-    borderRadius: 12,
-    paddingHorizontal: 18,
+    height: 48,
+    borderRadius: 14,
+    paddingHorizontal: 20,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',

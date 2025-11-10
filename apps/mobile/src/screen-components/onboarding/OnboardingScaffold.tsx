@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { AuroraBackground } from '@/components/AuroraBackground';
 import { colors } from '@/theme/colors';
 import { fontFamilies, textStyles } from '@/theme/typography';
 import { onboardingTypography, onboardingJapaneseTypography } from '@/theme/onboarding';
@@ -98,7 +98,7 @@ export function OnboardingScaffold({
   };
 
   return (
-    <LinearGradient colors={[colors.background, '#ffffff']} style={styles.gradient}>
+    <AuroraBackground style={styles.gradient}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.avoiding}
@@ -175,7 +175,7 @@ export function OnboardingScaffold({
             </View>
         </SafeAreaView>
       </KeyboardAvoidingView>
-    </LinearGradient>
+    </AuroraBackground>
   );
 }
 

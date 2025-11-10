@@ -1,4 +1,5 @@
 import React from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
@@ -10,15 +11,30 @@ interface ChatBubbleProps {
 
 export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
   const isUser = message.role === 'user';
-  const bubbleStyle = [styles.bubble, isUser ? styles.userBubble : styles.assistantBubble];
+  const content = (message.text ?? '').trim();
+  if (!content.length) {
+    return null;
+  }
   const textStyle = [styles.text, isUser ? styles.userText : styles.assistantText];
 
   return (
     <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
-      <View style={bubbleStyle}>
-        <Text style={textStyle}>{message.text}</Text>
-        {message.status === 'error' && <Text style={styles.error}>⚠️ 再度お試しください。</Text>}
-      </View>
+      {isUser ? (
+        <LinearGradient
+          colors={[colors.accent, '#FFD36A']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.bubble, styles.userBubble]}
+        >
+          <Text style={textStyle}>{message.text}</Text>
+          {message.status === 'error' && <Text style={styles.error}>⚠️ 再度お試しください。</Text>}
+        </LinearGradient>
+      ) : (
+        <View style={[styles.bubble, styles.assistantBubble]}>
+          <Text style={textStyle}>{message.text}</Text>
+          {message.status === 'error' && <Text style={styles.error}>⚠️ 再度お試しください。</Text>}
+        </View>
+      )}
     </View>
   );
 };
@@ -38,17 +54,21 @@ const styles = StyleSheet.create({
     maxWidth: '82%',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 18,
+    borderRadius: 20,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
   },
   userBubble: {
-    backgroundColor: colors.accent,
-    borderBottomRightRadius: 4,
+    borderBottomRightRadius: 6,
   },
   assistantBubble: {
     backgroundColor: colors.surfaceStrong,
     borderBottomLeftRadius: 4,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
+    shadowOpacity: 0.08,
   },
   text: {
     ...textStyles.body,

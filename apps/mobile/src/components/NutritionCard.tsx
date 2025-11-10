@@ -39,50 +39,58 @@ export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, 
   return (
     <GlassCard intensity={30} style={styles.card}>
       <View style={styles.headerRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.dish}>{payload.dish}</Text>
-          <Text style={styles.confidence}>
-            {t('card.confidence', { value: Math.round(payload.confidence * 100) })}
+        <View style={styles.titleColumn}>
+          <Text style={styles.dish} numberOfLines={1} ellipsizeMode="tail">
+            {payload.dish}
           </Text>
-          {payload.mealPeriod ? (
-            <Text style={styles.meta}>
-              {t(`meal.${payload.mealPeriod}`)}
-              {payload.timezone ? ` · ${payload.timezone}` : ''}
+          <View style={styles.metaBlock}>
+            <Text style={styles.confidence}>
+              {t('card.confidence', { value: Math.round(payload.confidence * 100) })}
             </Text>
-          ) : null}
+            {payload.mealPeriod ? (
+              <Text style={styles.meta} numberOfLines={2}>
+                {t(`meal.${payload.mealPeriod}`)}
+                {payload.timezone ? ` · ${payload.timezone}` : ''}
+              </Text>
+            ) : null}
+          </View>
         </View>
         <View style={styles.headerActions}>
-          {onEdit ? (
-            <TouchableOpacity style={styles.editButton} onPress={onEdit}>
-              <Text style={styles.editLabel}>{t('card.edit')}</Text>
-            </TouchableOpacity>
-          ) : null}
-          <View style={styles.kcalBadge}>
-            <Text style={styles.kcalValue}>{Math.round(payload.totals.kcal)}</Text>
-            <Text style={styles.kcalLabel}>{t('unit.kcal')}</Text>
+          <View style={styles.primaryActions}>
+            {onEdit ? (
+              <TouchableOpacity style={styles.editButton} onPress={onEdit}>
+                <Text style={styles.editLabel}>{t('card.edit')}</Text>
+              </TouchableOpacity>
+            ) : null}
+            <View style={styles.kcalBadge}>
+              <Text style={styles.kcalValue}>{Math.round(payload.totals.kcal)}</Text>
+              <Text style={styles.kcalLabel}>{t('unit.kcal')}</Text>
+            </View>
           </View>
-          {canAddFavorite ? (
-            <TouchableOpacity
-              style={styles.favoriteButton}
-              onPress={() => payload.favoriteCandidate && onAddFavorite?.(payload.favoriteCandidate)}
-              disabled={addingFavorite}
-            >
-              {addingFavorite ? (
-                <ActivityIndicator size="small" color={colors.accent} />
-              ) : (
-                <Text style={styles.favoriteLabel}>★</Text>
-              )}
-            </TouchableOpacity>
-          ) : null}
-          {onShare ? (
-            <TouchableOpacity style={styles.shareButton} onPress={onShare} disabled={sharing}>
-              {sharing ? (
-                <ActivityIndicator size="small" color={colors.accent} />
-              ) : (
-                <Text style={styles.shareLabel}>{t('card.share')}</Text>
-              )}
-            </TouchableOpacity>
-          ) : null}
+          <View style={styles.secondaryActions}>
+            {canAddFavorite ? (
+              <TouchableOpacity
+                style={styles.favoriteButton}
+                onPress={() => payload.favoriteCandidate && onAddFavorite?.(payload.favoriteCandidate)}
+                disabled={addingFavorite}
+              >
+                {addingFavorite ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <Text style={styles.favoriteLabel}>★</Text>
+                )}
+              </TouchableOpacity>
+            ) : null}
+            {onShare ? (
+              <TouchableOpacity style={styles.shareButton} onPress={onShare} disabled={sharing}>
+                {sharing ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <Text style={styles.shareLabel}>{t('card.share')}</Text>
+                )}
+              </TouchableOpacity>
+            ) : null}
+          </View>
         </View>
       </View>
       <View style={styles.divider} />
@@ -153,7 +161,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  titleColumn: {
+    flex: 1,
+    minWidth: 0,
+    gap: 6,
+  },
   headerActions: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  primaryActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  secondaryActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -161,16 +184,18 @@ const styles = StyleSheet.create({
   dish: {
     ...textStyles.titleMedium,
     color: colors.textPrimary,
+    flexShrink: 1,
   },
   confidence: {
     ...textStyles.caption,
     color: colors.accent,
-    marginTop: 4,
+  },
+  metaBlock: {
+    gap: 2,
   },
   meta: {
     ...textStyles.caption,
     color: colors.textSecondary,
-    marginTop: 2,
   },
   kcalBadge: {
     backgroundColor: colors.accent,

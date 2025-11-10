@@ -8,10 +8,16 @@ import { DashboardViewModel, buildViewModel } from './summaryShared';
 
 const CACHE_PREFIX = 'dashboard:summary:';
 
-export function useDashboardSummary(period: DashboardPeriod, options?: { enabled?: boolean }) {
+type SummaryRange = { from: string; to: string };
+
+export function useDashboardSummary(
+  period: DashboardPeriod,
+  options?: { enabled?: boolean; range?: SummaryRange },
+) {
   const [cached, setCached] = useState<DashboardViewModel | null>(null);
   const enabled = options?.enabled ?? true;
   const { locale } = useTranslation();
+  const rangeKey = options?.range ? `${options.range.from}:${options.range.to}` : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -21,7 +27,7 @@ export function useDashboardSummary(period: DashboardPeriod, options?: { enabled
         cancelled = true;
       };
     }
-    AsyncStorage.getItem(cacheKey(period, locale)).then((value) => {
+    AsyncStorage.getItem(cacheKey(period, locale, rangeKey)).then((value) => {
       if (!cancelled && value) {
         try {
           const parsed = JSON.parse(value) as DashboardViewModel;
@@ -34,13 +40,13 @@ export function useDashboardSummary(period: DashboardPeriod, options?: { enabled
     return () => {
       cancelled = true;
     };
-  }, [period, enabled, locale]);
+  }, [period, enabled, locale, rangeKey]);
 
   const summaryQuery = useQuery({
-    queryKey: ['dashboardSummary', period, locale],
+    queryKey: ['dashboardSummary', period, locale, rangeKey],
     queryFn: async () => {
       const [summary, targets] = await Promise.all([
-        getDashboardSummary(period),
+        getDashboardSummary(period, options?.range),
         getDashboardTargets(),
       ]);
       return buildViewModel(summary, targets);
@@ -54,11 +60,11 @@ export function useDashboardSummary(period: DashboardPeriod, options?: { enabled
     if (!enabled || !summaryQuery.data) {
       return;
     }
-    AsyncStorage.setItem(cacheKey(period, locale), JSON.stringify(summaryQuery.data)).catch((error) => {
+    AsyncStorage.setItem(cacheKey(period, locale, rangeKey), JSON.stringify(summaryQuery.data)).catch((error) => {
       console.warn('Failed to cache dashboard summary', error);
     });
     setCached(summaryQuery.data);
-  }, [enabled, summaryQuery.data, period, locale]);
+  }, [enabled, summaryQuery.data, period, locale, rangeKey]);
 
   const data = liveData ?? cached;
 
@@ -73,8 +79,8 @@ export function useDashboardSummary(period: DashboardPeriod, options?: { enabled
   } as const;
 }
 
-function cacheKey(period: DashboardPeriod, locale: string) {
-  return `${CACHE_PREFIX}${locale}:${period}`;
+function cacheKey(period: DashboardPeriod, locale: string, rangeKey: string | null) {
+  return `${CACHE_PREFIX}${locale}:${period}${rangeKey ? `:${rangeKey}` : ''}`;
 }
 
 export type {

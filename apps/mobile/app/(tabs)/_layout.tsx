@@ -67,8 +67,8 @@ export default function TabsLayout() {
 }
 
 function TabIcon({ name, focused }: { name: React.ComponentProps<typeof Feather>['name']; focused: boolean }) {
-  const backgroundColor = focused ? colors.textPrimary : 'rgba(255,255,255,0.9)';
-  const iconColor = focused ? '#fff' : colors.textPrimary;
+  const backgroundColor = focused ? colors.accent : 'rgba(255,255,255,0.9)';
+  const iconColor = focused ? colors.accentInk : colors.textPrimary;
 
   return (
     <View
@@ -77,7 +77,7 @@ function TabIcon({ name, focused }: { name: React.ComponentProps<typeof Feather>
         {
           backgroundColor,
           borderWidth: focused ? 0 : StyleSheet.hairlineWidth,
-          borderColor: focused ? 'transparent' : 'rgba(28,28,30,0.08)',
+          borderColor: focused ? 'transparent' : colors.border,
           shadowOpacity: focused ? 0.12 : 0,
         },
       ]}
