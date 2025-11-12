@@ -94,10 +94,6 @@ function isLikelyNetworkError(error: unknown): boolean {
 
 // ... (rest of the imports)
 
-// ... (Timeline interfaces)
-
-// ... (composeTimeline function)
-
 export default function ChatScreen() {
   const inset = useSafeAreaInsets();
   const router = useRouter();
@@ -374,13 +370,11 @@ export default function ChatScreen() {
     const displayMessage = trimmedMessage || rawMessage || '（画像解析）';
 
     const userMessage = addUserMessage(displayMessage);
-    const assistantPlaceholder = addAssistantMessage('解析中です…', { status: 'sending' });
+    const processingText = t('chat.processing');
+    const assistantPlaceholder = addAssistantMessage(processingText, { status: 'processing' });
     const hintDelay = hasImage ? NETWORK_HINT_DELAY_IMAGE_MS : NETWORK_HINT_DELAY_TEXT_MS;
     networkHintTimerRef.current = setTimeout(() => {
-      setMessageText(
-        assistantPlaceholder.id,
-        `解析中です…\n${t('chat.networkSlowWarning')}`,
-      );
+      setMessageText(assistantPlaceholder.id, `${processingText}\n${t('chat.networkSlowWarning')}`);
     }, hintDelay);
     scrollToEnd();
 
@@ -659,11 +653,13 @@ export default function ChatScreen() {
       assistantHasCard && enhancedExchange.assistant
         ? { ...enhancedExchange.assistant, text: t('chat.recordComplete') }
         : enhancedExchange.assistant;
+    const shouldShowUserBubble = !assistantHasCard;
+
     return (
       <View style={[styles.enhancedContainer, { minHeight: enhancedContainerMinHeight }]}
         key={enhancedExchange.user.id}
       >
-        <ChatBubble message={enhancedExchange.user} />
+        {shouldShowUserBubble ? <ChatBubble message={enhancedExchange.user} /> : null}
         {assistantBubbleMessage ? (
           <>
             <ChatBubble message={assistantBubbleMessage} />
@@ -726,7 +722,13 @@ export default function ChatScreen() {
           contentInsetAdjustmentBehavior="never"
           renderItem={({ item }) =>
             item.type === 'message' ? (
-              <ChatBubble message={item.payload} />
+              <ChatBubble
+                message={
+                  item.payload.card && item.payload.role === 'assistant'
+                    ? { ...item.payload, text: t('chat.recordComplete') }
+                    : item.payload
+                }
+              />
             ) : (
               <NutritionCard
                 payload={item.payload}
