@@ -14,11 +14,6 @@ interface ChatBubbleProps {
 export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
   const isUser = message.role === 'user';
   const isProcessing = !isUser && message.status === 'processing';
-  const content = (message.text ?? '').trim();
-  if (!content.length && !isProcessing) {
-    return null;
-  }
-  const textStyle = [styles.text, isUser ? styles.userText : styles.assistantText];
   const shimmer = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -36,6 +31,12 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
     loop.start();
     return () => loop.stop();
   }, [isProcessing, shimmer]);
+
+  const content = (message.text ?? '').trim();
+  if (!content.length && !isProcessing) {
+    return null;
+  }
+  const textStyle = [styles.text, isUser ? styles.userText : styles.assistantText];
 
   const translateX = shimmer.interpolate({
     inputRange: [0, 1],
