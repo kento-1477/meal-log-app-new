@@ -8,7 +8,7 @@ export interface ChatMessage {
   text: string;
   createdAt: number;
   card?: NutritionCardPayload;
-  status?: 'sending' | 'delivered' | 'error';
+  status?: 'sending' | 'delivered' | 'error' | 'processing';
 }
 
 export interface NutritionCardPayload {
