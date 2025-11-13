@@ -5,7 +5,6 @@ export function buildDashboardSummary({ logs, range, timezone, todayTotals, dail
   const interval = Interval.fromDateTimes(range.fromDate, range.toDate);
   const dailyEntries = [];
   const byDate = new Map();
-  const dailyTargets = providedTargets ?? getDefaultTargets();
 
   const totals = logs.reduce(
     (acc, log) => {
