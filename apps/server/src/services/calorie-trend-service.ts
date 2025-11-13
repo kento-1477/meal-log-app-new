@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon';
 import { prisma } from '../db/prisma.js';
 import { DASHBOARD_TARGETS, DASHBOARD_TIMEZONE } from '../config/dashboard.js';
+import { getDashboardTargetsForUser } from './dashboard-service.js';
 
 type CalorieTrendMode = 'daily' | 'weekly' | 'monthly';
 
@@ -37,12 +38,15 @@ export async function getCalorieTrend({ userId, mode, locale }: CalorieTrendPara
     },
   });
 
+  const dailyTargets = await getDashboardTargetsForUser(userId);
+
   return buildCalorieTrend({
     logs,
     timezone,
     locale,
     startInclusive,
     endExclusive,
+    dailyTargets,
   });
 }
 
@@ -58,6 +62,9 @@ export function buildCalorieTrend({
   locale?: string;
   startInclusive: DateTime;
   endExclusive: DateTime;
+  dailyTargets?: {
+    calories: number;
+  };
 }) {
   const bucket = new Map<string, number>();
 
@@ -87,7 +94,7 @@ export function buildCalorieTrend({
   }
 
   return {
-    target: DASHBOARD_TARGETS.calories.value,
+    target: dailyTargets?.calories ?? DASHBOARD_TARGETS.calories.value,
     points,
   };
 }
