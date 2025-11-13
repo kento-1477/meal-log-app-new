@@ -56,6 +56,7 @@ export function buildCalorieTrend({
   locale,
   startInclusive,
   endExclusive,
+  dailyTargets,
 }: {
   logs: Array<{ createdAt: Date; calories: number }>;
   timezone: string;
