@@ -148,15 +148,15 @@ export default function ProfileScreen() {
 
     const requiresRecalc = snapshot ? hasRecalcChanges(snapshot, form) : false;
 
-    const submit = () => mutation.mutate(payload);
+    const submit = (autoRecalc: boolean) => mutation.mutate(autoRecalc ? { ...payload, auto_recalculate: true } : payload);
 
     if (requiresRecalc) {
       Alert.alert(t('settings.profile.recalcTitle'), t('settings.profile.recalcMessage'), [
-        { text: t('common.no'), style: 'cancel' },
-        { text: t('common.yes'), onPress: submit },
+        { text: t('common.no'), style: 'cancel', onPress: () => submit(false) },
+        { text: t('common.yes'), onPress: () => submit(true) },
       ]);
     } else {
-      submit();
+      submit(false);
     }
   };
 

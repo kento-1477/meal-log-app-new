@@ -418,6 +418,20 @@ export type DashboardSummary = z.infer<typeof DashboardSummarySchema>;
 export const DashboardTargetsSchema = MacroTotalsSchema;
 export type DashboardTargets = z.infer<typeof DashboardTargetsSchema>;
 
+export const CalorieTrendPointSchema = z.object({
+  date: z.string(),
+  label: z.string(),
+  value: z.number(),
+});
+
+export const CalorieTrendResponseSchema = z.object({
+  target: z.number(),
+  points: z.array(CalorieTrendPointSchema),
+});
+
+export type CalorieTrendPoint = z.infer<typeof CalorieTrendPointSchema>;
+export type CalorieTrendResponse = z.infer<typeof CalorieTrendResponseSchema>;
+
 export const UserProfileSchema = z.object({
   display_name: z.string().trim().min(1).max(80).nullable().optional(),
   gender: GenderSchema.nullable().optional(),
@@ -490,6 +504,7 @@ export const UpdateUserProfileRequestSchema = z
     apple_health_linked: z.boolean().optional(),
     questionnaire_completed_at: z.string().datetime().nullable().optional(),
     language: LocaleSchema.nullable().optional(),
+    auto_recalculate: z.boolean().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: 'At least one field must be provided',
