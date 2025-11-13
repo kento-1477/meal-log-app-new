@@ -59,18 +59,30 @@ profileRouter.put('/profile', async (req, res, next) => {
       goals: hasOwn(rest, 'goals') ? rest.goals ?? [] : existing?.goals ?? [],
     };
 
+    const userProvidedTargets =
+      hasOwn(rest, 'target_calories') ||
+      hasOwn(rest, 'target_protein_g') ||
+      hasOwn(rest, 'target_fat_g') ||
+      hasOwn(rest, 'target_carbs_g');
+    const hasPersistedTargets = hasMacroTargets(existing);
+    const hasPlanInputs = canComputeNutritionPlan(nutritionInput);
+
+    const shouldAutoPopulateTargets = !userProvidedTargets && !hasPersistedTargets && hasPlanInputs;
     const shouldRecalculate = Boolean(autoRecalculate);
-    if (shouldRecalculate) {
+    if (shouldRecalculate || shouldAutoPopulateTargets) {
       const autoPlan = computeNutritionPlan(nutritionInput);
       if (!autoPlan) {
-        const error = new Error('Unable to recalculate nutrition targets with the provided values');
-        Object.assign(error, { statusCode: StatusCodes.BAD_REQUEST, expose: true });
-        throw error;
+        if (shouldRecalculate) {
+          const error = new Error('Unable to recalculate nutrition targets with the provided values');
+          Object.assign(error, { statusCode: StatusCodes.BAD_REQUEST, expose: true });
+          throw error;
+        }
+      } else {
+        updateData.targetCalories = autoPlan.targetCalories;
+        updateData.targetProteinG = autoPlan.proteinGrams;
+        updateData.targetFatG = autoPlan.fatGrams;
+        updateData.targetCarbsG = autoPlan.carbGrams;
       }
-      updateData.targetCalories = autoPlan.targetCalories;
-      updateData.targetProteinG = autoPlan.proteinGrams;
-      updateData.targetFatG = autoPlan.fatGrams;
-      updateData.targetCarbsG = autoPlan.carbGrams;
     }
 
     let referralClaimed = false;
@@ -217,4 +229,23 @@ function toIsoOrNull(value: Date | null | undefined) {
 
 function hasOwn<T extends object>(obj: T, key: keyof UpdateUserProfileRequest) {
   return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function hasMacroTargets(profile: PrismaUserProfile | null | undefined) {
+  if (!profile) return false;
+  return [profile.targetCalories, profile.targetProteinG, profile.targetFatG, profile.targetCarbsG].every(
+    (value) => typeof value === 'number' && Number.isFinite(value),
+  );
+}
+
+function canComputeNutritionPlan(input: NutritionPlanInput) {
+  return Boolean(
+    input &&
+      input.gender &&
+      input.birthdate &&
+      input.heightCm &&
+      input.currentWeightKg &&
+      input.activityLevel &&
+      input.planIntensity,
+  );
 }
