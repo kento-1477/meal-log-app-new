@@ -91,6 +91,7 @@ export default function DashboardScreen() {
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
   const setUsage = useSessionStore((state) => state.setUsage);
+  const usage = useSessionStore((state) => state.usage);
   const isAuthenticated = status === 'authenticated';
   const { t, locale } = useTranslation();
   const premiumState = usePremiumStore((state) => state.status);
@@ -305,6 +306,18 @@ export default function DashboardScreen() {
                   <Text style={styles.logoutText}>{t('dashboard.logout')}</Text>
                 </TouchableOpacity>
               ) : null}
+            </View>
+            <View style={styles.headerMeta}>
+              <Text style={styles.headerSubtitle}>
+                {isPremium ? t('dashboard.plan.premium') : t('dashboard.plan.free')}
+              </Text>
+              <View style={styles.headerChip}>
+                <Text style={styles.headerChipText}>
+                  {usage
+                    ? t('dashboard.usage.remaining', { remaining: usage.remaining, limit: usage.limit })
+                    : t('dashboard.usage.loading')}
+                </Text>
+              </View>
             </View>
           </View>
           <View style={styles.segmentRow}>
@@ -720,12 +733,16 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
+    paddingTop: spacing.md,
     paddingBottom: spacing.xl * 4,
     gap: spacing.md,
   },
   headerBlock: {
-    paddingBottom: 12,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 20,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.xs,
   },
   headerRow: {
     flexDirection: 'row',
@@ -745,11 +762,32 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
   },
   headerTitle: {
-    fontSize: 24,
-    lineHeight: 28,
+    fontSize: 20,
+    lineHeight: 24,
     fontWeight: '700',
     color: colors.textPrimary,
     flexShrink: 1,
+  },
+  headerSubtitle: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  headerMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  headerChip: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+    backgroundColor: colors.surface,
+    borderRadius: 999,
+  },
+  headerChipText: {
+    ...textStyles.caption,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
   logoutButton: {
     paddingHorizontal: spacing.sm,
