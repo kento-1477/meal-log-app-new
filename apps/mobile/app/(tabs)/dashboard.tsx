@@ -16,7 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { DashboardPeriod, MealLogSummary, MealLogRange, DashboardSummary, DashboardTargets } from '@meal-log/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDashboardSummary, type MacroComparison } from '@/features/dashboard/useDashboardSummary';
-import { CalorieLineChart } from '@/features/dashboard/components/CalorieLineChart';
+import { CalorieBarChart, defaultCalorieChartConfig } from '@/features/dashboard/components/CalorieBarChart';
+import { MonthlyCalorieChart } from '@/features/dashboard/components/MonthlyCalorieChart';
 import { MealPeriodBreakdown } from '@/features/dashboard/components/MealPeriodBreakdown';
 
 import { EmptyStateCard } from '@/features/dashboard/components/EmptyStateCard';
@@ -44,10 +45,24 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AuroraBackground } from '@/components/AuroraBackground';
+import { useCalorieTrend, type CalorieChartMode } from '@/features/dashboard/useCalorieTrend';
 
 const DEFAULT_PERIOD: DashboardPeriod = 'today';
 const brandLogo = require('../../assets/brand/logo.png');
-type SegmentKey = 'today' | 'week' | 'month';
+type SegmentKey = 'daily' | 'weekly' | 'monthly';
+const CALORIE_CHART_CONFIG = {
+  ...defaultCalorieChartConfig,
+  colors: {
+    ...defaultCalorieChartConfig.colors,
+    over: '#ff8a3d',
+    under: '#4b7bec',
+  },
+  bar: {
+    ...defaultCalorieChartConfig.bar,
+    thicknessMonthly: 8,
+    maxMonthly: 10,
+  },
+};
 
 const MACRO_ORDER: Array<MacroComparison['key']> = ['protein_g', 'carbs_g', 'fat_g'];
 const MACRO_LABEL_KEY: Record<MacroComparison['key'], string> = {
@@ -66,7 +81,7 @@ type Translate = (key: string, params?: Record<string, string | number>) => stri
 export default function DashboardScreen() {
   const router = useRouter();
   const [period, setPeriod] = useState<DashboardPeriod>(DEFAULT_PERIOD);
-  const [segmentKey, setSegmentKey] = useState<SegmentKey>('today');
+  const [segmentKey, setSegmentKey] = useState<SegmentKey>('daily');
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null);
   const [segmentGroupWidth, setSegmentGroupWidth] = useState(0);
   const segmentHighlight = useRef(new Animated.Value(4)).current;
@@ -82,9 +97,9 @@ export default function DashboardScreen() {
   const isPremium = premiumState?.isPremium ?? userPlan === 'PREMIUM';
   const segmentOptions = useMemo(
     () => [
-      { key: 'today' as SegmentKey, label: t('dashboard.segment.today') },
-      { key: 'week' as SegmentKey, label: t('dashboard.segment.week') },
-      { key: 'month' as SegmentKey, label: t('dashboard.segment.month') },
+      { key: 'daily' as SegmentKey, label: t('dashboard.segment.today') },
+      { key: 'weekly' as SegmentKey, label: t('dashboard.segment.week') },
+      { key: 'monthly' as SegmentKey, label: t('dashboard.segment.month') },
     ],
     [t],
   );
@@ -113,22 +128,25 @@ export default function DashboardScreen() {
   }, [activeSegmentIndex, segmentButtonWidth, segmentHighlight]);
   const handleSegmentChange = (key: SegmentKey) => {
     setSegmentKey(key);
-    if (key === 'today') {
+    if (key === 'daily') {
       setPeriod('today');
       setCustomRange(null);
-    } else if (key === 'week') {
+      return;
+    }
+    if (key === 'weekly') {
       setPeriod('thisWeek');
       setCustomRange(null);
+      return;
+    }
+
+    const now = DateTime.now();
+    const startDate = now.minus({ days: 29 }).startOf('day').toISODate();
+    const endDate = now.endOf('day').toISODate();
+    setPeriod('custom');
+    if (startDate && endDate) {
+      setCustomRange({ from: startDate, to: endDate });
     } else {
-      const now = DateTime.now();
-      const startDate = now.startOf('month').toISODate();
-      const endDate = now.endOf('day').toISODate();
-      setPeriod('custom');
-      if (startDate && endDate) {
-        setCustomRange({ from: startDate, to: endDate });
-      } else {
-        setCustomRange(null);
-      }
+      setCustomRange(null);
     }
   };
 
@@ -136,9 +154,50 @@ export default function DashboardScreen() {
     enabled: isAuthenticated,
     range: customRange ?? undefined,
   });
+  const chartMode: CalorieChartMode = segmentKey === 'monthly' ? 'monthly' : segmentKey === 'weekly' ? 'weekly' : 'daily';
+  const calorieTrend = useCalorieTrend(chartMode);
+  const monthlySummary = useMemo(() => {
+    if (chartMode !== 'monthly' || !calorieTrend.points.length) {
+      return null;
+    }
+    const today = DateTime.now().startOf('day');
+    const start = today.minus({ days: 29 });
+    const bars = [];
+    let total = 0;
+    let count = 0;
+    calorieTrend.points.forEach((point, index) => {
+      const dt = DateTime.fromISO(point.date);
+      const isToday = dt.isValid ? dt.hasSame(today, 'day') : index === 0;
+      const isFuture = dt.isValid ? dt.startOf('day') > today : false;
+      const intake = isFuture ? null : point.value;
+      if (intake != null) {
+        total += intake;
+        count += 1;
+      }
+      bars.unshift({
+        day: dt.isValid ? dt.day : index + 1,
+        intakeKcal: intake,
+        targetKcal: calorieTrend.target,
+        isToday,
+        rawDate: point.date,
+      });
+    });
+    return {
+      bars,
+      startDate: start.toISODate(),
+      endDate: today.toISODate(),
+      averageCalories: count > 0 ? Math.round(total / count) : null,
+    };
+  }, [chartMode, calorieTrend.points, calorieTrend.target]);
 
   const showEmpty = data ? !data.calories.hasData : false;
   const emptyMessage = period === 'thisWeek' ? t('dashboard.empty.week') : t('dashboard.empty.generic');
+  const chartEmptyLabel = t('dashboard.chart.empty');
+  const refreshing = isFetching || calorieTrend.isFetching;
+  const handleRefresh = () => {
+    refetch();
+    calorieTrend.refetch();
+  };
 
   const logsQuery = useQuery({
     queryKey: ['mealLogs', logsRange, locale],
@@ -228,7 +287,9 @@ export default function DashboardScreen() {
         <ScrollView
           style={styles.container}
           contentContainerStyle={styles.content}
-          refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => refetch()} tintColor={colors.accent} />}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />
+          }
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.headerBlock}>
@@ -250,6 +311,7 @@ export default function DashboardScreen() {
             <View
               style={styles.segmentGroup}
               onLayout={(event) => setSegmentGroupWidth(event.nativeEvent.layout.width)}
+              accessibilityRole="tablist"
             >
               {segmentButtonWidth > 0 ? (
                 <Animated.View
@@ -270,7 +332,7 @@ export default function DashboardScreen() {
                     key={option.key}
                     style={[styles.segmentButton, active && styles.segmentButtonActive]}
                     onPress={() => handleSegmentChange(option.key)}
-                    accessibilityRole="button"
+                    accessibilityRole="tab"
                     accessibilityState={{ selected: active }}
                   >
                     <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>{option.label}</Text>
@@ -343,7 +405,25 @@ export default function DashboardScreen() {
 
             <View style={styles.section}>
               <View style={styles.card}>
-          <CalorieLineChart points={data.calories.points} target={data.calories.targetLine} />
+                {chartMode === 'monthly' && monthlySummary ? (
+                  <MonthlyCalorieChart
+                    days={monthlySummary.bars}
+                    startDate={monthlySummary.startDate}
+                    endDate={monthlySummary.endDate}
+                    averageCalories={monthlySummary.averageCalories}
+                  />
+                ) : (
+                  <CalorieBarChart
+                    points={calorieTrend.points}
+                    target={calorieTrend.target}
+                    mode={chartMode}
+                    config={CALORIE_CHART_CONFIG}
+                    isLoading={calorieTrend.isLoading}
+                    isFetching={calorieTrend.isFetching}
+                    emptyLabel={chartEmptyLabel}
+                    stats={calorieTrend.stats}
+                  />
+                )}
               </View>
               <MealPeriodBreakdown entries={data.calories.mealPeriodBreakdown} />
               {showEmpty && <EmptyStateCard message={emptyMessage} />}

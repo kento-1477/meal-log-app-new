@@ -29,6 +29,7 @@ import {
   MealLogListResponseSchema,
   UserProfileResponseSchema,
   UpdateUserProfileRequestSchema,
+  CalorieTrendResponseSchema,
 } from '@meal-log/shared';
 
 const responseCache = new Map<string, unknown>();
@@ -412,6 +413,19 @@ export async function getDashboardTargets() {
   );
   const parsed = DashboardTargetsSchema.parse(response.targets);
   return parsed as DashboardTargets;
+}
+
+export type CalorieTrendMode = 'daily' | 'weekly' | 'monthly';
+
+export async function getCalorieTrend(mode: CalorieTrendMode) {
+  const params = new URLSearchParams({ mode });
+  params.set('locale', getLocale());
+  const response = await apiFetch<{ ok: boolean; target: unknown; points: unknown[] }>(
+    `/api/calories?${params.toString()}`,
+    { method: 'GET' },
+  );
+  const parsed = CalorieTrendResponseSchema.parse({ target: response.target, points: response.points });
+  return parsed;
 }
 
 export interface StreakPayload {
