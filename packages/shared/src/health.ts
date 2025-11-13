@@ -270,9 +270,6 @@ function determineCalorieAdjustment(context: PlanComputationContext, maintenance
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
-*** End Patch
-PATCH] to=functions.apply_patch dom error: *** Begin Patch
-
 export function computeNutritionPlan(input: NutritionPlanInput): NutritionPlanComputation | null {
   const context = guardInputs(input);
   if (!context) return null;
