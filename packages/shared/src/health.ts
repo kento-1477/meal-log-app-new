@@ -270,7 +270,6 @@ function determineCalorieAdjustment(context: PlanComputationContext, maintenance
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
-
 export function computeNutritionPlan(input: NutritionPlanInput): NutritionPlanComputation | null {
   const context = guardInputs(input);
   if (!context) return null;
@@ -352,11 +351,11 @@ export function computeNutritionPlan(input: NutritionPlanInput): NutritionPlanCo
   const carbGrams = Math.max(0, carbCalories / 4);
 
   return {
-    targetCalories: Math.round(targetCalories),
+    targetCalories: clamp(Math.round(targetCalories), 800, 7000),
     maintenanceCalories: Math.round(maintenanceCalories),
-    proteinGrams: Math.round(proteinGrams),
-    fatGrams: Math.round(fatGrams),
-    carbGrams: Math.round(carbGrams),
+    proteinGrams: clamp(Math.round(proteinGrams), 40, 500),
+    fatGrams: clamp(Math.round(fatGrams), 20, 300),
+    carbGrams: clamp(Math.round(carbGrams), 80, 900),
     method: 'auto',
     meta: {
       bmr: Math.round(bmr),

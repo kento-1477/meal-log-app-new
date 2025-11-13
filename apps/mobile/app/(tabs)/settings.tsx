@@ -34,7 +34,7 @@ export default function SettingsScreen() {
         key: 'nutrition',
         label: t('settings.menu.nutrition'),
         icon: <Feather name="target" size={20} color={colors.textPrimary} />,
-        action: () => router.push('/settings/profile'),
+        action: () => router.push('/settings/nutrition'),
       },
       {
         key: 'weight',

@@ -2,7 +2,7 @@ import { DateTime } from 'luxon';
 import { prisma } from '../db/prisma.js';
 import { DASHBOARD_CACHE_TTL_MS, DASHBOARD_TIMEZONE } from '../config/dashboard.js';
 import { TTLCache } from '../utils/ttl-cache.js';
-import { buildDashboardSummary as buildSummary } from './dashboard-builder.js';
+import { buildDashboardSummary as buildSummary, getDefaultTargets } from './dashboard-builder.js';
 
 const cache = new TTLCache();
 
@@ -35,10 +35,15 @@ export async function getDashboardSummary({ userId, period, from, to }) {
   });
 
   const todayTotals = await fetchTodayTotals(userId, timezone);
-  const summary = buildSummary({ logs, range, timezone, todayTotals });
+  const dailyTargets = await resolveUserTargets(userId);
+  const summary = buildSummary({ logs, range, timezone, todayTotals, dailyTargets });
   const withMeta = withMetadata(summary, timezone);
   cache.set(cacheKey, withMeta, DASHBOARD_CACHE_TTL_MS);
   return withMeta;
+}
+
+export async function getDashboardTargetsForUser(userId) {
+  return resolveUserTargets(userId);
 }
 
 export function invalidateDashboardCacheForUser() {
@@ -143,5 +148,36 @@ function withMetadata(summary, timezone) {
     metadata: {
       generatedAt: DateTime.now().setZone(timezone).toISO(),
     },
+  };
+}
+
+async function resolveUserTargets(userId) {
+  const profile = await prisma.userProfile.findUnique({
+    where: { userId },
+    select: {
+      targetCalories: true,
+      targetProteinG: true,
+      targetFatG: true,
+      targetCarbsG: true,
+    },
+  });
+
+  const defaults = getDefaultTargets();
+  if (!profile) {
+    return defaults;
+  }
+
+  const normalize = (value, fallback) => {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+    return fallback;
+  };
+
+  return {
+    calories: normalize(profile.targetCalories, defaults.calories),
+    protein_g: normalize(profile.targetProteinG, defaults.protein_g),
+    fat_g: normalize(profile.targetFatG, defaults.fat_g),
+    carbs_g: normalize(profile.targetCarbsG, defaults.carbs_g),
   };
 }

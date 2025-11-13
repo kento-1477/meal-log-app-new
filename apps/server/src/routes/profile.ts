@@ -12,6 +12,7 @@ import { prisma } from '../db/prisma.js';
 import { requireAuth } from '../middleware/require-auth.js';
 import { claimReferralCode, generateDeviceFingerprint } from '../services/referral-service.js';
 import { logger } from '../logger.js';
+import { invalidateDashboardCacheForUser } from '../services/dashboard-service.js';
 
 export const profileRouter = Router();
 
@@ -40,35 +41,54 @@ profileRouter.put('/profile', async (req, res, next) => {
     const userId = req.session.userId!;
     const parsed = UpdateUserProfileRequestSchema.parse(req.body);
     const existing = await prisma.userProfile.findUnique({ where: { userId } });
-    const updateData = mapProfileInput(parsed);
+    const { auto_recalculate: autoRecalculate, ...rest } = parsed;
+    const updateData = mapProfileInput(rest);
 
     const nutritionInput: NutritionPlanInput = {
-      gender: hasOwn(parsed, 'gender') ? parsed.gender ?? null : existing?.gender ?? null,
-      birthdate: hasOwn(parsed, 'birthdate') ? parsed.birthdate ?? null : existing?.birthdate ?? null,
-      heightCm: hasOwn(parsed, 'height_cm') ? parsed.height_cm ?? null : existing?.heightCm ?? null,
-      currentWeightKg: hasOwn(parsed, 'current_weight_kg')
-        ? parsed.current_weight_kg ?? null
+      gender: hasOwn(rest, 'gender') ? rest.gender ?? null : existing?.gender ?? null,
+      birthdate: hasOwn(rest, 'birthdate') ? rest.birthdate ?? null : existing?.birthdate ?? null,
+      heightCm: hasOwn(rest, 'height_cm') ? rest.height_cm ?? null : existing?.heightCm ?? null,
+      currentWeightKg: hasOwn(rest, 'current_weight_kg')
+        ? rest.current_weight_kg ?? null
         : existing?.currentWeightKg ?? existing?.bodyWeightKg ?? null,
-      targetWeightKg: hasOwn(parsed, 'target_weight_kg')
-        ? parsed.target_weight_kg ?? null
+      targetWeightKg: hasOwn(rest, 'target_weight_kg')
+        ? rest.target_weight_kg ?? null
         : existing?.targetWeightKg ?? null,
-      activityLevel: hasOwn(parsed, 'activity_level') ? parsed.activity_level ?? null : existing?.activityLevel ?? null,
-      planIntensity: hasOwn(parsed, 'plan_intensity') ? parsed.plan_intensity ?? null : existing?.planIntensity ?? null,
-      goals: hasOwn(parsed, 'goals') ? parsed.goals ?? [] : existing?.goals ?? [],
+      activityLevel: hasOwn(rest, 'activity_level') ? rest.activity_level ?? null : existing?.activityLevel ?? null,
+      planIntensity: hasOwn(rest, 'plan_intensity') ? rest.plan_intensity ?? null : existing?.planIntensity ?? null,
+      goals: hasOwn(rest, 'goals') ? rest.goals ?? [] : existing?.goals ?? [],
     };
 
-    const autoPlan = computeNutritionPlan(nutritionInput);
-    if (autoPlan) {
-      updateData.targetCalories = autoPlan.targetCalories;
-      updateData.targetProteinG = autoPlan.proteinGrams;
-      updateData.targetFatG = autoPlan.fatGrams;
-      updateData.targetCarbsG = autoPlan.carbGrams;
+    const userProvidedTargets =
+      hasOwn(rest, 'target_calories') ||
+      hasOwn(rest, 'target_protein_g') ||
+      hasOwn(rest, 'target_fat_g') ||
+      hasOwn(rest, 'target_carbs_g');
+    const hasPersistedTargets = hasMacroTargets(existing);
+    const hasPlanInputs = canComputeNutritionPlan(nutritionInput);
+
+    const shouldAutoPopulateTargets = !userProvidedTargets && !hasPersistedTargets && hasPlanInputs;
+    const shouldRecalculate = Boolean(autoRecalculate);
+    if (shouldRecalculate || shouldAutoPopulateTargets) {
+      const autoPlan = computeNutritionPlan(nutritionInput);
+      if (!autoPlan) {
+        if (shouldRecalculate) {
+          const error = new Error('Unable to recalculate nutrition targets with the provided values');
+          Object.assign(error, { statusCode: StatusCodes.BAD_REQUEST, expose: true });
+          throw error;
+        }
+      } else {
+        updateData.targetCalories = autoPlan.targetCalories;
+        updateData.targetProteinG = autoPlan.proteinGrams;
+        updateData.targetFatG = autoPlan.fatGrams;
+        updateData.targetCarbsG = autoPlan.carbGrams;
+      }
     }
 
     let referralClaimed = false;
     let referralResult: { premiumDays: number; premiumUntil: string; referrerUsername: string | null } | null = null;
 
-    const referralCode = hasOwn(parsed, 'marketing_referral_code') ? parsed.marketing_referral_code ?? null : null;
+    const referralCode = hasOwn(rest, 'marketing_referral_code') ? rest.marketing_referral_code ?? null : null;
 
     const profile = await prisma.userProfile.upsert({
       where: { userId },
@@ -88,6 +108,8 @@ profileRouter.put('/profile', async (req, res, next) => {
         logger.warn({ userId, referralCode, error }, 'Failed to auto-claim referral code from profile update');
       }
     }
+
+    invalidateDashboardCacheForUser(userId);
 
     const payload = serializeProfile(profile);
     res.status(StatusCodes.OK).json({
@@ -207,4 +229,23 @@ function toIsoOrNull(value: Date | null | undefined) {
 
 function hasOwn<T extends object>(obj: T, key: keyof UpdateUserProfileRequest) {
   return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function hasMacroTargets(profile: PrismaUserProfile | null | undefined) {
+  if (!profile) return false;
+  return [profile.targetCalories, profile.targetProteinG, profile.targetFatG, profile.targetCarbsG].every(
+    (value) => typeof value === 'number' && Number.isFinite(value),
+  );
+}
+
+function canComputeNutritionPlan(input: NutritionPlanInput) {
+  return Boolean(
+    input &&
+      input.gender &&
+      input.birthdate &&
+      input.heightCm &&
+      input.currentWeightKg &&
+      input.activityLevel &&
+      input.planIntensity,
+  );
 }

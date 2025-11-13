@@ -37,18 +37,19 @@ export async function maybeTranslateNutritionResponse(
     return null;
   }
 
-  try {
-    const translated = await translateWithGemini(base, targetLocale);
-    return translated;
-  } catch (error) {
-    console.warn('Failed to translate nutrition response', error);
-    return null;
+  const { translated, errored } = await translateWithGemini(base, targetLocale);
+  if (errored) {
+    console.warn('Failed to translate nutrition response', errored);
   }
+  return translated;
 }
 
-async function translateWithGemini(base: GeminiNutritionResponse, targetLocale: Locale) {
+async function translateWithGemini(
+  base: GeminiNutritionResponse,
+  targetLocale: Locale,
+): Promise<{ translated: GeminiNutritionResponse | null; errored: Error | null }> {
   if (!env.GEMINI_API_KEY) {
-    return null;
+    return { translated: null, errored: null };
   }
 
   const prompt = buildTranslationPrompt(base, targetLocale);
@@ -85,13 +86,13 @@ async function translateWithGemini(base: GeminiNutritionResponse, targetLocale: 
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      throw new Error(`Gemini translation failed: ${response.status} ${text}`);
+      return { translated: cloneResponse(base), errored: new Error(`Gemini translation failed: ${response.status} ${text}`) };
     }
 
     const data = (await response.json()) as any;
     const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (typeof raw !== 'string') {
-      throw new Error('Gemini translation returned no text');
+      return { translated: cloneResponse(base), errored: new Error('Gemini translation returned no text') };
     }
 
     const parsed = TranslationResultSchema.parse(JSON.parse(raw)) as TranslationResult;
@@ -113,7 +114,7 @@ async function translateWithGemini(base: GeminiNutritionResponse, targetLocale: 
       },
     };
 
-    return translated;
+    return { translated, errored: null };
   } finally {
     clearTimeout(timer);
   }
