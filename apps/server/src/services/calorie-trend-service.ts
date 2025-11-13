@@ -117,9 +117,10 @@ function resolveRangeBounds(now: DateTime, mode: CalorieTrendMode) {
 
 function formatLabel(dateTime: DateTime, locale?: string) {
   const targetLocale = locale ?? 'ja-JP';
+  const timeZone = dateTime.zoneName ?? 'UTC';
   const jsDate = dateTime.toJSDate();
-  const monthDayFormatter = new Intl.DateTimeFormat(targetLocale, { month: 'numeric', day: 'numeric' });
-  const weekdayFormatter = new Intl.DateTimeFormat(targetLocale, { weekday: 'short' });
+  const monthDayFormatter = new Intl.DateTimeFormat(targetLocale, { month: 'numeric', day: 'numeric', timeZone });
+  const weekdayFormatter = new Intl.DateTimeFormat(targetLocale, { weekday: 'short', timeZone });
   const monthDay = monthDayFormatter.format(jsDate);
   const weekday = weekdayFormatter.format(jsDate);
   return `${monthDay} (${weekday})`;
