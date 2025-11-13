@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { colors } from '@/theme/colors';
@@ -26,6 +26,7 @@ import { SUPPORT_EMAIL } from '@/config/legal';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
   const setUsage = useSessionStore((state) => state.setUsage);
@@ -76,8 +77,11 @@ export default function LoginScreen() {
 
   return (
     <AuroraBackground style={styles.container}>
-      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.inner}>
+      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right', 'bottom']}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={[styles.inner, { paddingBottom: 32 + insets.bottom }]}
+        >
           <BrandHeader title={t('login.title')} subtitle={t('login.subtitle')} align="center" />
           <GlassCard style={styles.formCard}>
             <View style={styles.formGroup}>

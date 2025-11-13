@@ -64,6 +64,9 @@ export default function OnboardingCurrentWeightScreen() {
               value={weightInput}
               onChangeText={handleWeightChange}
               keyboardType="decimal-pad"
+              textContentType="oneTimeCode"
+              autoComplete="off"
+              importantForAutofill="no"
               placeholder="65"
             />
             <Text style={styles.unitLabel}>{t('onboarding.weight.kg')}</Text>

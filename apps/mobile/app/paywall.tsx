@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Link, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import type { PremiumStatus as PremiumStatusPayload } from '@meal-log/shared';
@@ -30,43 +30,44 @@ import {
   trackPaywallRestoreFailure,
 } from '@/analytics/events';
 
-const FEATURE_KEYS = [
-  'paywall.feature.history',
-  'paywall.feature.ai',
-  'paywall.feature.dashboard',
-  'paywall.feature.support',
-] as const;
-
-type FeatureKey = (typeof FEATURE_KEYS)[number];
-
-type FeatureIconConfig = {
+type PlanComparisonRow = {
+  key: string;
   icon: ComponentProps<typeof Feather>['name'];
-  background: string;
-  color: string;
+  labelKey: string;
+  freeKey: string;
+  premiumKey: string;
 };
 
-const FEATURE_ICON_MAP: Record<FeatureKey, FeatureIconConfig> = {
-  'paywall.feature.history': {
-    icon: 'clock',
-    background: 'rgba(31,36,44,0.08)',
-    color: colors.accentInk,
-  },
-  'paywall.feature.ai': {
+const PLAN_COMPARISON_ROWS: PlanComparisonRow[] = [
+  {
+    key: 'ai',
     icon: 'message-circle',
-    background: 'rgba(245,178,37,0.18)',
-    color: colors.accent,
+    labelKey: 'paywall.comparison.ai.label',
+    freeKey: 'paywall.comparison.ai.free',
+    premiumKey: 'paywall.comparison.ai.premium',
   },
-  'paywall.feature.dashboard': {
+  {
+    key: 'history',
+    icon: 'archive',
+    labelKey: 'paywall.comparison.history.label',
+    freeKey: 'paywall.comparison.history.free',
+    premiumKey: 'paywall.comparison.history.premium',
+  },
+  {
+    key: 'dashboard',
     icon: 'bar-chart-2',
-    background: 'rgba(116,210,194,0.18)',
-    color: colors.accentSage,
+    labelKey: 'paywall.comparison.dashboard.label',
+    freeKey: 'paywall.comparison.dashboard.free',
+    premiumKey: 'paywall.comparison.dashboard.premium',
   },
-  'paywall.feature.support': {
-    icon: 'life-buoy',
-    background: 'rgba(17,19,24,0.08)',
-    color: colors.accentInk,
+  {
+    key: 'recent',
+    icon: 'clock',
+    labelKey: 'paywall.comparison.recent.label',
+    freeKey: 'paywall.comparison.recent.free',
+    premiumKey: 'paywall.comparison.recent.premium',
   },
-};
+];
 
 export default function PaywallScreen() {
   const { t } = useTranslation();
@@ -190,43 +191,31 @@ export default function PaywallScreen() {
     restoreMutation.mutate();
   }, [restoreMutation]);
 
-  const featureList = useMemo(
-    () => FEATURE_KEYS.map((key) => ({ key, label: t(key), iconConfig: FEATURE_ICON_MAP[key] })),
+  const handleReturnToChat = useCallback(() => {
+    router.replace('/(tabs)/chat');
+  }, [router]);
+
+  const comparisonRows = useMemo(
+    () =>
+      PLAN_COMPARISON_ROWS.map((row) => ({
+        key: row.key,
+        icon: row.icon,
+        label: t(row.labelKey),
+        free: t(row.freeKey),
+        premium: t(row.premiumKey),
+      })),
     [t],
   );
 
-  const spotlightHighlights = useMemo(
-    () => [
-      {
-        key: 'ai',
-        label: t('paywall.spotlight.ai.title'),
-        description: t('paywall.spotlight.ai.description'),
-        value: '3→20',
-        background: 'rgba(245,178,37,0.12)',
-        glow: 'rgba(245,178,37,0.32)',
-        valueColor: colors.accent,
-      },
-      {
-        key: 'history',
-        label: t('paywall.spotlight.history.title'),
-        description: t('paywall.spotlight.history.description'),
-        value: '90+',
-        background: 'rgba(116,210,194,0.14)',
-        glow: 'rgba(116,210,194,0.35)',
-        valueColor: colors.accentSage,
-      },
-      {
-        key: 'insight',
-        label: t('paywall.spotlight.dashboard.title'),
-        description: t('paywall.spotlight.dashboard.description'),
-        value: 'Pro',
-        background: 'rgba(17,19,24,0.12)',
-        glow: 'rgba(17,19,24,0.28)',
-        valueColor: colors.accentInk,
-      },
-    ],
+  const planColumnLabels = useMemo(
+    () => ({
+      free: t('paywall.comparison.column.free'),
+      premium: t('paywall.comparison.column.premium'),
+    }),
     [t],
   );
+
+  const heroStatusLabel = isPremium ? t('paywall.hero.status.premium') : t('paywall.hero.status.free');
 
   const priceLabel = useMemo(() => {
     if (productLoading) {
@@ -260,144 +249,139 @@ export default function PaywallScreen() {
 
   return (
     <View style={styles.screen}>
-      <LinearGradient
-        colors={['#E9F1FF', '#FDF9F2', '#FFF4E2']}
-        locations={[0, 0.6, 1]}
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.backgroundGradient}
-      />
-      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-        <ScrollView contentContainerStyle={styles.container}>
-          <View style={styles.heroWrapper}>
-            <LinearGradient
-              colors={['#FFFFFF', '#FFF5E9', '#F5F1FF']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.headerCard}
-            >
-              <View style={styles.heroHalo} />
-              <View style={styles.heroBadgeRow}>
-                <View style={styles.badgePill}>
-                  <Text style={styles.breadcrumb}>{t('paywall.badge')}</Text>
-                </View>
-                {!platformUnsupported ? <Text style={styles.badgeHint}>{t('paywall.heroHint')}</Text> : null}
-              </View>
-              <Text style={styles.title}>{t('paywall.title')}</Text>
-              <Text style={styles.subtitle}>{t('paywall.subtitle')}</Text>
-              <View style={styles.pricePill}>
-                {productLoading ? (
-                  <ActivityIndicator color={colors.accentInk} />
-                ) : (
-                  <>
-                    <Text style={styles.price}>{priceLabel}</Text>
-                    <Text style={styles.priceCaption}>{t('paywall.priceCaption')}</Text>
-                  </>
-                )}
-              </View>
-              {isPremium ? (
-                <View style={styles.statusBadge}>
-                  <Text style={styles.statusText}>
-                    {t('paywall.status.active', { days: premiumStatus?.daysRemaining ?? 0 })}
-                  </Text>
-                </View>
-              ) : null}
-            </LinearGradient>
-          </View>
-
-        <View style={styles.manifestCard}>
-          <Text style={styles.manifestTitle}>{t('paywall.manifest.title')}</Text>
-          <Text style={styles.manifestDescription}>{t('paywall.manifest.description')}</Text>
-        </View>
-
-        <View style={styles.spotlightSection}>
-          <Text style={styles.sectionEyebrow}>{t('paywall.spotlight.title')}</Text>
-          <View style={styles.spotlightGrid}>
-            {spotlightHighlights.map((item) => (
-              <View key={item.key} style={[styles.spotlightCard, { backgroundColor: item.background }]}>
-                <View style={[styles.spotlightGlow, { backgroundColor: item.glow }]} />
-                <Text style={styles.spotlightLabel}>{item.label}</Text>
-                <Text style={[styles.spotlightValue, { color: item.valueColor }]}>{item.value}</Text>
-                <Text style={styles.spotlightDescription}>{item.description}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {platformUnsupported ? (
-          <View style={styles.noticeCard}>
-            <Text style={styles.noticeTitle}>{t('paywall.error.unsupported')}</Text>
-            <Text style={styles.noticeDescription}>{t('paywall.error.unsupportedDescription')}</Text>
-          </View>
-        ) : null}
-
-        {productError ? (
-          <View style={styles.noticeCard}>
-            <Text style={styles.noticeTitle}>{t('paywall.error.loadFailed')}</Text>
-            <Text style={styles.noticeDescription}>{t('paywall.error.loadFailedDescription')}</Text>
-            <TouchableOpacity onPress={() => refetchProducts()} style={styles.retryButton}>
-              <Text style={styles.retryLabel}>{t('paywall.retry')}</Text>
+      <LinearGradient colors={['#F6F8FF', '#FFF4F2']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.backgroundGradient} />
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
+        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+          <View style={styles.pageHeader}>
+            <View>
+              <Text style={styles.planLabel}>{t('paywall.planLabel')}</Text>
+            </View>
+            <TouchableOpacity style={styles.backButton} onPress={handleReturnToChat}>
+              <Text style={styles.backButtonLabel}>{t('paywall.backToChat')}</Text>
             </TouchableOpacity>
           </View>
-        ) : null}
 
-        <View style={styles.featureCard}>
-          <Text style={styles.sectionTitle}>{t('paywall.featuresTitle')}</Text>
-          <View style={styles.featureList}>
-            {featureList.map((feature) => (
-              <View style={styles.featureRow} key={feature.key}>
-                <View style={[styles.featureIcon, { backgroundColor: feature.iconConfig.background }]}>
-                  <Feather name={feature.iconConfig.icon} size={20} color={feature.iconConfig.color} />
-                </View>
-                <Text style={styles.featureText}>{feature.label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.primaryButton, (platformUnsupported || isPremium || premiumLoading) && styles.buttonDisabled]}
-          onPress={handlePurchase}
-          disabled={platformUnsupported || isPremium || premiumLoading || purchaseMutation.isLoading}
-          activeOpacity={0.8}
-        >
           <LinearGradient
-            colors={['#1F1A11', '#1B1205', '#3B2400']}
+            colors={['#FFFFFF', '#FFF4EA']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.primaryButtonGradient}
+            style={styles.heroCard}
           >
-            {purchaseMutation.isLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.primaryButtonLabel}>
-                {isPremium ? t('paywall.primaryButton.premium') : t('paywall.primaryButton.default')}
+            <View style={styles.statusPill}>
+              <Text style={styles.statusPillText}>{heroStatusLabel}</Text>
+            </View>
+            <Text style={styles.heroTitle}>{t('paywall.hero.title')}</Text>
+            <Text style={styles.heroDescription}>{t('paywall.hero.description')}</Text>
+            <View style={styles.priceRow}>
+              {productLoading ? <ActivityIndicator color={colors.accentInk} /> : <Text style={styles.heroPrice}>{priceLabel}</Text>}
+            </View>
+            {isPremium ? (
+              <Text style={styles.heroStatusDetail}>
+                {t('paywall.status.active', { days: premiumStatus?.daysRemaining ?? 0 })}
               </Text>
-            )}
+            ) : null}
+            <Text style={styles.priceNote}>{t('paywall.hero.priceNote')}</Text>
           </LinearGradient>
-        </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.secondaryButton, (platformUnsupported || restoreMutation.isLoading) && styles.buttonDisabled]}
-          onPress={handleRestore}
-          disabled={platformUnsupported || restoreMutation.isLoading}
-        >
-          {restoreMutation.isLoading ? (
-            <ActivityIndicator color={colors.accent} />
-          ) : (
-            <Text style={styles.secondaryButtonLabel}>{t('paywall.secondaryButton.restore')}</Text>
-          )}
-        </TouchableOpacity>
+          {platformUnsupported ? (
+            <View style={styles.noticeCard}>
+              <Feather name="smartphone" size={18} color={colors.accentInk} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.noticeTitle}>{t('paywall.error.unsupported')}</Text>
+                <Text style={styles.noticeDescription}>{t('paywall.error.unsupportedDescription')}</Text>
+              </View>
+            </View>
+          ) : null}
 
-        <Text style={styles.disclaimer}>{t('paywall.disclaimer')}</Text>
+          {productError ? (
+            <View style={styles.noticeCard}>
+              <Feather name="refresh-ccw" size={18} color={colors.accent} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.noticeTitle}>{t('paywall.error.loadFailed')}</Text>
+                <Text style={styles.noticeDescription}>{t('paywall.error.loadFailedDescription')}</Text>
+              </View>
+              <TouchableOpacity onPress={() => refetchProducts()} style={styles.retryButton}>
+                <Text style={styles.retryLabel}>{t('paywall.retry')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
-        <View style={styles.footerLinks}>
-          <Link href="/settings" asChild>
-            <TouchableOpacity style={styles.linkButton}>
-              <Text style={styles.linkLabel}>{t('paywall.link.managePlan')}</Text>
-            </TouchableOpacity>
-          </Link>
-        </View>
+          <TouchableOpacity
+            style={[styles.primaryButton, (platformUnsupported || isPremium || premiumLoading) && styles.buttonDisabled]}
+            onPress={handlePurchase}
+            disabled={platformUnsupported || isPremium || premiumLoading || purchaseMutation.isLoading}
+            activeOpacity={0.9}
+          >
+            <LinearGradient
+              colors={['#FFB347', '#F97316']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.primaryButtonGradient}
+            >
+              {purchaseMutation.isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.primaryButtonLabel}>
+                  {isPremium ? t('paywall.primaryButton.premium') : t('paywall.primaryButton.default')}
+                </Text>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.secondaryButton, (platformUnsupported || restoreMutation.isLoading) && styles.buttonDisabled]}
+            onPress={handleRestore}
+            disabled={platformUnsupported || restoreMutation.isLoading}
+          >
+            {restoreMutation.isLoading ? (
+              <ActivityIndicator color={colors.accent} />
+            ) : (
+              <Text style={styles.secondaryButtonLabel}>{t('paywall.secondaryButton.restore')}</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.ghostButton} onPress={handleReturnToChat}>
+            <Text style={styles.ghostButtonLabel}>{t('paywall.secondaryButton.stayFree')}</Text>
+          </TouchableOpacity>
+
+          <View style={styles.comparisonCard}>
+            <View style={styles.comparisonHeader}>
+              <Text style={styles.comparisonHeading}>{t('paywall.comparison.heading')}</Text>
+            </View>
+            <View style={styles.planLegend}>
+              <View style={[styles.planChip, styles.planChipFree]}>
+                <Text style={[styles.planChipLabel, styles.planChipLabelFree]}>{planColumnLabels.free}</Text>
+              </View>
+              <View style={[styles.planChip, styles.planChipPremium]}>
+                <Text style={[styles.planChipLabel, styles.planChipLabelPremium]}>{planColumnLabels.premium}</Text>
+              </View>
+            </View>
+            {comparisonRows.map((row) => (
+              <View key={row.key} style={styles.comparisonRow}>
+                <View style={styles.comparisonLabelCell}>
+                  <View style={styles.comparisonIcon}>
+                    <Feather name={row.icon} size={16} color={colors.accentInk} />
+                  </View>
+                  <Text style={styles.comparisonLabel}>{row.label}</Text>
+                </View>
+                <View style={styles.planColumns}>
+                  <View style={[styles.planCell, styles.planCellFree]}>
+                    <View style={[styles.planChip, styles.planChipFree]}>
+                      <Text style={[styles.planChipLabel, styles.planChipLabelFree]}>{planColumnLabels.free}</Text>
+                    </View>
+                    <Text style={styles.planCellText}>{row.free}</Text>
+                  </View>
+                  <View style={[styles.planCell, styles.planCellPremium]}>
+                    <View style={[styles.planChip, styles.planChipPremium]}>
+                      <Text style={[styles.planChipLabel, styles.planChipLabelPremium]}>{planColumnLabels.premium}</Text>
+                    </View>
+                    <Text style={styles.planCellText}>{row.premium}</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
+            <Text style={styles.comparisonNote}>{t('paywall.comparison.note')}</Text>
+          </View>
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -430,273 +414,142 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    backgroundColor: 'transparent',
   },
   container: {
     paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 48,
-    gap: 24,
+    paddingVertical: 28,
+    gap: 20,
   },
-  heroWrapper: {
-    borderRadius: 36,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.25,
-    shadowRadius: 40,
-    elevation: 12,
-  },
-  headerCard: {
-    borderRadius: 36,
-    padding: 28,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  heroHalo: {
-    position: 'absolute',
-    top: -120,
-    right: -70,
-    width: 240,
-    height: 240,
-    borderRadius: 240,
-    backgroundColor: colors.cardHalo,
-    opacity: 0.7,
-  },
-  heroBadgeRow: {
+  pageHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    alignItems: 'flex-start',
   },
-  badgePill: {
-    backgroundColor: 'rgba(255,255,255,0.32)',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-  },
-  breadcrumb: {
+  planLabel: {
     ...textStyles.caption,
     textTransform: 'uppercase',
-    letterSpacing: 1.2,
-    color: colors.accentInk,
-  },
-  badgeHint: {
-    ...textStyles.caption,
-    color: colors.accentInk,
-    opacity: 0.7,
-  },
-  title: {
-    ...textStyles.display,
-    fontSize: 32,
-    lineHeight: 40,
-    color: colors.accentInk,
-  },
-  subtitle: {
-    ...textStyles.body,
-    fontSize: 17,
-    color: colors.textSecondary,
-    marginTop: 10,
-    lineHeight: 26,
-  },
-  pricePill: {
-    marginTop: 24,
-    backgroundColor: 'rgba(255,255,255,0.45)',
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    alignItems: 'flex-start',
-    gap: 4,
-  },
-  price: {
-    ...textStyles.titleLarge,
-    color: colors.accentInk,
-    fontSize: 30,
-  },
-  priceCaption: {
-    ...textStyles.caption,
+    letterSpacing: 1,
     color: colors.textSecondary,
   },
-  statusBadge: {
-    marginTop: 20,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.6)',
-    paddingHorizontal: 16,
+  backButton: {
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.7)',
   },
-  statusText: {
+  backButtonLabel: {
+    ...textStyles.caption,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  heroCard: {
+    borderRadius: 28,
+    padding: 24,
+    gap: 14,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.18,
+    shadowRadius: 32,
+    elevation: 10,
+  },
+  statusPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+  },
+  statusPillText: {
     ...textStyles.caption,
     color: colors.accentInk,
   },
-  manifestCard: {
-    borderRadius: 30,
-    padding: 24,
+  heroTitle: {
+    ...textStyles.display,
+    fontSize: 30,
+    lineHeight: 36,
+    color: colors.accentInk,
+  },
+  heroDescription: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    lineHeight: 24,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 12,
+    marginTop: 4,
+  },
+  heroPrice: {
+    ...textStyles.titleLarge,
+    fontSize: 32,
+    color: colors.accentInk,
+  },
+  heroStatusDetail: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  priceNote: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  noticeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 24,
+    padding: 18,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.glassStroke,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.15,
-    shadowRadius: 30,
-    elevation: 8,
-  },
-  manifestTitle: {
-    ...textStyles.heading,
-    fontSize: 26,
-    color: colors.accentInk,
-    letterSpacing: -0.3,
-  },
-  manifestDescription: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    marginTop: 12,
-    lineHeight: 24,
-  },
-  spotlightSection: {
-    gap: 12,
-  },
-  sectionEyebrow: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  spotlightGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  spotlightCard: {
-    flex: 1,
-    minWidth: '48%',
-    borderRadius: 24,
-    padding: 18,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  spotlightGlow: {
-    position: 'absolute',
-    top: -40,
-    right: -30,
-    width: 120,
-    height: 120,
-    borderRadius: 120,
-    opacity: 0.6,
-  },
-  spotlightLabel: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-  },
-  spotlightValue: {
-    ...textStyles.titleLarge,
-    marginTop: 8,
-  },
-  spotlightDescription: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    marginTop: 6,
-  },
-  noticeCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 6,
   },
   noticeTitle: {
-    ...textStyles.titleMedium,
-    fontSize: 18,
-    marginBottom: 8,
+    ...textStyles.titleSmall,
     color: colors.textPrimary,
   },
   noticeDescription: {
-    ...textStyles.body,
+    ...textStyles.caption,
     color: colors.textSecondary,
+    marginTop: 2,
   },
   retryButton: {
-    marginTop: 12,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.accent,
   },
   retryLabel: {
-    ...textStyles.body,
+    ...textStyles.caption,
     color: colors.accent,
     fontWeight: '600',
   },
-  featureCard: {
-    backgroundColor: colors.surfaceStrong,
-    borderRadius: 28,
-    padding: 24,
-    gap: 18,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-  },
-  sectionTitle: {
-    ...textStyles.titleMedium,
-    color: colors.textPrimary,
-    fontSize: 20,
-  },
-  featureList: {
-    gap: 14,
-  },
-  featureRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
-  },
-  featureIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-  },
-  featureText: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    flex: 1,
-  },
   primaryButton: {
-    marginTop: 8,
-    borderRadius: 999,
+    borderRadius: 26,
     overflow: 'hidden',
     shadowColor: colors.accent,
-    shadowOffset: { width: 0, height: 16 },
+    shadowOffset: { width: 0, height: 14 },
     shadowOpacity: 0.35,
-    shadowRadius: 24,
-    elevation: 10,
+    shadowRadius: 28,
+    elevation: 12,
   },
   primaryButtonGradient: {
     paddingVertical: 18,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   primaryButtonLabel: {
     ...textStyles.body,
     color: '#fff',
-    fontWeight: '600',
+    fontWeight: '700',
     fontSize: 16,
   },
   secondaryButton: {
-    marginTop: 16,
+    marginTop: 12,
     paddingVertical: 14,
     alignItems: 'center',
-    borderRadius: 999,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: colors.accent,
   },
@@ -705,26 +558,116 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontWeight: '600',
   },
+  ghostButton: {
+    marginTop: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  ghostButtonLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    textDecorationLine: 'underline',
+  },
   buttonDisabled: {
     opacity: 0.5,
   },
-  disclaimer: {
-    ...textStyles.caption,
+  comparisonCard: {
     marginTop: 8,
-    color: colors.textSecondary,
-    lineHeight: 18,
+    borderRadius: 28,
+    padding: 24,
+    backgroundColor: colors.surfaceStrong,
+    borderWidth: 1,
+    borderColor: colors.glassStroke,
+    gap: 16,
   },
-  footerLinks: {
-    marginTop: 12,
+  comparisonHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  comparisonHeading: {
+    ...textStyles.titleMedium,
+    color: colors.textPrimary,
+  },
+  planLegend: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  planChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  planChipFree: {
+    borderColor: 'rgba(31,36,44,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.8)',
+  },
+  planChipPremium: {
+    borderColor: 'rgba(249,115,22,0.4)',
+    backgroundColor: 'rgba(249,115,22,0.12)',
+  },
+  planChipLabel: {
+    ...textStyles.caption,
+    fontWeight: '600',
+  },
+  planChipLabelFree: {
+    color: colors.textSecondary,
+  },
+  planChipLabelPremium: {
+    color: '#B45309',
+  },
+  comparisonRow: {
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(17,19,24,0.06)',
+    gap: 14,
+  },
+  comparisonLabelCell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  comparisonIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(17,19,24,0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  comparisonLabel: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  planColumns: {
     flexDirection: 'row',
     gap: 12,
   },
-  linkButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+  planCell: {
+    flex: 1,
+    borderRadius: 18,
+    padding: 14,
+    gap: 8,
+    borderWidth: 1,
   },
-  linkLabel: {
-    ...textStyles.body,
-    color: colors.accent,
+  planCellFree: {
+    borderColor: 'rgba(31,36,44,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  planCellPremium: {
+    borderColor: 'rgba(249,115,22,0.25)',
+    backgroundColor: 'rgba(249,115,22,0.08)',
+  },
+  planCellText: {
+    ...textStyles.caption,
+    color: colors.textPrimary,
+    lineHeight: 20,
+  },
+  comparisonNote: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
 });
