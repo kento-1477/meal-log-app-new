@@ -47,8 +47,9 @@ export function buildDashboardSummary({ logs, range, timezone, todayTotals, dail
   });
 
   const roundedTotals = roundMacros(totals);
+  const safeDailyTargets = sanitizeDailyTargets(providedTargets ?? getDefaultTargets());
   const daysCount = Math.max(dailyEntries.length, 1);
-  const scaledTargets = scaleTargets(dailyTargets, daysCount);
+  const scaledTargets = scaleTargets(safeDailyTargets, daysCount);
   const targets = roundMacros(scaledTargets);
   const delta = roundMacros({
     calories: roundedTotals.calories - targets.calories,
@@ -59,10 +60,10 @@ export function buildDashboardSummary({ logs, range, timezone, todayTotals, dail
 
   const micros = buildMicros(roundedTotals, targets, delta);
   const remainingToday = roundMacros({
-    calories: Math.max(dailyTargets.calories - todayTotals.calories, 0),
-    protein_g: Math.max(dailyTargets.protein_g - todayTotals.protein_g, 0),
-    fat_g: Math.max(dailyTargets.fat_g - todayTotals.fat_g, 0),
-    carbs_g: Math.max(dailyTargets.carbs_g - todayTotals.carbs_g, 0),
+    calories: Math.max(safeDailyTargets.calories - todayTotals.calories, 0),
+    protein_g: Math.max(safeDailyTargets.protein_g - todayTotals.protein_g, 0),
+    fat_g: Math.max(safeDailyTargets.fat_g - todayTotals.fat_g, 0),
+    carbs_g: Math.max(safeDailyTargets.carbs_g - todayTotals.carbs_g, 0),
   });
 
   return {
@@ -201,3 +202,19 @@ function formatFallbackDate(baseDate, offsetDays) {
 }
 
 export { roundMacros };
+
+function sanitizeDailyTargets(targets) {
+  return {
+    calories: clamp(targets.calories, 800, 7000),
+    protein_g: clamp(targets.protein_g, 40, 500),
+    fat_g: clamp(targets.fat_g, 20, 300),
+    carbs_g: clamp(targets.carbs_g, 80, 900),
+  };
+}
+
+function clamp(value, min, max) {
+  if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
+    return min;
+  }
+  return Math.min(Math.max(value, min), max);
+}
