@@ -46,9 +46,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
   return (
     <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
       {isUser ? null : (
-        <View style={styles.avatarWrapper}>
-          <Image source={AI_AVATAR} style={styles.avatar} resizeMode="contain" />
-        </View>
+        <Image source={AI_AVATAR} style={styles.avatar} resizeMode="contain" />
       )}
       {isUser ? (
         <LinearGradient
@@ -96,25 +94,10 @@ const styles = StyleSheet.create({
   rowLeft: {
     justifyContent: 'flex-start',
   },
-  avatarWrapper: {
+  avatar: {
     width: 32,
     height: 32,
-    borderRadius: 16,
     marginRight: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: colors.shadow,
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  avatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
   },
   bubble: {
     maxWidth: '82%',
