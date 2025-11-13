@@ -1,15 +1,19 @@
 import { DateTime, Interval } from 'luxon';
 import { DASHBOARD_TARGETS } from '../config/dashboard.js';
 
-export function buildDashboardSummary({ logs, range, timezone, todayTotals }) {
+export function buildDashboardSummary({ logs, range, timezone, todayTotals, dailyTargets: providedTargets }) {
   const interval = Interval.fromDateTimes(range.fromDate, range.toDate);
-  const days = [];
+  const dailyEntries = [];
   const byDate = new Map();
+  const dailyTargets = providedTargets ?? getDefaultTargets();
 
   const totals = logs.reduce(
     (acc, log) => {
       const dt = DateTime.fromJSDate(log.createdAt, { zone: timezone });
-      const dateKey = dt.toISODate();
+      const dateKey = normalizeDateKey(dt, timezone);
+      if (!dateKey) {
+        return acc;
+      }
       const bucket = byDate.get(dateKey) ?? createEmptyDailyBucket();
 
       bucket.total += log.calories;
@@ -31,19 +35,19 @@ export function buildDashboardSummary({ logs, range, timezone, todayTotals }) {
     { calories: 0, protein_g: 0, fat_g: 0, carbs_g: 0 },
   );
 
-  for (const day of iterateDays(interval)) {
-    const key = day.toISODate();
+  const cursorDays = iterateDays(interval);
+  cursorDays.forEach((day, index) => {
+    const key = normalizeDateKey(day, timezone) ?? formatFallbackDate(range.fromDate, index);
     const bucket = byDate.get(key) ?? createEmptyDailyBucket();
-    days.push({
+    dailyEntries.push({
       date: key,
       total: round(bucket.total, DASHBOARD_TARGETS.calories.decimals),
       perMealPeriod: mapMealPeriod(bucket.perMealPeriod),
     });
-  }
+  });
 
   const roundedTotals = roundMacros(totals);
-  const dailyTargets = getDefaultTargets();
-  const daysCount = Math.max(days.length, 1);
+  const daysCount = Math.max(dailyEntries.length, 1);
   const scaledTargets = scaleTargets(dailyTargets, daysCount);
   const targets = roundMacros(scaledTargets);
   const delta = roundMacros({
@@ -69,7 +73,7 @@ export function buildDashboardSummary({ logs, range, timezone, todayTotals }) {
       timezone,
     },
     calories: {
-      daily: days,
+      daily: dailyEntries,
       remainingToday,
     },
     macros: {
@@ -181,6 +185,19 @@ function createEmptyDailyBucket() {
       unknown: 0,
     },
   };
+}
+
+function normalizeDateKey(dateTime, timezone) {
+  if (!dateTime || !dateTime.isValid) {
+    return null;
+  }
+  const normalized = dateTime.setZone(timezone).startOf('day');
+  return normalized.toISODate() ?? normalized.toFormat('yyyy-MM-dd');
+}
+
+function formatFallbackDate(baseDate, offsetDays) {
+  const target = baseDate.plus({ days: offsetDays }).startOf('day');
+  return target.toISODate() ?? target.toFormat('yyyy-MM-dd');
 }
 
 export { roundMacros };

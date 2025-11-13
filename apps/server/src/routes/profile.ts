@@ -12,6 +12,7 @@ import { prisma } from '../db/prisma.js';
 import { requireAuth } from '../middleware/require-auth.js';
 import { claimReferralCode, generateDeviceFingerprint } from '../services/referral-service.js';
 import { logger } from '../logger.js';
+import { invalidateDashboardCacheForUser } from '../services/dashboard-service.js';
 
 export const profileRouter = Router();
 
@@ -95,6 +96,8 @@ profileRouter.put('/profile', async (req, res, next) => {
         logger.warn({ userId, referralCode, error }, 'Failed to auto-claim referral code from profile update');
       }
     }
+
+    invalidateDashboardCacheForUser(userId);
 
     const payload = serializeProfile(profile);
     res.status(StatusCodes.OK).json({
