@@ -9,7 +9,6 @@ import { DateTime } from 'luxon';
 
 const CHART_HEIGHT = 220;
 const PADDING = 16;
-const TARGET_BAND_HEIGHT = 18;
 const TOOLTIP_WIDTH = 152;
 
 export interface CalorieChartPoint {
@@ -26,7 +25,6 @@ export interface CalorieChartConfig {
     todayOver: string;
     future: string;
     targetLine: string;
-    targetBand: string;
   };
   bar: {
     thicknessDaily: number;
@@ -51,7 +49,6 @@ export const defaultCalorieChartConfig: CalorieChartConfig = {
     todayOver: '#ff9d5c',
     future: colors.border,
     targetLine: 'rgba(120,120,120,0.9)',
-    targetBand: 'rgba(120,120,120,0.08)',
   },
   bar: {
     thicknessDaily: 28,
@@ -236,18 +233,15 @@ export function CalorieBarChart({ points, target, mode, config, isLoading, isFet
             <>
               <Svg width={width} height={CHART_HEIGHT} onPress={() => setActiveIndex(null)}>
                 {targetVisible && (
-                  <>
-                    {renderTargetBand(width, chartData.targetY, mergedConfig)}
-                    <Line
-                      x1={PADDING}
-                      x2={width - PADDING}
-                      y1={chartData.targetY}
-                      y2={chartData.targetY}
-                      stroke={mergedConfig.colors.targetLine}
-                      strokeDasharray="6 6"
-                      strokeWidth={1}
-                    />
-                  </>
+                  <Line
+                    x1={PADDING}
+                    x2={width - PADDING}
+                    y1={chartData.targetY}
+                    y2={chartData.targetY}
+                    stroke={mergedConfig.colors.targetLine}
+                    strokeDasharray="6 6"
+                    strokeWidth={1}
+                  />
                 )}
                 {chartData.bars.map((bar) => {
                   const barColor = bar.isFuture
@@ -403,20 +397,6 @@ function Tooltip({
       <Text style={styles.tooltipValue}>{point.value.toLocaleString()} kcal</Text>
       <Text style={[styles.tooltipDiff, { color: diffColor }]}>{diffText}</Text>
     </View>
-  );
-}
-
-function renderTargetBand(width: number, targetY: number, config: CalorieChartConfig) {
-  const maxBandHeight = Math.min(TARGET_BAND_HEIGHT, CHART_HEIGHT - PADDING * 2);
-  const bandY = Math.min(Math.max(targetY - maxBandHeight / 2, PADDING), CHART_HEIGHT - PADDING - maxBandHeight);
-  return (
-    <Rect
-      x={PADDING}
-      y={bandY}
-      width={width - PADDING * 2}
-      height={maxBandHeight}
-      fill={config.colors.targetBand}
-    />
   );
 }
 

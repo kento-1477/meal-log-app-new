@@ -1,15 +1,7 @@
 import type { ReactNode } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { AuroraBackground } from '@/components/AuroraBackground';
 import { colors } from '@/theme/colors';
 import { fontFamilies, textStyles } from '@/theme/typography';
@@ -35,6 +27,7 @@ interface Props {
   headerActionPosition?: 'left' | 'right';
   footer?: ReactNode;
   accent?: ReactNode;
+  scrollEnabled?: boolean;
 }
 
 export function OnboardingScaffold({
@@ -52,6 +45,7 @@ export function OnboardingScaffold({
   headerActionPosition = 'right',
   footer,
   accent,
+  scrollEnabled = true,
 }: Props) {
   const index = Math.max(0, ONBOARDING_STEPS.indexOf(step));
   const total = ONBOARDING_STEPS.length;
@@ -144,23 +138,38 @@ export function OnboardingScaffold({
               </View>
             </View>
 
-              <ScrollView
-                style={styles.scroll}
-                contentContainerStyle={[styles.content, { paddingBottom: Math.max(48, insets.bottom + 32) }]}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-              >
-                <View style={styles.titleBlock}>
-                  <Text style={[onboardingTypography.title, isJapanese && onboardingJapaneseTypography.title]}>{title}</Text>
-                  {subtitle ? (
-                    <Text style={[onboardingTypography.subtitle, isJapanese && onboardingJapaneseTypography.subtitle]}>
-                      {subtitle}
-                    </Text>
-                  ) : null}
+              {scrollEnabled ? (
+                <ScrollView
+                  style={styles.scroll}
+                  contentContainerStyle={[styles.content, { paddingBottom: Math.max(48, insets.bottom + 32) }]}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+                >
+                  <View style={styles.titleBlock}>
+                    <Text style={[onboardingTypography.title, isJapanese && onboardingJapaneseTypography.title]}>{title}</Text>
+                    {subtitle ? (
+                      <Text style={[onboardingTypography.subtitle, isJapanese && onboardingJapaneseTypography.subtitle]}>
+                        {subtitle}
+                      </Text>
+                    ) : null}
+                  </View>
+                  {accent ? <View style={styles.accent}>{accent}</View> : null}
+                  <View style={styles.children}>{children}</View>
+                </ScrollView>
+              ) : (
+                <View style={[styles.staticContent, { paddingBottom: Math.max(48, insets.bottom + 32) }]}>
+                  <View style={styles.titleBlock}>
+                    <Text style={[onboardingTypography.title, isJapanese && onboardingJapaneseTypography.title]}>{title}</Text>
+                    {subtitle ? (
+                      <Text style={[onboardingTypography.subtitle, isJapanese && onboardingJapaneseTypography.subtitle]}>
+                        {subtitle}
+                      </Text>
+                    ) : null}
+                  </View>
+                  {accent ? <View style={styles.accent}>{accent}</View> : null}
+                  <View style={styles.children}>{children}</View>
                 </View>
-                {accent ? <View style={styles.accent}>{accent}</View> : null}
-                <View style={styles.children}>{children}</View>
-              </ScrollView>
+              )}
             </View>
 
             <View style={[styles.footer, { paddingBottom: Math.max(24, insets.bottom + 12) }]}>
@@ -221,6 +230,11 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'flex-start',
     gap: 32,
+  },
+  staticContent: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
+    gap: 28,
   },
   scroll: {
     flex: 1,

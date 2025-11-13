@@ -330,7 +330,9 @@ export default function ChatScreen() {
 
   const canSend = !usage || usage.remaining > 0 || usage.credits > 0;
   const hasTypedInput = input.trim().length > 0;
-  const sendButtonDisabled = sending || !canSend || !hasTypedInput;
+  const hasAttachment = Boolean(composingImageUri);
+  const canSubmitMessage = hasTypedInput || hasAttachment;
+  const sendButtonDisabled = sending || !canSend || !canSubmitMessage;
 
   const favoritesList = favoritesQuery.data ?? [];
   const sendLabel = canSend ? t('chat.send') : t('chat.send.limit');

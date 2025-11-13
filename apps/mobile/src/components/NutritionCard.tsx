@@ -116,7 +116,7 @@ export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, 
       </View>
       {payload.items?.length ? (
         <View style={styles.itemsBlock}>
-          {payload.items.slice(0, 3).map((item, index) => (
+          {payload.items.slice(0, 4).map((item, index) => (
             <View key={`${item.name ?? 'item'}-${index}`} style={styles.itemRow}>
               <Text style={styles.itemName}>{item.name}</Text>
               <Text style={styles.itemAmount}>{Math.round(item.grams)} g</Text>
