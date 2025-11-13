@@ -26,7 +26,7 @@ export function useCalorieTrend(mode: CalorieChartMode) {
       if (mode === 'weekly') {
         return {
           ...point,
-          label: formatWeekday(dt, locale),
+          label: formatMonthDayWithWeekday(dt, locale),
         };
       }
       if (mode === 'monthly') {
