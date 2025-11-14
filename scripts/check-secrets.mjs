@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 
 const patterns = [
   { name: 'supabase-host', regex: /supabase\.co/i },
@@ -17,7 +17,11 @@ const files = execSync('git ls-files', { encoding: 'utf-8' })
 
 const violations = [];
 
-for (const file of files) {
+for (const raw of files) {
+  const file = raw.replace(/^"(.+)"$/, '$1');
+  if (!existsSync(file)) {
+    continue;
+  }
   const content = readFileSync(file, 'utf-8');
   for (const { name, regex } of patterns) {
     if (regex.test(content)) {
