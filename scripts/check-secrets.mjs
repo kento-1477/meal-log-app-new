@@ -4,9 +4,23 @@ import { execSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 
 const patterns = [
-  { name: 'supabase-host', regex: /db\.[a-z0-9-]+\.supabase\.co/i },
-  { name: 'raw-session-secret', regex: /SESSION_SECRET\s*=\s*(?!["']?__)/ },
-  { name: 'postgres-credentials', regex: /postgresql:\/\/[^"\s]*(kentoosonou|aws-1-ap|supabase\.co)/i },
+  {
+    name: 'supabase-host',
+    regex: /db\.[a-z0-9-]+\.supabase\.co/gi,
+  },
+  {
+    name: 'raw-session-secret',
+    regex: /SESSION_SECRET\s*=\s*([^\n]+)/gi,
+    isViolation: (value) => {
+      const trimmed = value.trim().replace(/^["']|["']$/g, '');
+      return !(trimmed.startsWith('__') || trimmed.startsWith('<'));
+    },
+  },
+  {
+    name: 'postgres-credentials',
+    regex: /postgresql:\/\/[^\s'"]+/gi,
+    isViolation: (value) => /(supabase\.co|kentoosonou|aws-1-ap)/i.test(value),
+  },
 ];
 
 const files = execSync('git ls-files', { encoding: 'utf-8' })
@@ -23,9 +37,16 @@ for (const raw of files) {
     continue;
   }
   const content = readFileSync(file, 'utf-8');
-  for (const { name, regex } of patterns) {
-    if (regex.test(content)) {
-      violations.push({ file, rule: name });
+  for (const pattern of patterns) {
+    pattern.regex.lastIndex = 0;
+    let match;
+    while ((match = pattern.regex.exec(content)) !== null) {
+      const candidate = match[1] ?? match[0];
+      const isBad = pattern.isViolation ? pattern.isViolation(candidate, file) : true;
+      if (isBad) {
+        violations.push({ file, rule: pattern.name });
+        break;
+      }
     }
   }
 }
