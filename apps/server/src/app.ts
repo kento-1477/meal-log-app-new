@@ -16,6 +16,7 @@ import { accountRouter } from './routes/account.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { iapRouter } from './routes/iap.js';
 import referralRouter from './routes/referral.js';
+import { debugRouter } from './routes/debug.js';
 
 export function createApp() {
   const app = express();
