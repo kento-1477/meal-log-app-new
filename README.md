@@ -22,9 +22,9 @@ Copy `.env.example` to `.env.local` and adjust:
 
 ```
 PORT=4000
-SESSION_SECRET=super-secret
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/meal_log?schema=public
-GEMINI_API_KEY=your-google-generative-language-key
+SESSION_SECRET=<your-session-secret>
+DATABASE_URL=<your-database-url>
+GEMINI_API_KEY=<your-gemini-api-key>
 AI_ATTEMPT_TIMEOUT_MS=25000
 AI_TOTAL_TIMEOUT_MS=35000
 AI_HEDGE_DELAY_MS=5000
@@ -32,13 +32,32 @@ AI_MAX_ATTEMPTS=2
 EXPO_PUBLIC_API_BASE_URL=http://localhost:4000
 # In-app purchase testing (leave APP_STORE_SHARED_SECRET empty in dev if not using App Store validation)
 IAP_TEST_MODE=true
-APP_STORE_SHARED_SECRET=your-shared-secret
+APP_STORE_SHARED_SECRET=<your-shared-secret>
 # 翻訳戦略（任意: `ai` | `copy` | `none`）
 AI_TRANSLATION_STRATEGY=ai
+# X-IAP-Test-Mode header secret (only required when running test mode outside local dev)
+IAP_TEST_MODE_TOKEN=
+# Offline verification skips Apple/Google calls. Enable only in local automated tests.
+IAP_OFFLINE_VERIFICATION=false
+# Proxy trust configuration. Leave empty to disable.
+TRUST_PROXY=false
+# Seed controls (only for local dev)
+SEED_DEMO_USER=false
+DEMO_USER_PASSWORD=
 ```
 
 > Generate `SESSION_SECRET` with a strong random value (for example `openssl rand -hex 32`) and keep secrets in `.env.local`.
 > Without `GEMINI_API_KEY` the server falls back to a deterministic mock response so flows stay testable. When `AI_TRANSLATION_STRATEGY=ai` and no key is configured, translations gracefully fall back to English.
+>
+> Tests require `DATABASE_URL` (or `TEST_DATABASE_URL`) to be exported via your shell/CI; `.env.test` is intentionally not tracked.
+
+### Secret management policy
+
+- Do **not** commit `.env.local`, `.env.*.local`, or any environment files containing real credentials (already ignored via `.gitignore`).
+- Store production secrets in your team’s secret manager (1Password, AWS Secrets Manager, etc.) and inject them via deployment pipelines.
+- Rotate leaked credentials immediately and record the rotation in `docs/security-remediation-plan.md`.
+- In production, ensure `IAP_TEST_MODE=false` and supply real Apple/Google verification secrets; test mode must only be enabled in isolated dev sandboxes.
+- Run `npm run scan:secrets` before pushing to catch obvious leaks (fails CI if patterns are found).
 
 ### Optional: ローカルでプランを強制する
 
@@ -73,10 +92,10 @@ npx prisma db seed
 
 ### Reset schema (matches CI pipeline)
 
-CI uses a disposable Postgres container reachable at `postgresql://postgres:postgres@localhost:5432/meal_log_test`. To mirror the same settings locally, run:
+CI uses a disposable Postgres container reachable at `<postgresql://USER:PASSWORD@localhost:5432/meal_log_test>`. To mirror the same settings locally, run:
 
 ```bash
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/meal_log_dev?schema=public \
+DATABASE_URL=<postgresql://USER:PASSWORD@localhost:5432/meal_log_dev?schema=public> \
   npm run migrate:reset
 ```
 
@@ -91,6 +110,22 @@ CREATE INDEX IF NOT EXISTS "MealLog_aiRaw_gin"
 
 
 Default seed creates `demo@example.com` / `password123` for quick login.
+
+### Demo data seeding
+
+`apps/server/prisma/seed` only inserts the demo account when either:
+
+- `NODE_ENV=development`, or
+- `SEED_DEMO_USER=true`
+
+Provide a custom password via `DEMO_USER_PASSWORD`; otherwise a random password is generated and printed to the console. Avoid running the seed script against any shared/staging/production database unless you explicitly need a demo account.
+
+To verify that no demo accounts exist in a given database, run:
+
+```bash
+cd apps/server
+node scripts/audit-demo-users.ts
+```
 
 ## Running the backend
 

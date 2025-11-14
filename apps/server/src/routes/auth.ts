@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import {
   RegisterRequestSchema,
@@ -16,6 +16,7 @@ authRouter.post('/register', authRateLimiter, async (req, res, next) => {
   try {
     const body = RegisterRequestSchema.parse(req.body);
     const user = await registerUser(body);
+    await regenerateSession(req);
     req.session.userId = user.id;
     req.session.aiCredits = user.aiCredits;
     const usageStatus = await evaluateAiUsage(user.id);
@@ -35,6 +36,7 @@ authRouter.post('/register', authRateLimiter, async (req, res, next) => {
         details: error.errors,
       });
     }
+    await destroySession(req);
     next(error);
   }
 });
@@ -43,6 +45,7 @@ authRouter.post('/login', authRateLimiter, async (req, res, next) => {
   try {
     const body = LoginRequestSchema.parse(req.body);
     const user = await authenticateUser(body);
+    await regenerateSession(req);
     req.session.userId = user.id;
     req.session.aiCredits = user.aiCredits;
     const usageStatus = await evaluateAiUsage(user.id);
@@ -62,6 +65,7 @@ authRouter.post('/login', authRateLimiter, async (req, res, next) => {
         details: error.errors,
       });
     }
+    await destroySession(req);
     next(error);
   }
 });
@@ -117,4 +121,26 @@ async function getOnboardingStatus(userId: number) {
     completed: Boolean(completedAt),
     completed_at: completedAt?.toISOString() ?? null,
   };
+}
+
+function regenerateSession(req: Request) {
+  return new Promise<void>((resolve, reject) => {
+    req.session.regenerate((err) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function destroySession(req: Request) {
+  return new Promise<void>((resolve) => {
+    if (!req.session) {
+      resolve();
+      return;
+    }
+    req.session.destroy(() => resolve());
+  });
 }

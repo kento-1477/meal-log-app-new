@@ -71,7 +71,8 @@ router.post('/claim', async (req, res, next) => {
 
     const ip = getClientIp(req);
     const userAgent = getClientUserAgent(req);
-    const deviceFingerprint = generateDeviceFingerprint(ip, userAgent);
+    const deviceId = req.get('x-device-id') ?? undefined;
+    const deviceFingerprint = generateDeviceFingerprint(ip, userAgent, deviceId);
 
     const result = await claimReferralCode({
       userId,

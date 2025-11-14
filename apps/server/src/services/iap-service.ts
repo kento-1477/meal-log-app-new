@@ -155,9 +155,13 @@ interface VerifyReceiptInput {
 }
 
 async function verifyReceipt(input: VerifyReceiptInput): Promise<ReceiptVerificationResult> {
-  const isTestMode = env.IAP_TEST_MODE ?? env.NODE_ENV !== 'production';
-
-  if (isTestMode) {
+  if (env.IAP_OFFLINE_VERIFICATION) {
+    if (env.NODE_ENV === 'production') {
+      throw Object.assign(new Error('Offline IAP verification is not allowed in production'), {
+        statusCode: StatusCodes.SERVICE_UNAVAILABLE,
+        expose: true,
+      });
+    }
     return verifyTestReceipt(input);
   }
 
