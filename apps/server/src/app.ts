@@ -16,6 +16,8 @@ import { accountRouter } from './routes/account.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { iapRouter } from './routes/iap.js';
 import referralRouter from './routes/referral.js';
+import { prisma } from './db/prisma.js';
+import { PrismaSessionStore } from './db/prisma-session-store.js';
 import { debugRouter } from './routes/debug.js';
 
 export function createApp() {
@@ -23,7 +25,7 @@ export function createApp() {
 
   console.log('[app] NODE_ENV:', env.NODE_ENV);
 
-  app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
+  app.set('trust proxy', resolveTrustProxy(env.TRUST_PROXY ?? process.env.TRUST_PROXY_HOPS));
 
   app.disable('x-powered-by');
 
@@ -37,8 +39,11 @@ export function createApp() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
+  const sessionStore = new PrismaSessionStore(prisma);
+
   app.use(
     session({
+      store: sessionStore,
       secret: env.SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
@@ -102,4 +107,28 @@ export function createApp() {
   }
 
   return app;
+}
+
+function resolveTrustProxy(value: string | number | undefined) {
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const normalized = value.trim();
+  if (!normalized) {
+    return false;
+  }
+  if (normalized === 'true') {
+    return true;
+  }
+  if (normalized === 'false') {
+    return false;
+  }
+  const numeric = Number(normalized);
+  if (!Number.isNaN(numeric)) {
+    return numeric;
+  }
+  return normalized;
 }

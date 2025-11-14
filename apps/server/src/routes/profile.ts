@@ -101,7 +101,8 @@ profileRouter.put('/profile', async (req, res, next) => {
       try {
         const ip = getClientIp(req);
         const userAgent = getClientUserAgent(req);
-        const deviceFingerprint = generateDeviceFingerprint(ip, userAgent);
+        const deviceId = req.get('x-device-id') ?? undefined;
+        const deviceFingerprint = generateDeviceFingerprint(ip, userAgent, deviceId);
         const result = await claimReferralCode({ userId, code: referralCode, deviceFingerprint });
         referralClaimed = true;
         referralResult = result;

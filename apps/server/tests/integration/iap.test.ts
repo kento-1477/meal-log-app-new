@@ -123,6 +123,35 @@ test('iap purchase grants premium and usage update', async (t) => {
   assert.equal(secondBody.premiumStatus.grants.length, 1);
 });
 
+test('rejects forged receipts', async (t) => {
+  if (!dbAvailable) {
+    t.skip('database not available');
+    return;
+  }
+  await login();
+
+  const mismatchedReceipt = {
+    transactionId: 'txn-forged',
+    productId: 'com.attacker.fake',
+    quantity: 1,
+    purchaseDate: new Date().toISOString(),
+  };
+
+  const { response, body } = await fetchWithSession('/api/iap/purchase', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      platform: 'APP_STORE',
+      productId: 'com.meallog.premium.annual',
+      transactionId: 'txn-legit',
+      receiptData: Buffer.from(JSON.stringify(mismatchedReceipt)).toString('base64'),
+    }),
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal((body as any)?.ok, false);
+});
+
 async function login() {
   if (!dbAvailable) {
     throw new Error('database not available');

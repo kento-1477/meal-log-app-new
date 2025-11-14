@@ -2,6 +2,7 @@ import { API_BASE_URL } from './config';
 import { z } from 'zod';
 import { getLocale } from '@/i18n';
 import { getDeviceTimezone } from '@/utils/timezone';
+import { getDeviceFingerprintId } from '@/services/device-fingerprint';
 import type { NutritionCardPayload } from '@/types/chat';
 import type {
   DashboardSummary,
@@ -55,6 +56,10 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
   if (!headers.has('X-Timezone')) {
     headers.set('X-Timezone', getDeviceTimezone());
+  }
+
+  if (!headers.has('X-Device-Id')) {
+    headers.set('X-Device-Id', await getDeviceFingerprintId());
   }
 
   const response = await fetch(url, {

@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSessionStore } from '@/store/session';
 import { trackReferralPremiumClaimedFriend } from '@/analytics/events';
 import { getSession } from '@/services/api';
+import { getDeviceFingerprintId } from '@/services/device-fingerprint';
 
 export const REFERRAL_CODE_STORAGE_KEY = '@referral_code';
 
@@ -27,12 +28,14 @@ interface ReferralError extends Error {
 async function claimReferralCode(code: string): Promise<ClaimReferralResponse> {
   const { API_BASE_URL } = await import('@/services/config');
   const { getDeviceTimezone } = await import('@/utils/timezone');
+  const fingerprint = await getDeviceFingerprintId();
   
   const response = await fetch(`${API_BASE_URL}/api/referral/claim`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-Timezone': getDeviceTimezone(),
+      'X-Device-Id': fingerprint,
     },
     credentials: 'include',
     body: JSON.stringify({ code }),

@@ -16,12 +16,18 @@ const BaseEnvSchema = z.object({
     .transform((val) => val === 'true')
     .optional(),
   AI_TRANSLATION_STRATEGY: z.enum(['ai', 'copy', 'none']).default('ai').optional(),
+  TRUST_PROXY: z.string().optional(),
   APP_STORE_SHARED_SECRET: z.string().optional(),
   GOOGLE_PLAY_SERVICE_ACCOUNT: z.string().optional(),
   IAP_TEST_MODE: z
     .enum(['true', 'false'])
-    .optional()
-    .transform((value) => (value ? value === 'true' : undefined)),
+    .default('false')
+    .transform((value) => value === 'true'),
+  IAP_TEST_MODE_TOKEN: z.string().optional(),
+  IAP_OFFLINE_VERIFICATION: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 });
 
 const TimeoutEnvSchema = AiTimeoutConfigSchema.partial();
@@ -31,6 +37,13 @@ const merged = BaseEnvSchema.merge(TimeoutEnvSchema);
 export type AppEnv = z.infer<typeof merged>;
 
 export const env: AppEnv = merged.parse(process.env);
+
+if (env.NODE_ENV === 'production' && env.IAP_TEST_MODE) {
+  throw new Error('IAP_TEST_MODE must be false in production deployments');
+}
+if (env.NODE_ENV === 'production' && env.IAP_OFFLINE_VERIFICATION) {
+  throw new Error('IAP_OFFLINE_VERIFICATION cannot be enabled in production');
+}
 
 export const timeoutConfig = AiTimeoutConfigSchema.parse({
   AI_ATTEMPT_TIMEOUT_MS: env.AI_ATTEMPT_TIMEOUT_MS,

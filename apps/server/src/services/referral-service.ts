@@ -72,8 +72,9 @@ function generateInviteCode(): string {
 /**
  * デバイス指紋を生成（IPアドレス + User-Agent）
  */
-export function generateDeviceFingerprint(ip: string, userAgent: string): string {
-  const data = `${ip}|${userAgent}`;
+export function generateDeviceFingerprint(ip: string, userAgent: string, deviceId?: string): string {
+  const normalizedDeviceId = deviceId && deviceId.trim().length > 0 ? deviceId.trim() : 'device:unknown';
+  const data = `${normalizedDeviceId}|${ip}|${userAgent}`;
   return crypto.createHash('sha256').update(data).digest('hex');
 }
 
