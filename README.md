@@ -22,7 +22,7 @@ Copy `.env.example` to `.env.local` and adjust:
 
 ```
 PORT=4000
-SESSION_SECRET=super-secret
+SESSION_SECRET=__REPLACE_WITH_SECRET__
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/meal_log?schema=public
 GEMINI_API_KEY=your-google-generative-language-key
 AI_ATTEMPT_TIMEOUT_MS=25000

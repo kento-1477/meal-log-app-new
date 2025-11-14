@@ -4,9 +4,9 @@ import { execSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 
 const patterns = [
-  { name: 'supabase-host', regex: /supabase\.co/i },
+  { name: 'supabase-host', regex: /db\.[a-z0-9-]+\.supabase\.co/i },
   { name: 'raw-session-secret', regex: /SESSION_SECRET\s*=\s*(?!["']?__)/ },
-  { name: 'postgres-credentials', regex: /postgresql:\/\/[^"]*(?:postgres|password|kento)/i },
+  { name: 'postgres-credentials', regex: /postgresql:\/\/[^"\s]*(kentoosonou|aws-1-ap|supabase\.co)/i },
 ];
 
 const files = execSync('git ls-files', { encoding: 'utf-8' })

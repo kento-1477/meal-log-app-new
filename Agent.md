@@ -115,7 +115,7 @@
 **主要な環境変数**:
 ```bash
 PORT=4000
-SESSION_SECRET=<openssl rand -hex 32で生成>
+SESSION_SECRET=__GENERATE_WITH_OPENSSL__
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/meal_log?schema=public
 GEMINI_API_KEY=<Google Generative Language API Key>
 AI_ATTEMPT_TIMEOUT_MS=25000
