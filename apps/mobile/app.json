@@ -32,7 +32,6 @@
       "bundleIdentifier": "com.meallog.app",
       "infoPlist": {
         "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true,
           "NSExceptionDomains": {
             "localhost": {
               "NSIncludesSubdomains": true,

@@ -14,6 +14,7 @@ import {
   getRecentReferrals,
   generateDeviceFingerprint,
 } from '../services/referral-service.js';
+import { getClientIp, getClientUserAgent } from '../utils/client-info.js';
 
 const router = Router();
 
@@ -68,8 +69,8 @@ router.post('/claim', async (req, res, next) => {
       });
     }
 
-    const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
-    const userAgent = req.headers['user-agent'] || 'unknown';
+    const ip = getClientIp(req);
+    const userAgent = getClientUserAgent(req);
     const deviceFingerprint = generateDeviceFingerprint(ip, userAgent);
 
     const result = await claimReferralCode({

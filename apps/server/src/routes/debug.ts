@@ -3,14 +3,18 @@ import { StatusCodes } from 'http-status-codes';
 import { analyzeMealWithGemini } from '../services/gemini-service.js';
 import { requireAuth } from '../middleware/require-auth.js';
 import { env } from '../env.js';
+import {
+  evaluateAiUsage,
+  recordAiUsage,
+  buildUsageLimitError,
+} from '../services/ai-usage-service.js';
 
 export const debugRouter = Router();
 
-debugRouter.get('/ai', requireAuth, async (_req, res, _next) => {
+debugRouter.get('/ai', requireAuth, async (req, res, next) => {
   if (!env.GEMINI_API_KEY) {
     return res.status(StatusCodes.OK).json({
       ok: false,
-      key_tail: 'mock',
       attempts: [],
       pingLatencyMs: null,
       message: 'API key not configured',
@@ -18,32 +22,43 @@ debugRouter.get('/ai', requireAuth, async (_req, res, _next) => {
   }
 
   try {
+    const usageStatus = await evaluateAiUsage(req.session.userId!);
+    if (!usageStatus.allowed) {
+      throw buildUsageLimitError(usageStatus);
+    }
     const started = Date.now();
     const result = await analyzeMealWithGemini({ message: 'ping meal of steamed rice and grilled chicken (debug)' });
     const latency = Date.now() - started;
+    const usage = await recordAiUsage({
+      userId: req.session.userId!,
+      usageDate: usageStatus.usageDate,
+      consumeCredit: usageStatus.consumeCredit,
+    });
     res.status(StatusCodes.OK).json({
       ok: true,
-      key_tail: env.GEMINI_API_KEY.slice(-5),
       attempts: result.attemptReports,
       activeModel: result.meta.model,
       pingLatencyMs: latency,
+      usage,
     });
   } catch (error) {
-    const err = error as Error;
-    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
-      ok: false,
-      key_tail: env.GEMINI_API_KEY.slice(-5),
-      attempts: [],
-      pingLatencyMs: null,
-      error: err.message,
-    });
+    next(error);
   }
 });
 
-debugRouter.get('/ai/analyze', requireAuth, async (req, res, _next) => {
+debugRouter.get('/ai/analyze', requireAuth, async (req, res, next) => {
   try {
+    const usageStatus = await evaluateAiUsage(req.session.userId!);
+    if (!usageStatus.allowed) {
+      throw buildUsageLimitError(usageStatus);
+    }
     const text = String(req.query.text ?? 'カレーライス');
     const result = await analyzeMealWithGemini({ message: text });
+    const usage = await recordAiUsage({
+      userId: req.session.userId!,
+      usageDate: usageStatus.usageDate,
+      consumeCredit: usageStatus.consumeCredit,
+    });
     res.status(StatusCodes.OK).json({
       ok: true,
       text,
@@ -54,9 +69,9 @@ debugRouter.get('/ai/analyze', requireAuth, async (req, res, _next) => {
           fallback_model_used: result.meta.model !== 'models/gemini-2.5-flash',
         },
       },
+      usage,
     });
   } catch (error) {
-    const err = error as Error;
-    res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ ok: false, message: err.message });
+    next(error);
   }
 });

@@ -13,6 +13,7 @@ import { requireAuth } from '../middleware/require-auth.js';
 import { claimReferralCode, generateDeviceFingerprint } from '../services/referral-service.js';
 import { logger } from '../logger.js';
 import { invalidateDashboardCacheForUser } from '../services/dashboard-service.js';
+import { getClientIp, getClientUserAgent } from '../utils/client-info.js';
 
 export const profileRouter = Router();
 
@@ -98,8 +99,8 @@ profileRouter.put('/profile', async (req, res, next) => {
 
     if (referralCode) {
       try {
-        const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
-        const userAgent = req.headers['user-agent'] || 'unknown';
+        const ip = getClientIp(req);
+        const userAgent = getClientUserAgent(req);
         const deviceFingerprint = generateDeviceFingerprint(ip, userAgent);
         const result = await claimReferralCode({ userId, code: referralCode, deviceFingerprint });
         referralClaimed = true;

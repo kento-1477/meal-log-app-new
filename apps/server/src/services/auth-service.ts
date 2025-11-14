@@ -1,11 +1,14 @@
 import argon2 from 'argon2';
+import { StatusCodes } from 'http-status-codes';
 import { prisma } from '../db/prisma.js';
+import { logger } from '../logger.js';
 
 export async function registerUser(params: { email: string; password: string }) {
   const existing = await prisma.user.findUnique({ where: { email: params.email } });
   if (existing) {
-    throw Object.assign(new Error('このメールアドレスは既に登録されています'), {
-      statusCode: 409,
+    logger.warn({ email: params.email }, 'register attempt with existing email');
+    throw Object.assign(new Error('登録手続きを完了できませんでした。入力内容をご確認ください。'), {
+      statusCode: StatusCodes.BAD_REQUEST,
       expose: true,
     });
   }
