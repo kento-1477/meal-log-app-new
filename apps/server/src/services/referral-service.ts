@@ -22,6 +22,8 @@ const FRIEND_PREMIUM_DAYS = 14;
 const REFERRER_PREMIUM_DAYS = 30;
 const CONSECUTIVE_DAYS_REQUIRED = 3;
 const REFERRAL_EXPIRY_DAYS = 30;
+const REFERRAL_RATE_LIMIT = 10;
+const REFERRAL_RATE_WINDOW_HOURS = 1;
 
 interface InviteLinkResult {
   inviteLink: string;
@@ -173,6 +175,28 @@ export async function claimReferralCode(params: {
   if (suspiciousReferrals > 0) {
     const error = new Error('不正な紹介として検出されました');
     Object.assign(error, { statusCode: StatusCodes.FORBIDDEN, expose: true });
+    throw error;
+  }
+
+  const rateWindowStart = DateTime.now().minus({ hours: REFERRAL_RATE_WINDOW_HOURS }).toJSDate();
+  const recentReferrals = await prisma.referral.count({
+    where: {
+      referrerUserId: inviteLink.userId,
+      createdAt: { gte: rateWindowStart },
+    },
+  });
+
+  if (recentReferrals >= REFERRAL_RATE_LIMIT) {
+    logger.warn(
+      {
+        referrerUserId: inviteLink.userId,
+        recentReferrals,
+        windowHours: REFERRAL_RATE_WINDOW_HOURS,
+      },
+      'referral rate limit triggered',
+    );
+    const error = new Error('紹介リクエストが多すぎます。しばらく待ってから再度お試しください');
+    Object.assign(error, { statusCode: StatusCodes.TOO_MANY_REQUESTS, expose: true });
     throw error;
   }
 

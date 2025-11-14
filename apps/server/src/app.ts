@@ -7,7 +7,6 @@ import { logger } from './logger.js';
 import { authRouter } from './routes/auth.js';
 import { logRouter } from './routes/log.js';
 import { logsRouter } from './routes/logs.js';
-import { debugRouter } from './routes/debug.js';
 import { foodsRouter } from './routes/foods.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { streakRouter } from './routes/streak.js';
@@ -17,11 +16,14 @@ import { accountRouter } from './routes/account.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { iapRouter } from './routes/iap.js';
 import referralRouter from './routes/referral.js';
+import { debugRouter } from './routes/debug.js';
 
 export function createApp() {
   const app = express();
 
   console.log('[app] NODE_ENV:', env.NODE_ENV);
+
+  app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
 
   app.disable('x-powered-by');
 
@@ -72,7 +74,9 @@ export function createApp() {
   app.use('/api/user', accountRouter);
   app.use('/api', iapRouter);
   app.use('/api/referral', referralRouter);
-  app.use('/debug', debugRouter);
+  if (env.NODE_ENV !== 'production') {
+    app.use('/debug', debugRouter);
+  }
 
   app.use(errorHandler);
 

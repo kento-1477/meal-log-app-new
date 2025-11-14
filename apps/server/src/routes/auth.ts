@@ -8,10 +8,11 @@ import { authenticateUser, findUserById, registerUser } from '../services/auth-s
 import { evaluateAiUsage, summarizeUsageStatus } from '../services/ai-usage-service.js';
 import { ZodError, ZodIssue } from 'zod';
 import { prisma } from '../db/prisma.js';
+import { authRateLimiter } from '../middleware/rate-limits.js';
 
 export const authRouter = Router();
 
-authRouter.post('/register', async (req, res, next) => {
+authRouter.post('/register', authRateLimiter, async (req, res, next) => {
   try {
     const body = RegisterRequestSchema.parse(req.body);
     const user = await registerUser(body);
@@ -38,7 +39,7 @@ authRouter.post('/register', async (req, res, next) => {
   }
 });
 
-authRouter.post('/login', async (req, res, next) => {
+authRouter.post('/login', authRateLimiter, async (req, res, next) => {
   try {
     const body = LoginRequestSchema.parse(req.body);
     const user = await authenticateUser(body);

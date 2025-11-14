@@ -6,12 +6,13 @@ import { requireAuth } from '../middleware/require-auth.js';
 import { processMealLog, chooseSlot } from '../services/log-service.js';
 import { resolveRequestLocale } from '../utils/request-locale.js';
 import { resolveRequestTimezone } from '../utils/timezone.js';
+import { logIngestRateLimiter } from '../middleware/rate-limits.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 export const logRouter = Router();
 
-logRouter.post('/log', requireAuth, upload.single('image'), async (req, res, next) => {
+logRouter.post('/log', requireAuth, logIngestRateLimiter, upload.single('image'), async (req, res, next) => {
   try {
     const message = (req.body?.message ?? '').trim();
     if (!message && !req.file) {
