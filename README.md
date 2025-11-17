@@ -6,6 +6,7 @@ Apple-inspired mobile experience for logging meals via chatbot, powered by an Ex
 
 - `apps/server` – Node.js API implementing authentication, meal ingestion, Gemini hedging, idempotency, and analytics endpoints.
 - `apps/mobile` – Expo React Native client with login, chat, and dashboard tabs.
+- `apps/edge-gateway` – Cloudflare Workers proxy that exposes a stable HTTPS URL for the mobile client and forwards to your origin API.
 - `packages/shared` – Shared TypeScript contracts (Zod schemas, API types).
 - `docs` – Architecture and timeout tuning notes.
 
@@ -155,6 +156,50 @@ npx expo start --clear
 - Dashboard tab surfaces daily totals, 7-day trends, and recent meals, and now shows the refreshed macro rings with “current / target” copy along with left/over states.
 
 Ensure the Expo app is pointed at the same host as the server (`EXPO_PUBLIC_API_BASE_URL`). For physical devices on the same network, set this value to your machine’s LAN IP.
+
+## Deployment (Gateway + Origin)
+
+You now have two layers:
+
+1. **Origin API (Render / Railway / Fly.io / Supabase REST など)** – runs the existing `apps/server` Express + Prisma app.
+2. **Cloudflare Gateway (`apps/edge-gateway`)** – a thin Workers proxy that exposes an HTTPS URL for the mobile app, handles CORS, health checks, and rate limiting, then forwards traffic to the origin.
+
+### Step 1: Prepare the origin API
+
+1. Provision a Node-friendly host (Render, Railway, Fly.io, or any VM).
+2. Set `DATABASE_URL`, `SESSION_SECRET`, and other secrets in that host.
+3. Deploy the server:
+   ```bash
+   npm run build --workspace apps/server
+   npm run start --workspace apps/server
+   ```
+4. Confirm `https://<your-origin-host>/healthz` returns 200.
+
+### Step 2: Deploy the Cloudflare Gateway
+
+1. Navigate to `apps/edge-gateway`.
+2. Set the Worker variables/secrets (one-time):
+   ```bash
+   # HTTPS origin that actually performs the business logic
+   npx wrangler secret put TARGET_ORIGIN
+   # Session/token secrets if the gateway needs to sign/verify anything
+   npx wrangler secret put SESSION_SECRET
+   # Optional: restrict CORS
+   npx wrangler secret put ALLOWED_ORIGINS   # e.g. https://meal-log.app,https://staging.meal-log.app
+   ```
+3. Deploy:
+   ```bash
+   npm run deploy --workspace apps/edge-gateway
+   ```
+4. The Worker issues a URL like `https://mealchat-gateway.<account>.workers.dev`. Use this value for `EXPO_PUBLIC_API_BASE_URL` (or set `app.json > expo.extra.apiBaseUrl`) so the mobile client always talks to the HTTPS gateway.
+
+### Step 3: Verify end-to-end
+
+- Run the Expo app on a device connected over LTE/Wi-Fi and confirm requests succeed.
+- Use Charles/Proxyman if you need to inspect requests from the device (install the proxy certificate for HTTPS).
+- Once verified, submit the build to App Store Connect. The ATS requirement is satisfied because the gateway URL is HTTPS.
+
+> Need to bypass the gateway temporarily? Point `EXPO_PUBLIC_API_BASE_URL` directly to the origin host. Because the mobile app only depends on that environment variable, switching endpoints takes a single config change.
 
 ### Testing App Store subscriptions (sandbox)
 

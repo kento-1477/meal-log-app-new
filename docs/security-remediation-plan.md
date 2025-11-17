@@ -1,58 +1,39 @@
-## Meal Log App – Security Remediation Plan
+# セキュリティ改善計画
 
-> **Owner:** TBD  
-> **Last updated:** 2025-11-14  
-> **Goal:** Address high-risk security gaps identified in the recent assessment.
+## 現状と原因
+- /debug ルートが本番でも公開され、AI 利用制限やキーの一部が漏えいしている。
+- リファラル指紋を `X-Forwarded-For` から取得しており、ヘッダー偽装で無限に招待ボーナスを稼げる。
+- 登録 API が既存メールを明示しており、メールアドレスの存在確認が可能。
+- 認証系エンドポイントにレート制限がなく、総当たりや大量登録が容易。
+- iOS アプリが ATS を無条件で無効化し、誤設定で平文通信になるリスクがある。
 
----
+## 実装チェックリスト
 
-### Phase 1 – Contain Secret Leakage & Establish Baseline
+### フェーズ1: デバッグ API の硬化
+- [x] 本番では `/debug` をマウントしない、または管理者専用にする
+- [x] Debug レスポンスから `GEMINI_API_KEY` に関する情報を除去
+- [x] Debug での AI 実行にも `evaluateAiUsage` / `recordAiUsage` を適用
 
-- [ ] **Rotate leaked secrets**
-  - [ ] Rotate Supabase database password (or recreate instance).
-  - [ ] Rotate `SESSION_SECRET` and any derivatives in every deployed environment.
-- [ ] **Purge leaked values from repo & docs**
-  - [x] Replace sensitive entries in `.env.example`, `.env.local` and docs with placeholders.
-  - [ ] Use history-rewrite tooling to remove old secrets from git history.
-  - [x] Document the new secret-management policy (location, rotation process).
+### フェーズ2: 信頼できるクライアント情報の取得
+- [x] `app.set('trust proxy', …)` を設定
+- [x] リファラル関連で `req.ip` / `req.socket.remoteAddress` を使用
+- [x] 指紋生成時にヘッダー値へ依存しないよう修正
+- [x] 短時間での紹介多発に追加の制限を導入
 
-### Phase 2 – Platform Hardening & Abuse Prevention
+### フェーズ3: 登録レスポンスの非特定化
+- [x] 既存メール時も一般的なエラーメッセージだけを返す
+- [x] ログにだけ詳細を残し、クライアントには特定情報を出さない
 
-- [ ] **In-app purchase verification**
-  - [x] Enforce `IAP_TEST_MODE=false` for production builds and block startup if still true.
-  - [x] Require admin override headers to access test mode endpoints.
-  - [x] Always hit Apple/Google verification endpoints before issuing entitlements (offline mode only for automated tests).
-  - [x] Add automated tests ensuring forged receipts are rejected.
-- [ ] **Session fixation defense**
-  - [x] Regenerate sessions on successful `/api/login` & `/api/register`.
-  - [x] Destroy sessions on failure/error paths.
-  - [x] Add regression tests to confirm session IDs rotate post-login.
-- [ ] **Trusted proxy & rate-limit resilience**
-  - [x] Disable `trust proxy` by default; allow explicit safe-list via env.
-  - [x] Update rate limiters to fallback to user-based quotas.
-  - [x] Enhance referral-fraud fingerprinting with durable device IDs.
-- [ ] **Durable session storage**
-  - [x] Introduce Redis/Postgres-backed session store with TTLs.
-  - [ ] Configure cookie security flags appropriate for prod/dev.
-  - [x] Monitor total active sessions and enforce cleanup.
-- [ ] **Demo credential safety**
-  - [x] Gate `prisma db seed` demo user behind env guard.
-  - [x] Generate random passwords for any seeded accounts.
-  - [x] Audit existing databases for leftover demo accounts (added audit script).
+### フェーズ4: 認証系レート制限
+- [x] `express-rate-limit` を導入
+- [x] `/api/login` と `/api/register` にレート制限を適用
+- [x] `/log` など高コスト API にも適切なレート制限を適用
 
-### Phase 3 – Verification & Ongoing Safeguards
+### フェーズ5: iOS ATS の是正
+- [x] `NSAllowsArbitraryLoads` を削除し、必要ドメインのみ例外を残す
 
-- [ ] **Testing & validation**
-  - [ ] Re-run unit/integration tests for auth, IAP, referral, and sessions.
-  - [ ] Perform manual abuse tests (fake receipts, session hijack attempts).
-- [ ] **Monitoring & education**
-  - [x] Add automatic secret-scanning to CI (e.g., trufflehog).
-  - [ ] Update README/Agent docs with new security expectations.
-  - [ ] Brief the team on new procedures and emergency rotation steps.
-
----
-
-**How to use this plan**
-1. Work phase-by-phase; do not start the next phase until all checkboxes above are marked.
-2. After finishing a task, mark it `[x]` and reference the supporting PR/commit.
-3. Keep this document updated so reviewers can see progress at a glance.
+### フェーズ6: テストと検証
+- [ ] `/debug` が本番設定でアクセス不可なことを確認
+- [ ] リファラル API がヘッダー偽装に耐えることを確認
+- [ ] レート制限が期待通り 429 を返すことを確認
+- [ ] ATS 設定変更後に HTTPS 以外がブロックされることを確認

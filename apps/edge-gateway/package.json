@@ -1,0 +1,13 @@
+{
+  "name": "@meal-log/edge-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --sourcemap --format=esm --platform=browser --target=es2022 --outfile=dist/index.js",
+    "deploy": "npm run build && npx wrangler deploy",
+    "dev": "npx wrangler dev --local"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
