@@ -1,0 +1,10 @@
+name = "mealchat-gateway"
+main = "dist/index.js"
+compatibility_date = "2024-11-17"
+
+[vars]
+TARGET_ORIGIN = "https://example.com"
+ALLOWED_ORIGINS = "*"
+API_PREFIX = "/api"
+RATE_LIMIT_WINDOW_MS = "60000"
+RATE_LIMIT_MAX_REQUESTS = "60"

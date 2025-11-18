@@ -5,6 +5,7 @@
   "workspaces": [
     "apps/server",
     "apps/mobile",
+    "apps/edge-gateway",
     "packages/shared"
   ],
   "scripts": {
