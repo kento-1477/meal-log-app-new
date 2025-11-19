@@ -46,7 +46,7 @@ export async function getDashboardTargetsForUser(userId) {
   return resolveUserTargets(userId);
 }
 
-export function invalidateDashboardCacheForUser() {
+export function invalidateDashboardCacheForUser(_userId) {
   cache.clear();
 }
 

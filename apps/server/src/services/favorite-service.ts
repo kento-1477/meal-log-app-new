@@ -9,13 +9,12 @@ import {
   type FavoriteMealDraft,
   type FavoriteMealItemInput,
   type GeminiNutritionResponse,
-  type LocalizationResolution,
   type Locale,
   type MealLogAiRaw,
 } from '@meal-log/shared';
 import { prisma } from '../db/prisma.js';
 import { StatusCodes } from 'http-status-codes';
-import { DEFAULT_LOCALE, resolveMealLogLocalization } from '../utils/locale.js';
+import { DEFAULT_LOCALE, resolveMealLogLocalization, type LocalizationResolution } from '../utils/locale.js';
 
 const DEFAULT_NOTES = null;
 
@@ -77,7 +76,7 @@ export async function createFavoriteMeal(userId: number, payload: unknown): Prom
       fatG: normalized.totals.fat_g,
       carbsG: normalized.totals.carbs_g,
       items: {
-        create: normalized.items.map((item, idx) => ({
+        create: normalized.items.map((item: FavoriteMealItemInput, idx: number) => ({
           name: item.name,
           grams: item.grams,
           calories: item.calories ?? null,
@@ -107,7 +106,7 @@ export async function updateFavoriteMeal(userId: number, favoriteId: number, pay
 
   const normalizedTotals = resolveTotals(parsed, existing);
 
-  const updateData: Prisma.FavoriteMealUpdateInput = {
+  const updateData: Prisma.FavoriteMealUncheckedUpdateInput = {
     name: parsed.name ?? existing.name,
     notes: parsed.notes ?? existing.notes,
     sourceMealLogId: parsed.source_log_id ?? existing.sourceMealLogId,
@@ -125,7 +124,7 @@ export async function updateFavoriteMeal(userId: number, favoriteId: number, pay
       const items = parsed.items ?? [];
       if (items.length > 0) {
         await tx.favoriteMealItem.createMany({
-          data: items.map((item, idx) => ({
+          data: items.map((item: FavoriteMealItemInput, idx: number) => ({
             favoriteMealId: favoriteId,
             name: item.name,
             grams: item.grams,
@@ -153,7 +152,7 @@ export async function deleteFavoriteMeal(userId: number, favoriteId: number): Pr
   const deleted = await prisma.favoriteMeal.deleteMany({
     where: { id: favoriteId, userId },
   });
-  if (deleted === 0) {
+  if (deleted.count === 0) {
     throw notFoundError();
   }
 }
@@ -251,7 +250,7 @@ interface FavoriteMealLogResult {
 
 function normalizeDraft(draft: FavoriteMealDraft): FavoriteMealDraft {
   FavoriteMealDraftSchema.parse(draft);
-  const items = draft.items.map((item, idx) => (
+  const items = draft.items.map((item: FavoriteMealItemInput, idx: number) => (
     FavoriteMealItemInputSchema.parse({ ...item, order_index: item.order_index ?? idx })
   ));
 
