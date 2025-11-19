@@ -59,11 +59,19 @@ export const GeminiNutritionResponseSchema = z.object({
   landing_type: z.string().optional().nullable(),
   meta: z
     .object({
-      model: z.string(),
+      model: z.string().optional(),
       fallback_model_used: z.boolean().optional(),
       attempt: z.number().optional(),
       latencyMs: z.number().nonnegative().optional(),
       attemptReports: z.array(HedgeAttemptReportSchema).optional(),
+      favoriteId: z.number().int().optional(),
+      translation: z
+        .object({
+          locale: LocaleSchema,
+          sourceLocale: LocaleSchema.optional(),
+        })
+        .optional(),
+      sourceMealLogId: z.string().optional(),
     })
     .optional(),
 });
@@ -153,10 +161,10 @@ export interface IapProductDefinition {
   premiumDays?: number;
 }
 
-export const IAP_PRODUCTS = [
+export const IAP_PRODUCTS: readonly IapProductDefinition[] = [
   { productId: IAP_CREDIT_PRODUCT_ID, credits: 100 },
   { productId: IAP_PREMIUM_PRODUCT_ID, premiumDays: 365 },
-] as const satisfies readonly IapProductDefinition[];
+];
 
 export type IapProduct = (typeof IAP_PRODUCTS)[number];
 
@@ -519,4 +527,4 @@ export const OnboardingStatusSchema = z.object({
 
 export type OnboardingStatus = z.infer<typeof OnboardingStatusSchema>;
 
-export * from './health.ts';
+export * from './health.js';

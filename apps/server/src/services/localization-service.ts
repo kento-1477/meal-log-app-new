@@ -95,7 +95,7 @@ async function translateWithGemini(
       return { translated: cloneResponse(base), errored: new Error('Gemini translation returned no text') };
     }
 
-    const parsed = TranslationResultSchema.parse(JSON.parse(raw)) as TranslationResult;
+    const parsed: TranslationResult = TranslationResultSchema.parse(JSON.parse(raw));
 
     const translated = cloneResponse(base);
     translated.dish = parsed.dish;

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ActivityLevelString, Gender, PlanIntensity } from './index';
+import type { ActivityLevelString, Gender, PlanIntensity } from './index.js';
 
 export function calculateBmi(weightKg: number | null | undefined, heightCm: number | null | undefined) {
   if (!weightKg || !heightCm) {
@@ -270,6 +270,7 @@ function determineCalorieAdjustment(context: PlanComputationContext, maintenance
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
+
 export function computeNutritionPlan(input: NutritionPlanInput): NutritionPlanComputation | null {
   const context = guardInputs(input);
   if (!context) return null;
@@ -351,11 +352,11 @@ export function computeNutritionPlan(input: NutritionPlanInput): NutritionPlanCo
   const carbGrams = Math.max(0, carbCalories / 4);
 
   return {
-    targetCalories: clamp(Math.round(targetCalories), 800, 7000),
+    targetCalories: Math.round(targetCalories),
     maintenanceCalories: Math.round(maintenanceCalories),
-    proteinGrams: clamp(Math.round(proteinGrams), 40, 500),
-    fatGrams: clamp(Math.round(fatGrams), 20, 300),
-    carbGrams: clamp(Math.round(carbGrams), 80, 900),
+    proteinGrams: Math.round(proteinGrams),
+    fatGrams: Math.round(fatGrams),
+    carbGrams: Math.round(carbGrams),
     method: 'auto',
     meta: {
       bmr: Math.round(bmr),
