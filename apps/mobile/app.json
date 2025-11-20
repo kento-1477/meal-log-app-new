@@ -79,7 +79,7 @@
       ]
     ],
     "extra": {
-      "apiBaseUrl": "http://localhost:4000"
+      "apiBaseUrl": "https://mealchat-gateway.kento147777.workers.dev"
     }
   }
 }
