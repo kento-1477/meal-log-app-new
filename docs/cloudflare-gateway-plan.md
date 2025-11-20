@@ -27,8 +27,8 @@
   { "scripts": { "build": "esbuild src/index.ts --bundle --platform=browser --outfile=dist/index.js", "deploy": "npm run build && wrangler deploy" } }
   ```
 - [ ] `wrangler secret put SESSION_SECRET` など必要なシークレットを登録（Workers は `.env` 非対応）
-- [ ] `TARGET_ORIGIN` に接続先（例: Supabase REST, Render の Node API）を設定し、`wrangler deploy` で `https://<name>.<account>.workers.dev` を取得
-- [ ] Expo モバイルの `EXPO_PUBLIC_API_BASE_URL` / `app.json.expo.extra.apiBaseUrl` を Gateway URL に変更
+- [x] `TARGET_ORIGIN` に接続先（Render 常駐 API）を設定し、`wrangler deploy` で `https://mealchat-gateway.kento147777.workers.dev` を取得
+- [x] Expo モバイルの `EXPO_PUBLIC_API_BASE_URL` / `app.json.expo.extra.apiBaseUrl` を Gateway URL に変更
 - [ ] 実機＋プロキシ（Charles/Proxyman）で通信が通ることを確認 ※App Store 審査前に必須
 
 ---
