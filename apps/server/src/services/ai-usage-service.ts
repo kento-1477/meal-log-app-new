@@ -145,7 +145,7 @@ export async function recordAiUsage(params: { userId: number; usageDate: Date; c
       remaining,
       credits: updatedCredits,
       consumedCredit,
-      resetsAt: usageDay.plus({ days: 1 }).toISO(),
+      resetsAt: nextResetIso(usageDay),
     } satisfies AiUsageSummary;
   });
 
@@ -164,7 +164,7 @@ export function buildUsageLimitError(status: AiUsageStatus) {
       used: status.used,
       remaining: status.remaining,
       credits: status.credits,
-      resetsAt: DateTime.fromJSDate(status.usageDate).setZone(USAGE_TIMEZONE).startOf('day').plus({ days: 1 }).toISO(),
+      resetsAt: nextResetIso(DateTime.fromJSDate(status.usageDate).setZone(USAGE_TIMEZONE).startOf('day')),
     },
   });
   return error;
@@ -172,6 +172,7 @@ export function buildUsageLimitError(status: AiUsageStatus) {
 
 export function summarizeUsageStatus(status: AiUsageStatus, consumedCredit = false): AiUsageSummary {
   const usageDay = DateTime.fromJSDate(status.usageDate).setZone(USAGE_TIMEZONE).startOf('day');
+  const nextReset = nextResetIso(usageDay);
   return {
     plan: status.plan,
     limit: status.limit,
@@ -179,6 +180,10 @@ export function summarizeUsageStatus(status: AiUsageStatus, consumedCredit = fal
     remaining: status.remaining,
     credits: status.credits,
     consumedCredit,
-    resetsAt: usageDay.plus({ days: 1 }).toISO(),
+    resetsAt: nextReset,
   } satisfies AiUsageSummary;
+}
+
+function nextResetIso(day: DateTime) {
+  return day.plus({ days: 1 }).toISO() ?? day.plus({ days: 1 }).toUTC().toISO() ?? new Date().toISOString();
 }

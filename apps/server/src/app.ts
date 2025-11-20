@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
-import pinoHttp from 'pino-http';
+import pinoHttpModule from 'pino-http';
 import { env } from './env.js';
 import { logger } from './logger.js';
 import { authRouter } from './routes/auth.js';
@@ -55,6 +55,11 @@ export function createApp() {
       },
     }),
   );
+
+  const pinoHttp =
+    typeof (pinoHttpModule as any).default === 'function'
+      ? (pinoHttpModule as any).default
+      : (pinoHttpModule as any);
 
   app.use(
     pinoHttp({
