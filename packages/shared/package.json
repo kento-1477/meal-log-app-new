@@ -2,16 +2,23 @@
   "name": "@meal-log/shared",
   "version": "0.1.0",
   "type": "module",
-  "main": "src/index.js",
-  "types": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "license": "MIT",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
   }
 }
