@@ -30,7 +30,7 @@ AI_ATTEMPT_TIMEOUT_MS=25000
 AI_TOTAL_TIMEOUT_MS=35000
 AI_HEDGE_DELAY_MS=5000
 AI_MAX_ATTEMPTS=2
-EXPO_PUBLIC_API_BASE_URL=http://localhost:4000
+EXPO_PUBLIC_API_BASE_URL=https://mealchat-gateway.kento147777.workers.dev
 # In-app purchase testing (leave APP_STORE_SHARED_SECRET empty in dev if not using App Store validation)
 IAP_TEST_MODE=true
 APP_STORE_SHARED_SECRET=<your-shared-secret>
@@ -49,6 +49,7 @@ DEMO_USER_PASSWORD=
 
 > Generate `SESSION_SECRET` with a strong random value (for example `openssl rand -hex 32`) and keep secrets in `.env.local`.
 > Without `GEMINI_API_KEY` the server falls back to a deterministic mock response so flows stay testable. When `AI_TRANSLATION_STRATEGY=ai` and no key is configured, translations gracefully fall back to English.
+> `EXPO_PUBLIC_API_BASE_URL` should point at the Cloudflare Worker (`https://mealchat-gateway.kento147777.workers.dev`) so the app always talks to HTTPS even when the Render origin changes.
 >
 > Tests require `DATABASE_URL` (or `TEST_DATABASE_URL`) to be exported via your shell/CI; `.env.test` is intentionally not tracked.
 
@@ -173,7 +174,7 @@ You now have two layers:
    npm run build --workspace apps/server
    npm run start --workspace apps/server
    ```
-4. Confirm `https://<your-origin-host>/healthz` returns 200.
+4. Confirm `https://<your-origin-host>/healthz` returns 200 and configure your host’s health check feature (Render: **Settings → Health Check Path**) to `/healthz` so restarts are triggered automatically when the API is unhealthy.
 
 ### Step 2: Deploy the Cloudflare Gateway
 
