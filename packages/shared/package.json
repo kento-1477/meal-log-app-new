@@ -2,10 +2,14 @@
   "name": "@meal-log/shared",
   "version": "0.1.0",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "src/index.js",
+  "types": "src/index.ts",
   "license": "MIT",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.js"
+    }
   },
   "dependencies": {
     "zod": "^3.23.8"
