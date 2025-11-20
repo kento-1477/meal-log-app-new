@@ -2,7 +2,9 @@
   "extends": "../../config/tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "module": "NodeNext"
+    "module": "NodeNext",
+    "allowJs": true,
+    "checkJs": false
   },
   "include": ["src"]
 }

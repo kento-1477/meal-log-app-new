@@ -166,6 +166,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
         userId: params.userId,
         requestKey,
       },
+      include: { log: true },
     });
   }
 
@@ -178,10 +179,12 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
       locale: requestedLocale,
     });
   } catch (error) {
-    await prisma.ingestRequest.update({
-      where: { id: ingest.id },
-      data: { logId: null },
-    });
+    if (ingest) {
+      await prisma.ingestRequest.update({
+        where: { id: ingest.id },
+        data: { logId: null },
+      });
+    }
     throw error;
   }
 
@@ -236,7 +239,7 @@ export async function processMealLog(params: ProcessMealLogParams): Promise<Proc
           proteinG: enrichedResponse.totals.protein_g,
           fatG: enrichedResponse.totals.fat_g,
           carbsG: enrichedResponse.totals.carbs_g,
-          aiRaw: aiPayload,
+          aiRaw: toJson(aiPayload),
           zeroFloored,
           guardrailNotes: zeroFloored ? 'zeroFloored' : null,
           landingType: enrichedResponse.landing_type ?? null,
@@ -448,7 +451,7 @@ export async function updateMealLog({ logId, userId, updates }: UpdateMealLogPar
       where: { id: log.id },
       data: {
         ...updateData,
-        aiRaw: updatedAiRaw ?? log.aiRaw,
+        aiRaw: toJson(updatedAiRaw ?? log.aiRaw),
       },
     });
 
@@ -467,7 +470,7 @@ export async function updateMealLog({ logId, userId, updates }: UpdateMealLogPar
       data: {
         mealLogId: log.id,
         userId,
-        changes,
+        changes: toJson(changes),
       },
     });
 
@@ -503,10 +506,10 @@ export async function chooseSlot(request: SlotSelectionRequest, userId: number) 
   const updated = await prisma.mealLog.update({
     where: { id: log.id },
     data: {
-      aiRaw: {
+      aiRaw: toJson({
         ...aiRaw,
         slots,
-      },
+      }),
       version: { increment: 1 },
     },
   });
@@ -640,4 +643,8 @@ function buildRequestKey(params: ProcessMealLogParams) {
     hash.update(params.file.buffer);
   }
   return `${Date.now()}-${uuidv4()}-${hash.digest('hex').slice(0, 12)}`;
+}
+
+function toJson(value: unknown): Prisma.InputJsonValue {
+  return value as Prisma.InputJsonValue;
 }
