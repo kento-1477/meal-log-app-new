@@ -6,10 +6,13 @@ module.exports = function inlineExpoRouterRoot({ types: t }) {
         if (
           t.isMemberExpression(path.node.object) &&
           t.isIdentifier(path.node.object.object, { name: 'process' }) &&
-          t.isIdentifier(path.node.object.property, { name: 'env' }) &&
-          t.isIdentifier(path.node.property, { name: 'EXPO_ROUTER_APP_ROOT' })
+          t.isIdentifier(path.node.object.property, { name: 'env' })
         ) {
-          path.replaceWith(t.stringLiteral('./app'));
+          if (t.isIdentifier(path.node.property, { name: 'EXPO_ROUTER_APP_ROOT' })) {
+            path.replaceWith(t.stringLiteral('./app'));
+          } else if (t.isIdentifier(path.node.property, { name: 'EXPO_ROUTER_IMPORT_MODE' })) {
+            path.replaceWith(t.stringLiteral('sync'));
+          }
         }
       },
     },
