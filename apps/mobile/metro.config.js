@@ -1,3 +1,5 @@
+process.env.EXPO_ROUTER_APP_ROOT = 'app';
+
 const path = require('path');
 const { getDefaultConfig } = require('expo/metro-config');
 
