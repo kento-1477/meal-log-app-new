@@ -3,6 +3,7 @@ module.exports = (api) => {
   return {
     presets: ['babel-preset-expo'],
     plugins: [
+      'expo-router/babel',
       'react-native-worklets/plugin', // ← 必ず最後
     ],
   };
