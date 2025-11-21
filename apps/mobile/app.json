@@ -3,18 +3,6 @@
     "name": "Meal Log",
     "slug": "meal-log",
     "scheme": "meallog",
-    "intentFilters": [
-      {
-        "action": "VIEW",
-        "data": [
-          {
-            "scheme": "meallog",
-            "host": "invite"
-          }
-        ],
-        "category": ["BROWSABLE", "DEFAULT"]
-      }
-    ],
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -55,7 +43,19 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#f2f2f7"
       },
-      "package": "com.meallog.app"
+      "package": "com.meallog.app",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "meallog",
+              "host": "invite"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",

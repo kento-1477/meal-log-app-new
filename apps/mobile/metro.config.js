@@ -6,13 +6,10 @@ const config = getDefaultConfig(projectRoot);
 
 config.resolver = {
   ...(config.resolver || {}),
-  unstable_enableSymlinks: true,
   alias: {
     ...(config.resolver?.alias || {}),
     '@': path.join(projectRoot, 'src'),
   },
 };
-
-config.watcher = { watchman: false };
 
 module.exports = config;
