@@ -4,7 +4,7 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
-    "start": "EXPO_ROUTER_APP_ROOT=app expo start",
+    "start": "expo start",
     "android": "EXPO_ROUTER_APP_ROOT=app expo run:android",
     "ios": "EXPO_ROUTER_APP_ROOT=app expo run:ios",
     "lint": "eslint ./src --ext .ts,.tsx",
