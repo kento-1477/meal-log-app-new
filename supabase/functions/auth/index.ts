@@ -63,8 +63,6 @@ const handleRegister = async (c: Hono.Context) => {
 const handleLogin = async (c: Hono.Context) => {
   try {
     console.log('login called', c.req.url);
-    // Early return to isolate runtime issues (debug)
-    return c.json({ ok: true, message: 'login ping' });
     const body = await c.req.json();
     const input = LoginRequestSchema.parse(body);
 
