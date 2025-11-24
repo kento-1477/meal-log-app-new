@@ -1,5 +1,5 @@
 import { RegisterRequestSchema, LoginRequestSchema } from '@shared/index.js';
-import { hash, verify } from '@node-rs/argon2-wasm32-wasi';
+import { hash, verify } from 'argon2-browser';
 import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
 import { sql } from '../_shared/db.ts';
 import { clearAuth, getAuthSession, persistAuth, signUserToken } from '../_shared/auth.ts';
@@ -30,7 +30,8 @@ const handleRegister = async (c: Hono.Context) => {
     });
   }
 
-  const passwordHash = await hash(input.password);
+  const hashed = await hash({ pass: input.password });
+  const passwordHash = hashed.encoded;
   const [row] = await sql<DbUser[]>`
     insert into "User" ("email", "passwordHash")
     values (${input.email}, ${passwordHash})
@@ -74,7 +75,7 @@ const handleLogin = async (c: Hono.Context) => {
     });
   }
 
-  const valid = await verify(record.passwordHash, input.password);
+  const valid = await verify({ pass: input.password, encoded: record.passwordHash });
   if (!valid) {
     throw new HttpError('メールアドレスまたはパスワードが正しくありません', {
       status: HTTP_STATUS.UNAUTHORIZED,
