@@ -53,5 +53,13 @@ module.exports = {
       }
     ],
     "@typescript-eslint/no-require-imports": "off"
-  }
+  },
+  overrides: [
+    {
+      files: ["supabase/functions/**/*.ts"],
+      rules: {
+        "import/no-unresolved": "off"
+      }
+    }
+  ]
 };
