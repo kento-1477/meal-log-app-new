@@ -7,95 +7,105 @@ import { evaluateAiUsage, summarizeUsageStatus } from '../_shared/ai.ts';
 
 const app = createApp();
 
-// Helpers to reuse handler for both /route and /api/route
-const routes = {
-  register: ['/register', '/api/register'] as const,
-  login: ['/login', '/api/login'] as const,
-  logout: ['/logout', '/api/logout'] as const,
-  session: ['/session', '/api/session'] as const,
-};
+// Explicitly register routes for both plain and function-prefixed paths
+const REGISTER_PATHS = ['/register', '/api/register', '/auth/register', '/auth/api/register'] as const;
+const LOGIN_PATHS = ['/login', '/api/login', '/auth/login', '/auth/api/login'] as const;
+const LOGOUT_PATHS = ['/logout', '/api/logout', '/auth/logout', '/auth/api/logout'] as const;
+const SESSION_PATHS = ['/session', '/api/session', '/auth/session', '/auth/api/session'] as const;
 
 const handleRegister = async (c: Hono.Context) => {
-  const body = await c.req.json();
-  const input = RegisterRequestSchema.parse(body);
+  try {
+    console.log('register called', c.req.url);
+    const body = await c.req.json();
+    const input = RegisterRequestSchema.parse(body);
 
-  const existing = await sql`
-    select "id" from "User" where "email" = ${input.email} limit 1;
-  `;
+    const existing = await sql`
+      select "id" from "User" where "email" = ${input.email} limit 1;
+    `;
 
-  if (existing.length > 0) {
-    throw new HttpError('登録手続きを完了できませんでした。入力内容をご確認ください。', {
-      status: HTTP_STATUS.BAD_REQUEST,
-      expose: true,
-    });
+    if (existing.length > 0) {
+      throw new HttpError('登録手続きを完了できませんでした。入力内容をご確認ください。', {
+        status: HTTP_STATUS.BAD_REQUEST,
+        expose: true,
+      });
+    }
+
+    const hashed = await argon2.hash({ pass: input.password });
+    const passwordHash = hashed.encoded;
+    const [row] = await sql<DbUser[]>`
+      insert into "User" ("email", "passwordHash")
+      values (${input.email}, ${passwordHash})
+      returning "id", "email", "aiCredits";
+    `;
+
+    const user = serializeUser(row);
+    const token = await signUserToken(user);
+    persistAuth(c, token);
+
+    const usageStatus = await evaluateAiUsage(user.id);
+    const onboarding = await getOnboardingStatus(user.id);
+
+    return c.json(
+      {
+        message: 'ユーザー登録が完了しました',
+        user,
+        usage: summarizeUsageStatus(usageStatus),
+        onboarding,
+      },
+      HTTP_STATUS.CREATED,
+    );
+  } catch (err) {
+    console.error('register error', err);
+    throw err;
   }
-
-  const hashed = await argon2.hash({ pass: input.password });
-  const passwordHash = hashed.encoded;
-  const [row] = await sql<DbUser[]>`
-    insert into "User" ("email", "passwordHash")
-    values (${input.email}, ${passwordHash})
-    returning "id", "email", "aiCredits";
-  `;
-
-  const user = serializeUser(row);
-  const token = await signUserToken(user);
-  persistAuth(c, token);
-
-  const usageStatus = await evaluateAiUsage(user.id);
-  const onboarding = await getOnboardingStatus(user.id);
-
-  return c.json(
-    {
-      message: 'ユーザー登録が完了しました',
-      user,
-      usage: summarizeUsageStatus(usageStatus),
-      onboarding,
-    },
-    HTTP_STATUS.CREATED,
-  );
 };
 
 const handleLogin = async (c: Hono.Context) => {
-  const body = await c.req.json();
-  const input = LoginRequestSchema.parse(body);
+  try {
+    console.log('login called', c.req.url);
+    const body = await c.req.json();
+    const input = LoginRequestSchema.parse(body);
 
-  const rows = await sql<DbUser[]>`
-    select "id", "email", "passwordHash", "aiCredits"
-    from "User"
-    where "email" = ${input.email}
-    limit 1;
-  `;
+    const rows = await sql<DbUser[]>`
+      select "id", "email", "passwordHash", "aiCredits"
+      from "User"
+      where "email" = ${input.email}
+      limit 1;
+    `;
 
-  const record = rows[0];
-  if (!record) {
-    throw new HttpError('メールアドレスまたはパスワードが正しくありません', {
-      status: HTTP_STATUS.UNAUTHORIZED,
-      expose: true,
+    const record = rows[0];
+    if (!record) {
+      throw new HttpError('メールアドレスまたはパスワードが正しくありません', {
+        status: HTTP_STATUS.UNAUTHORIZED,
+        expose: true,
+      });
+    }
+
+    const valid = await argon2.verify({ pass: input.password, encoded: record.passwordHash });
+    if (!valid) {
+      throw new HttpError('メールアドレスまたはパスワードが正しくありません', {
+        status: HTTP_STATUS.UNAUTHORIZED,
+        expose: true,
+      });
+    }
+
+    const user = serializeUser(record);
+    const token = await signUserToken(user);
+    persistAuth(c, token);
+
+    const usageStatus = await evaluateAiUsage(user.id);
+    const onboarding = await getOnboardingStatus(user.id);
+
+    return c.json({
+      message: 'ログインに成功しました',
+      user,
+      usage: summarizeUsageStatus(usageStatus),
+      onboarding,
     });
+  } catch (err) {
+    console.error('login error', err);
+    throw err;
   }
-
-  const valid = await argon2.verify({ pass: input.password, encoded: record.passwordHash });
-  if (!valid) {
-    throw new HttpError('メールアドレスまたはパスワードが正しくありません', {
-      status: HTTP_STATUS.UNAUTHORIZED,
-      expose: true,
-    });
-  }
-
-  const user = serializeUser(record);
-  const token = await signUserToken(user);
-  persistAuth(c, token);
-
-  const usageStatus = await evaluateAiUsage(user.id);
-  const onboarding = await getOnboardingStatus(user.id);
-
-  return c.json({
-    message: 'ログインに成功しました',
-    user,
-    usage: summarizeUsageStatus(usageStatus),
-    onboarding,
-  });
 };
 
 const handleLogout = async (c: Hono.Context) => {
@@ -139,10 +149,10 @@ const handleSession = async (c: Hono.Context) => {
   });
 };
 
-routes.register.forEach((path) => app.post(path, (c) => handleRegister(c)));
-routes.login.forEach((path) => app.post(path, (c) => handleLogin(c)));
-routes.logout.forEach((path) => app.post(path, (c) => handleLogout(c)));
-routes.session.forEach((path) => app.get(path, (c) => handleSession(c)));
+REGISTER_PATHS.forEach((path) => app.post(path, (c) => handleRegister(c)));
+LOGIN_PATHS.forEach((path) => app.post(path, (c) => handleLogin(c)));
+LOGOUT_PATHS.forEach((path) => app.post(path, (c) => handleLogout(c)));
+SESSION_PATHS.forEach((path) => app.get(path, (c) => handleSession(c)));
 
 // Fallback to handle OPTIONS preflight without hitting error handler
 app.options('*', (c) => c.text('ok'));
