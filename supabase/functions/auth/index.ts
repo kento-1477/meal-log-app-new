@@ -1,5 +1,5 @@
 import { RegisterRequestSchema, LoginRequestSchema } from '@shared/index.js';
-import { hash, verify } from 'argon2-browser';
+import argon2 from 'argon2-browser';
 import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
 import { sql } from '../_shared/db.ts';
 import { clearAuth, getAuthSession, persistAuth, signUserToken } from '../_shared/auth.ts';
@@ -30,7 +30,7 @@ const handleRegister = async (c: Hono.Context) => {
     });
   }
 
-  const hashed = await hash({ pass: input.password });
+  const hashed = await argon2.hash({ pass: input.password });
   const passwordHash = hashed.encoded;
   const [row] = await sql<DbUser[]>`
     insert into "User" ("email", "passwordHash")
@@ -75,7 +75,7 @@ const handleLogin = async (c: Hono.Context) => {
     });
   }
 
-  const valid = await verify({ pass: input.password, encoded: record.passwordHash });
+  const valid = await argon2.verify({ pass: input.password, encoded: record.passwordHash });
   if (!valid) {
     throw new HttpError('メールアドレスまたはパスワードが正しくありません', {
       status: HTTP_STATUS.UNAUTHORIZED,
