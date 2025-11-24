@@ -1015,7 +1015,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
       warnings,
     },
     meta,
-    usage: summarizeUsageStatus(usageStatus, usageStatus.consumeCredit),
+    usage: usageSummary,
     favoriteCandidate,
   };
 }
@@ -1697,7 +1697,7 @@ function buildDashboardSummary({
     totals.carbs_g += log.carbsG;
   }
 
-  const dailyEntries = days.map((day, idx) => {
+  const dailyEntries = days.map((day) => {
     const key = day.setZone(timezone).startOf('day').toISODate() ?? day.toFormat('yyyy-MM-dd');
     const bucket = byDate.get(key) ?? createEmptyDailyBucket();
     return {
