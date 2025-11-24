@@ -7,12 +7,12 @@ import { evaluateAiUsage, summarizeUsageStatus } from '../_shared/ai.ts';
 
 const app = createApp();
 
-// Helpers to reuse handler for both /route and /api/route
+// Helpers to reuse handler for both /route and /api/route (and with function prefix)
 const routes = {
-  register: ['/register', '/api/register'] as const,
-  login: ['/login', '/api/login'] as const,
-  logout: ['/logout', '/api/logout'] as const,
-  session: ['/session', '/api/session'] as const,
+  register: ['/register', '/api/register', '/auth/register', '/auth/api/register'] as const,
+  login: ['/login', '/api/login', '/auth/login', '/auth/api/login'] as const,
+  logout: ['/logout', '/api/logout', '/auth/logout', '/auth/api/logout'] as const,
+  session: ['/session', '/api/session', '/auth/session', '/auth/api/session'] as const,
 };
 
 const handleRegister = async (c: Hono.Context) => {
