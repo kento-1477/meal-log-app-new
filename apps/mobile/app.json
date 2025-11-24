@@ -53,8 +53,14 @@
               "host": "invite"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
+      ],
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -84,7 +90,13 @@
       ]
     ],
     "extra": {
-      "apiBaseUrl": "https://mealchat-gateway.kento147777.workers.dev"
+      "apiBaseUrl": "https://ushkrapyubwrrjfuzpla.functions.supabase.co",
+      "router": {
+        "root": "app"
+      },
+      "eas": {
+        "projectId": "632c3f03-537f-430c-baf5-c2add0d5d08d"
+      }
     }
   }
 }

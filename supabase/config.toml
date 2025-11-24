@@ -1,0 +1,27 @@
+project_id = "meal-log-app"
+
+[functions]
+  # Auth domain (login/register/session)
+  [functions.auth]
+  verify_jwt = false
+  import_map = "./functions/deno.json"
+
+  # Meal log CRUD + dashboards (implemented in Supabase Edge)
+  [functions."meal-log"]
+  verify_jwt = false
+  import_map = "./functions/deno.json"
+
+  # In-app purchase validation
+  [functions.iap]
+  verify_jwt = false
+  import_map = "./functions/deno.json"
+
+  # Referral program
+  [functions.referral]
+  verify_jwt = false
+  import_map = "./functions/deno.json"
+
+  # AI endpoints (Gemini, etc)
+  [functions.ai]
+  verify_jwt = false
+  import_map = "./functions/deno.json"
