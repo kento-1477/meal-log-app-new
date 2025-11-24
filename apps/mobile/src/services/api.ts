@@ -35,6 +35,39 @@ import {
 
 const responseCache = new Map<string, unknown>();
 
+function resolveFunctionPrefix(path: string): string {
+  // Supabase Edge Functions are exposed under /{function-name}/...
+  if (
+    path.startsWith('/api/login') ||
+    path.startsWith('/api/register') ||
+    path.startsWith('/api/session') ||
+    path.startsWith('/api/logout')
+  ) {
+    return '/auth';
+  }
+
+  if (path.startsWith('/api/iap')) {
+    return '/iap';
+  }
+
+  if (path.startsWith('/api/referral')) {
+    return '/referral';
+  }
+
+  if (path.startsWith('/api/ai')) {
+    return '/ai';
+  }
+
+  // Default: meal-log domain (logs, dashboard, favorites, etc.)
+  return '/meal-log';
+}
+
+function buildApiUrl(path: string): string {
+  const base = API_BASE_URL.replace(/\/+$/, '');
+  const prefix = resolveFunctionPrefix(path);
+  return `${base}${prefix}${path}`;
+}
+
 function buildCacheKey(url: string, headers: Headers) {
   const locale = headers.get('Accept-Language') ?? '';
   const timezone = headers.get('X-Timezone') ?? '';
@@ -42,7 +75,7 @@ function buildCacheKey(url: string, headers: Headers) {
 }
 
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const url = `${API_BASE_URL}${path}`;
+  const url = buildApiUrl(path);
   const headers = new Headers(options.headers ?? {});
 
   if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
