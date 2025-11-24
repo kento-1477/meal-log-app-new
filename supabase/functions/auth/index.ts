@@ -16,6 +16,11 @@ const SESSION_PATHS = ['/session', '/api/session', '/auth/session', '/auth/api/s
 const handleRegister = async (c: Hono.Context) => {
   try {
     console.log('register called', c.req.url);
+    console.log('env check', {
+      DATABASE_URL: Deno.env.get('DATABASE_URL'),
+      DB_URL: Deno.env.get('DB_URL'),
+      SUPABASE_DB_URL: Deno.env.get('SUPABASE_DB_URL'),
+    });
     const body = await c.req.json();
     const input = RegisterRequestSchema.parse(body);
 
@@ -63,6 +68,11 @@ const handleRegister = async (c: Hono.Context) => {
 const handleLogin = async (c: Hono.Context) => {
   try {
     console.log('login called', c.req.url);
+    console.log('env check', {
+      DATABASE_URL: Deno.env.get('DATABASE_URL'),
+      DB_URL: Deno.env.get('DB_URL'),
+      SUPABASE_DB_URL: Deno.env.get('SUPABASE_DB_URL'),
+    });
     const body = await c.req.json();
     const input = LoginRequestSchema.parse(body);
 
