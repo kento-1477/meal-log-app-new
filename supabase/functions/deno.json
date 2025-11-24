@@ -12,7 +12,8 @@
     "zod": "npm:zod@^3.23.8",
     "luxon": "npm:luxon@^3.5.0",
     "jose": "npm:jose@^5.9.3",
-    "argon2-browser": "npm:argon2-browser@^1.18.0"
+    "bcryptjs": "npm:bcryptjs@^2.4.3",
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@^2.45.2"
   },
   "compilerOptions": {
     "lib": ["deno.window", "deno.ns", "dom"],

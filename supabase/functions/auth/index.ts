@@ -1,11 +1,12 @@
 import { RegisterRequestSchema, LoginRequestSchema } from '@shared/index.js';
-import argon2 from 'argon2-browser';
+import bcrypt from 'bcryptjs';
 import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
-import { sql } from '../_shared/db.ts';
 import { clearAuth, getAuthSession, persistAuth, signUserToken } from '../_shared/auth.ts';
 import { evaluateAiUsage, summarizeUsageStatus } from '../_shared/ai.ts';
+import { supabaseAdmin } from '../_shared/supabase.ts';
 
 const app = createApp();
+const BCRYPT_SALT_ROUNDS = 10;
 
 // Explicitly register routes for both plain and function-prefixed paths
 const REGISTER_PATHS = ['/register', '/api/register', '/auth/register', '/auth/api/register'] as const;
@@ -20,28 +21,48 @@ const handleRegister = async (c: Hono.Context) => {
       DATABASE_URL: Deno.env.get('DATABASE_URL'),
       DB_URL: Deno.env.get('DB_URL'),
       SUPABASE_DB_URL: Deno.env.get('SUPABASE_DB_URL'),
+      SUPABASE_SERVICE_ROLE_KEY: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ? 'set' : 'missing',
+      SERVICE_ROLE_KEY: Deno.env.get('SERVICE_ROLE_KEY') ? 'set' : 'missing',
     });
     const body = await c.req.json();
     const input = RegisterRequestSchema.parse(body);
 
-    const existing = await sql`
-      select "id" from "User" where "email" = ${input.email} limit 1;
-    `;
+    const { data: existing, error: existingError } = await supabaseAdmin
+      .from('User')
+      .select('id')
+      .eq('email', input.email)
+      .limit(1)
+      .maybeSingle();
 
-    if (existing.length > 0) {
+    if (existingError) {
+      console.error('register: failed to check existing user', existingError);
+      throw new HttpError('登録手続きを完了できませんでした。時間をおいて再度お試しください。', {
+        status: HTTP_STATUS.INTERNAL_ERROR,
+        expose: true,
+      });
+    }
+
+    if (existing) {
       throw new HttpError('登録手続きを完了できませんでした。入力内容をご確認ください。', {
         status: HTTP_STATUS.BAD_REQUEST,
         expose: true,
       });
     }
 
-    const hashed = await argon2.hash({ pass: input.password });
-    const passwordHash = hashed.encoded;
-    const [row] = await sql<DbUser[]>`
-      insert into "User" ("email", "passwordHash")
-      values (${input.email}, ${passwordHash})
-      returning "id", "email", "aiCredits";
-    `;
+    const passwordHash = await hashPassword(input.password);
+    const { data: row, error: insertError } = await supabaseAdmin
+      .from('User')
+      .insert({ email: input.email, passwordHash })
+      .select('id, email, aiCredits')
+      .single();
+
+    if (insertError || !row) {
+      console.error('register: failed to create user', insertError);
+      throw new HttpError('登録手続きを完了できませんでした。入力内容をご確認ください。', {
+        status: HTTP_STATUS.INTERNAL_ERROR,
+        expose: true,
+      });
+    }
 
     const user = serializeUser(row);
     const token = await signUserToken(user);
@@ -72,26 +93,31 @@ const handleLogin = async (c: Hono.Context) => {
       DATABASE_URL: Deno.env.get('DATABASE_URL'),
       DB_URL: Deno.env.get('DB_URL'),
       SUPABASE_DB_URL: Deno.env.get('SUPABASE_DB_URL'),
+      SUPABASE_SERVICE_ROLE_KEY: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ? 'set' : 'missing',
+      SERVICE_ROLE_KEY: Deno.env.get('SERVICE_ROLE_KEY') ? 'set' : 'missing',
     });
     const body = await c.req.json();
     const input = LoginRequestSchema.parse(body);
 
-    const rows = await sql<DbUser[]>`
-      select "id", "email", "passwordHash", "aiCredits"
-      from "User"
-      where "email" = ${input.email}
-      limit 1;
-    `;
+    const { data: record, error } = await supabaseAdmin
+      .from('User')
+      .select('id, email, passwordHash, aiCredits')
+      .eq('email', input.email)
+      .maybeSingle();
 
-    const record = rows[0];
-    if (!record) {
+    if (error) {
+      console.error('login: failed to fetch user', error);
+      throw new HttpError('ログインに失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+    }
+
+    if (!record || !record.passwordHash) {
       throw new HttpError('メールアドレスまたはパスワードが正しくありません', {
         status: HTTP_STATUS.UNAUTHORIZED,
         expose: true,
       });
     }
 
-    const valid = await argon2.verify({ pass: input.password, encoded: record.passwordHash });
+    const valid = await verifyPassword(input.password, record.passwordHash);
     if (!valid) {
       throw new HttpError('メールアドレスまたはパスワードが正しくありません', {
         status: HTTP_STATUS.UNAUTHORIZED,
@@ -130,14 +156,17 @@ const handleSession = async (c: Hono.Context) => {
     return c.json({ authenticated: false }, HTTP_STATUS.UNAUTHORIZED);
   }
 
-  const rows = await sql<DbUser[]>`
-    select "id", "email", "aiCredits"
-    from "User"
-    where "id" = ${session.user.id}
-    limit 1;
-  `;
+  const { data: record, error } = await supabaseAdmin
+    .from('User')
+    .select('id, email, aiCredits')
+    .eq('id', session.user.id)
+    .maybeSingle();
 
-  const record = rows[0];
+  if (error) {
+    console.error('session: failed to fetch user', error);
+    throw new HttpError('ユーザー情報の取得に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
   if (!record) {
     clearAuth(c);
     return c.json({ authenticated: false }, HTTP_STATUS.UNAUTHORIZED);
@@ -172,18 +201,23 @@ export default app;
 interface DbUser {
   id: number;
   email: string;
-  aiCredits: number;
-  passwordHash?: string;
+  aiCredits: number | null;
+  passwordHash?: string | null;
 }
 
 async function getOnboardingStatus(userId: number) {
-  const rows = await sql<{ questionnaireCompletedAt: Date | null }[]>`
-    select "questionnaireCompletedAt"
-    from "UserProfile"
-    where "userId" = ${userId}
-    limit 1;
-  `;
-  const completedAt = rows[0]?.questionnaireCompletedAt ?? null;
+  const { data, error } = await supabaseAdmin
+    .from('UserProfile')
+    .select('questionnaireCompletedAt')
+    .eq('userId', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('getOnboardingStatus: failed to fetch profile', error);
+    throw new HttpError('ユーザー情報の取得に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  const completedAt = data?.questionnaireCompletedAt ? new Date(data.questionnaireCompletedAt) : null;
   return {
     completed: Boolean(completedAt),
     completed_at: completedAt ? completedAt.toISOString() : null,
@@ -196,4 +230,18 @@ function serializeUser(row: DbUser) {
     email: row.email,
     aiCredits: row.aiCredits ?? 0,
   };
+}
+
+async function hashPassword(password: string) {
+  return bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+}
+
+async function verifyPassword(password: string, hash: string | null | undefined) {
+  if (!hash) return false;
+  // Accept bcrypt hashes ($2a/$2b/$2y). Legacy argon2 hashes are not supported in Edge runtime.
+  if (hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$')) {
+    return bcrypt.compare(password, hash);
+  }
+  console.warn('Unsupported password hash format; user must reset password');
+  return false;
 }
