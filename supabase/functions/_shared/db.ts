@@ -12,7 +12,8 @@ if (!connectionString) {
 }
 
 const sql = postgres(connectionString, {
-  ssl: { rejectUnauthorized: false },
+  // Simplify SSL config for Supabase Edge runtime
+  ssl: 'require',
   idle_timeout: 20,
   connection: { application_name: 'meal-log-edge' },
   transform: postgres.camel,
