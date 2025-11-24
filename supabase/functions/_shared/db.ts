@@ -2,8 +2,9 @@ import postgres from 'postgres';
 import { getEnv } from './env.ts';
 
 const connectionString =
-  getEnv('SUPABASE_DB_URL', { optional: true }) ||
   getEnv('DATABASE_URL', { optional: true }) ||
+  getEnv('DB_URL', { optional: true }) ||
+  getEnv('SUPABASE_DB_URL', { optional: true }) ||
   '';
 
 if (!connectionString) {
