@@ -7,13 +7,11 @@ import { evaluateAiUsage, summarizeUsageStatus } from '../_shared/ai.ts';
 
 const app = createApp();
 
-// Helpers to reuse handler for both /route and /api/route (and with function prefix)
-const routes = {
-  register: ['/register', '/api/register', '/auth/register', '/auth/api/register'] as const,
-  login: ['/login', '/api/login', '/auth/login', '/auth/api/login'] as const,
-  logout: ['/logout', '/api/logout', '/auth/logout', '/auth/api/logout'] as const,
-  session: ['/session', '/api/session', '/auth/session', '/auth/api/session'] as const,
-};
+// Explicitly register routes for both plain and function-prefixed paths
+const REGISTER_PATHS = ['/register', '/api/register', '/auth/register', '/auth/api/register'] as const;
+const LOGIN_PATHS = ['/login', '/api/login', '/auth/login', '/auth/api/login'] as const;
+const LOGOUT_PATHS = ['/logout', '/api/logout', '/auth/logout', '/auth/api/logout'] as const;
+const SESSION_PATHS = ['/session', '/api/session', '/auth/session', '/auth/api/session'] as const;
 
 const handleRegister = async (c: Hono.Context) => {
   const body = await c.req.json();
@@ -139,10 +137,10 @@ const handleSession = async (c: Hono.Context) => {
   });
 };
 
-routes.register.forEach((path) => app.post(path, (c) => handleRegister(c)));
-routes.login.forEach((path) => app.post(path, (c) => handleLogin(c)));
-routes.logout.forEach((path) => app.post(path, (c) => handleLogout(c)));
-routes.session.forEach((path) => app.get(path, (c) => handleSession(c)));
+REGISTER_PATHS.forEach((path) => app.post(path, (c) => handleRegister(c)));
+LOGIN_PATHS.forEach((path) => app.post(path, (c) => handleLogin(c)));
+LOGOUT_PATHS.forEach((path) => app.post(path, (c) => handleLogout(c)));
+SESSION_PATHS.forEach((path) => app.get(path, (c) => handleSession(c)));
 
 // Fallback to handle OPTIONS preflight without hitting error handler
 app.options('*', (c) => c.text('ok'));
