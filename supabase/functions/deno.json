@@ -12,7 +12,8 @@
     "zod": "npm:zod@^3.23.8",
     "luxon": "npm:luxon@^3.5.0",
     "jose": "npm:jose@^5.9.3",
-    "@node-rs/argon2-wasm32-wasi": "npm:@node-rs/argon2-wasm32-wasi@^1.8.3"
+    "@node-rs/argon2-wasm32-wasi": "npm:@node-rs/argon2-wasm32-wasi@^1.8.3",
+    "argon2-browser": "npm:argon2-browser@^1.18.0"
   },
   "compilerOptions": {
     "lib": ["deno.window", "deno.ns", "dom"],
