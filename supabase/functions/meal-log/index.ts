@@ -133,6 +133,45 @@ const calorieQuerySchema = z.object({
 
 app.get('/health', (c) => c.json({ ok: true, service: 'meal-log' }));
 
+// Premium status (simple placeholder based on isPremium + grants)
+app.get('/api/user/premium-status', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+
+  // Premium判定（既存ロジックに合わせて期間内のGrantを確認）
+  const { data: grants, error } = await supabaseAdmin
+    .from('PremiumGrant')
+    .select('source, startDate, endDate, createdAt, days')
+    .eq('userId', user.id)
+    .order('endDate', { ascending: false });
+
+  if (error) {
+    console.error('premium-status: fetch failed', error);
+    throw new HttpError('プレミアム状態を取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  const now = new Date();
+  const active = (grants ?? []).find((g) => new Date(g.startDate) <= now && new Date(g.endDate) >= now);
+  const isPremium = Boolean(active);
+  const expiresAt = active ? new Date(active.endDate).toISOString() : null;
+  const daysRemaining = active
+    ? Math.max(0, Math.ceil((new Date(active.endDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+    : 0;
+
+  return c.json({
+    isPremium,
+    source: (active?.source as string | null) ?? null,
+    daysRemaining,
+    expiresAt,
+    grants: (grants ?? []).map((g) => ({
+      source: g.source,
+      days: g.days ?? 0,
+      startDate: g.startDate,
+      endDate: g.endDate,
+      createdAt: g.createdAt ?? g.startDate,
+    })),
+  });
+});
+
 app.get('/api/logs', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
   const locale = resolveRequestLocale(c.req.raw);
