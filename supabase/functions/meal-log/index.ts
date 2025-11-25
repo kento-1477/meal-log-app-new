@@ -149,47 +149,23 @@ app.get('/api/logs', requireAuth, async (c) => {
     throw new HttpError('指定した期間は利用できません', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
   }
 
-  const rows = await sql<
-    Array<{
-      id: string;
-      foodItem: string;
-      calories: number;
-      proteinG: number;
-      fatG: number;
-      carbsG: number;
-      mealPeriod: string | null;
-      landingType: string | null;
-      createdAt: Date;
-      imageUrl: string | null;
-      aiRaw: unknown;
-      favoriteId: number | null;
-    }>
-  >`
-    select
-      ml."id",
-      ml."foodItem",
-      ml."calories",
-      ml."proteinG",
-      ml."fatG",
-      ml."carbsG",
-      ml."mealPeriod",
-      ml."landingType",
-      ml."createdAt",
-      ml."imageUrl",
-      ml."aiRaw",
-      fm."id" as "favoriteId"
-    from "MealLog" ml
-    left join "FavoriteMeal" fm on fm."sourceMealLogId" = ml."id" and fm."userId" = ml."userId"
-    where ml."userId" = ${user.id}
-      and ml."deletedAt" is null
-      and ml."createdAt" >= ${range.from}
-      and ml."createdAt" < ${range.to}
-    order by ml."createdAt" desc
-    limit ${query.data.limit}
-    offset ${query.data.offset};
-  `;
+  const { data: rows, error } = await supabaseAdmin
+    .from('MealLog')
+    .select('id, foodItem, calories, proteinG, fatG, carbsG, mealPeriod, landingType, createdAt, imageUrl, aiRaw, FavoriteMeal!FavoriteMeal_sourceMealLogId_fkey ( id )')
+    .eq('userId', user.id)
+    .is('deletedAt', null)
+    .gte('createdAt', range.from.toISOString())
+    .lt('createdAt', range.to.toISOString())
+    .order('createdAt', { ascending: false })
+    .range(query.data.offset, query.data.offset + query.data.limit - 1);
 
-  const items: MealLogListResponse['items'] = rows.map((row) => {
+  if (error) {
+    console.error('list logs: fetch failed', error);
+    throw new HttpError('食事記録の取得に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  const items: MealLogListResponse['items'] = (rows ?? []).map((row) => {
+    const favoriteId = Array.isArray((row as any).FavoriteMeal) ? (row as any).FavoriteMeal[0]?.id ?? null : null;
     const localization = resolveMealLogLocalization(row.aiRaw, locale);
     const translation = localization.translation;
     const dish = translation?.dish ?? row.foodItem;
@@ -250,33 +226,51 @@ app.delete('/api/log/:id', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
   const logId = c.req.param('id');
 
-  const deletedAt = await withTransaction(async (tx) => {
-    const existing = await tx<{ id: string }[]>`
-      select "id" from "MealLog" where "id" = ${logId} and "userId" = ${user.id} and "deletedAt" is null limit 1;
-    `;
+  const { data: existing, error: fetchError } = await supabaseAdmin
+    .from('MealLog')
+    .select('id')
+    .eq('id', logId)
+    .eq('userId', user.id)
+    .is('deletedAt', null)
+    .maybeSingle();
 
-    if (!existing[0]) {
-      throw new HttpError('食事記録が見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
-    }
+  if (fetchError) {
+    console.error('delete log: fetch failed', fetchError);
+    throw new HttpError('食事記録の取得に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
 
-    const deletedAtValue = new Date();
+  if (!existing) {
+    throw new HttpError('食事記録が見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
+  }
 
-    await tx`delete from "LogShareToken" where "mealLogId" = ${logId};`;
-    await tx`
-      update "FavoriteMeal"
-      set "sourceMealLogId" = null
-      where "userId" = ${user.id} and "sourceMealLogId" = ${logId};
-    `;
-    await tx`
-      update "MealLog"
-      set "deletedAt" = ${deletedAtValue}
-      where "id" = ${logId};
-    `;
+  const deletedAtValue = new Date().toISOString();
 
-    return deletedAtValue;
-  });
+  const { error: shareDeleteError } = await supabaseAdmin.from('LogShareToken').delete().eq('mealLogId', logId);
+  if (shareDeleteError) {
+    console.error('delete log: share token delete failed', shareDeleteError);
+  }
 
-  return c.json({ ok: true, deletedAt: deletedAt.toISOString() });
+  const { error: favoriteUpdateError } = await supabaseAdmin
+    .from('FavoriteMeal')
+    .update({ sourceMealLogId: null })
+    .eq('userId', user.id)
+    .eq('sourceMealLogId', logId);
+  if (favoriteUpdateError) {
+    console.error('delete log: favorite update failed', favoriteUpdateError);
+  }
+
+  const { error: deleteError } = await supabaseAdmin
+    .from('MealLog')
+    .update({ deletedAt: deletedAtValue })
+    .eq('id', logId)
+    .eq('userId', user.id);
+
+  if (deleteError) {
+    console.error('delete log: update failed', deleteError);
+    throw new HttpError('食事記録の削除に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  return c.json({ ok: true, deletedAt: deletedAtValue });
 });
 
 app.post('/api/log/:id/restore', requireAuth, async (c) => {
@@ -763,24 +757,20 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
   const requestedLocale = normalizeLocale(params.locale);
   const timezone = normalizeTimezone(params.timezone);
 
-  const existing = await sql<
-    Array<{
-      id: number;
-      logId: string | null;
-      aiRaw: unknown | null;
-      mealLogId: string | null;
-      requestKey: string;
-    }>
-  >`
-    select ir."id", ir."logId", ml."aiRaw", ml."id" as "mealLogId", ir."requestKey"
-    from "IngestRequest" ir
-    left join "MealLog" ml on ml."id" = ir."logId"
-    where ir."userId" = ${params.userId} and ir."requestKey" = ${requestKey}
-    limit 1;
-  `;
+  const { data: ingestExisting, error: ingestFetchError } = await supabaseAdmin
+    .from('IngestRequest')
+    .select('id, logId, requestKey')
+    .eq('userId', params.userId)
+    .eq('requestKey', requestKey)
+    .maybeSingle();
 
-  if (existing[0]?.mealLogId) {
-    const log = await fetchMealLogDetail({ userId: params.userId, logId: existing[0].mealLogId, locale: requestedLocale });
+  if (ingestFetchError) {
+    console.error('processMealLog: fetch ingest failed', ingestFetchError);
+    throw new HttpError('食事記録の処理に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  if (ingestExisting?.logId) {
+    const log = await fetchMealLogDetail({ userId: params.userId, logId: ingestExisting.logId, locale: requestedLocale });
     return {
       ok: true,
       success: true,
@@ -820,15 +810,19 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
   const imageMimeType = params.file?.type;
 
   let ingestId: number | null = null;
-  if (!existing[0]) {
-    const inserted = await sql<{ id: number }[]>`
-      insert into "IngestRequest" ("userId", "requestKey")
-      values (${params.userId}, ${requestKey})
-      returning "id";
-    `;
-    ingestId = inserted[0].id;
+  if (!ingestExisting) {
+    const { data: inserted, error: ingestInsertError } = await supabaseAdmin
+      .from('IngestRequest')
+      .insert({ userId: params.userId, requestKey })
+      .select('id')
+      .single();
+    if (ingestInsertError || !inserted) {
+      console.error('processMealLog: insert ingest failed', ingestInsertError);
+      throw new HttpError('食事記録の処理に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+    }
+    ingestId = inserted.id;
   } else {
-    ingestId = existing[0].id;
+    ingestId = ingestExisting.id;
   }
 
   const analysis = await analyzeMeal({
@@ -878,65 +872,67 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
     warnings.push(`translation_fallback:${localization.resolvedLocale}`);
   }
 
-  const log = await withTransaction(async (tx) => {
-    const createdRows = await tx<[{ id: string }]>`
-      insert into "MealLog" (
-        "userId",
-        "foodItem",
-        "calories",
-        "proteinG",
-        "fatG",
-        "carbsG",
-        "aiRaw",
-        "zeroFloored",
-        "guardrailNotes",
-        "landingType",
-        "mealPeriod"
-      )
-      values (
-        ${params.userId},
-        ${translation.dish ?? params.message},
-        ${enrichedResponse.totals.kcal},
-        ${enrichedResponse.totals.protein_g},
-        ${enrichedResponse.totals.fat_g},
-        ${enrichedResponse.totals.carbs_g},
-        ${sql.json(aiPayload)},
-        ${zeroFloored},
-        ${zeroFloored ? 'zeroFloored' : null},
-        ${enrichedResponse.landing_type ?? null},
-        ${mealPeriod}
-      )
-      returning "id";
-    `;
+  const { data: createdLog, error: logInsertError } = await supabaseAdmin
+    .from('MealLog')
+    .insert({
+      userId: params.userId,
+      foodItem: translation.dish ?? params.message,
+      calories: enrichedResponse.totals.kcal,
+      proteinG: enrichedResponse.totals.protein_g,
+      fatG: enrichedResponse.totals.fat_g,
+      carbsG: enrichedResponse.totals.carbs_g,
+      aiRaw: aiPayload,
+      zeroFloored,
+      guardrailNotes: zeroFloored ? 'zeroFloored' : null,
+      landingType: enrichedResponse.landing_type ?? null,
+      mealPeriod,
+    })
+    .select('id')
+    .single();
 
-    const logId = createdRows[0].id;
+  if (logInsertError || !createdLog) {
+    console.error('processMealLog: insert meal log failed', logInsertError);
+    throw new HttpError('食事記録を作成できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
 
-    await tx`
-      insert into "MealLogPeriodHistory" ("mealLogId", "previousMealPeriod", "nextMealPeriod", "source")
-      values (${logId}, ${null}, ${mealPeriod}, 'auto');
-    `;
+  const logId = createdLog.id;
 
-    if (params.file && imageBase64) {
-      const imageUrl = `data:${params.file.type};base64,${imageBase64}`;
-      await tx`
-        insert into "MediaAsset" ("mealLogId", "mimeType", "url", "sizeBytes")
-        values (${logId}, ${params.file.type}, ${imageUrl}, ${params.file.size});
-      `;
-      await tx`
-        update "MealLog" set "imageUrl" = ${imageUrl} where "id" = ${logId};
-      `;
-    }
-
-    if (ingestId) {
-      await tx`
-        update "IngestRequest"
-        set "logId" = ${zeroFloored ? null : logId}
-        where "id" = ${ingestId};
-      `;
-    }
-
-    return logId;
+  const { error: historyError } = await supabaseAdmin.from('MealLogPeriodHistory').insert({
+    mealLogId: logId,
+    previousMealPeriod: null,
+    nextMealPeriod: mealPeriod,
+    source: 'auto',
   });
+  if (historyError) {
+    console.error('processMealLog: insert period history failed', historyError);
+  }
+
+  if (params.file && imageBase64) {
+    const imageUrl = `data:${params.file.type};base64,${imageBase64}`;
+    const { error: mediaError } = await supabaseAdmin.from('MediaAsset').insert({
+      mealLogId: logId,
+      mimeType: params.file.type,
+      url: imageUrl,
+      sizeBytes: params.file.size,
+    });
+    if (mediaError) {
+      console.error('processMealLog: insert media asset failed', mediaError);
+    }
+    const { error: updateImageError } = await supabaseAdmin.from('MealLog').update({ imageUrl }).eq('id', logId);
+    if (updateImageError) {
+      console.error('processMealLog: update imageUrl failed', updateImageError);
+    }
+  }
+
+  if (ingestId) {
+    const { error: ingestUpdateError } = await supabaseAdmin
+      .from('IngestRequest')
+      .update({ logId: zeroFloored ? null : logId })
+      .eq('id', ingestId);
+    if (ingestUpdateError) {
+      console.error('processMealLog: update ingest failed', ingestUpdateError);
+    }
+  }
 
   const usageSummary = await recordAiUsage({
     userId: params.userId,
