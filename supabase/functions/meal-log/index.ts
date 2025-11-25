@@ -283,19 +283,33 @@ app.post('/api/log/:id/restore', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
   const logId = c.req.param('id');
 
-  const restored = await sql<{ id: string }[]>`
-    select "id" from "MealLog" where "id" = ${logId} and "userId" = ${user.id} and "deletedAt" is not null limit 1;
-  `;
+  const { data: restored, error: restoreCheckError } = await supabaseAdmin
+    .from('MealLog')
+    .select('id')
+    .eq('id', logId)
+    .eq('userId', user.id)
+    .not('deletedAt', 'is', null)
+    .maybeSingle();
 
-  if (!restored[0]) {
+  if (restoreCheckError) {
+    console.error('restore log: fetch failed', restoreCheckError);
+    throw new HttpError('復元対象の食事記録を確認できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  if (!restored) {
     throw new HttpError('復元対象の食事記録が見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
   }
 
-  await sql`
-    update "MealLog"
-    set "deletedAt" = null, "updatedAt" = now()
-    where "id" = ${logId};
-  `;
+  const { error: updateError } = await supabaseAdmin
+    .from('MealLog')
+    .update({ deletedAt: null, updatedAt: new Date().toISOString() })
+    .eq('id', logId)
+    .eq('userId', user.id);
+
+  if (updateError) {
+    console.error('restore log: update failed', updateError);
+    throw new HttpError('食事記録の復元に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
 
   return c.json({ ok: true });
 });
@@ -306,113 +320,100 @@ app.patch('/api/log/:id', requireAuth, async (c) => {
   const body = UpdateMealLogRequestSchema.parse(await c.req.json());
   const locale = resolveRequestLocale(c.req.raw);
 
-  const updatedLog = await withTransaction(async (tx) => {
-    const existingRows = await tx<
-      Array<{
-        id: string;
-        userId: number;
-        foodItem: string;
-        calories: number;
-        proteinG: number;
-        fatG: number;
-        carbsG: number;
-        mealPeriod: string | null;
-        aiRaw: unknown;
-      }>
-    >`
-      select
-        "id",
-        "userId",
-        "foodItem",
-        "calories",
-        "proteinG",
-        "fatG",
-        "carbsG",
-        "mealPeriod",
-        "aiRaw"
-      from "MealLog"
-      where "id" = ${logId}
-        and "userId" = ${user.id}
-        and "deletedAt" is null
-      limit 1;
-    `;
+  const { data: log, error: fetchError } = await supabaseAdmin
+    .from('MealLog')
+    .select('id, userId, foodItem, calories, proteinG, fatG, carbsG, mealPeriod, aiRaw')
+    .eq('id', logId)
+    .eq('userId', user.id)
+    .is('deletedAt', null)
+    .maybeSingle();
 
-    const log = existingRows[0];
-    if (!log) {
-      throw new HttpError('食事記録が見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
-    }
+  if (fetchError) {
+    console.error('update log: fetch failed', fetchError);
+    throw new HttpError('食事記録の取得に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
 
-    const updates = mapUpdatePayload(body);
-    const changes: Record<string, { before: unknown; after: unknown }> = {};
-    const setParts: Array<ReturnType<typeof sql>> = [sql`"version" = "version" + 1`, sql`"updatedAt" = now()`];
+  if (!log) {
+    throw new HttpError('食事記録が見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
+  }
 
-    if (typeof updates.foodItem === 'string' && updates.foodItem !== log.foodItem) {
-      changes.foodItem = { before: log.foodItem, after: updates.foodItem };
-      setParts.push(sql`"foodItem" = ${updates.foodItem}`);
-    }
-    if (typeof updates.calories === 'number' && updates.calories !== log.calories) {
-      changes.calories = { before: log.calories, after: updates.calories };
-      setParts.push(sql`"calories" = ${updates.calories}`);
-    }
-    if (typeof updates.proteinG === 'number' && updates.proteinG !== log.proteinG) {
-      changes.proteinG = { before: log.proteinG, after: updates.proteinG };
-      setParts.push(sql`"proteinG" = ${updates.proteinG}`);
-    }
-    if (typeof updates.fatG === 'number' && updates.fatG !== log.fatG) {
-      changes.fatG = { before: log.fatG, after: updates.fatG };
-      setParts.push(sql`"fatG" = ${updates.fatG}`);
-    }
-    if (typeof updates.carbsG === 'number' && updates.carbsG !== log.carbsG) {
-      changes.carbsG = { before: log.carbsG, after: updates.carbsG };
-      setParts.push(sql`"carbsG" = ${updates.carbsG}`);
-    }
+  const updates = mapUpdatePayload(body);
+  const changes: Record<string, { before: unknown; after: unknown }> = {};
+  const set: Record<string, unknown> = { version: sql`"version" + 1`, updatedAt: new Date().toISOString() };
 
-    const previousMealPeriod = log.mealPeriod;
-    if (typeof updates.mealPeriod !== 'undefined' && updates.mealPeriod !== log.mealPeriod) {
-      changes.mealPeriod = { before: log.mealPeriod, after: updates.mealPeriod };
-      setParts.push(sql`"mealPeriod" = ${updates.mealPeriod}`);
+  if (typeof updates.foodItem === 'string' && updates.foodItem !== log.foodItem) {
+    changes.foodItem = { before: log.foodItem, after: updates.foodItem };
+    set.foodItem = updates.foodItem;
+  }
+  if (typeof updates.calories === 'number' && updates.calories !== log.calories) {
+    changes.calories = { before: log.calories, after: updates.calories };
+    set.calories = updates.calories;
+  }
+  if (typeof updates.proteinG === 'number' && updates.proteinG !== log.proteinG) {
+    changes.proteinG = { before: log.proteinG, after: updates.proteinG };
+    set.proteinG = updates.proteinG;
+  }
+  if (typeof updates.fatG === 'number' && updates.fatG !== log.fatG) {
+    changes.fatG = { before: log.fatG, after: updates.fatG };
+    set.fatG = updates.fatG;
+  }
+  if (typeof updates.carbsG === 'number' && updates.carbsG !== log.carbsG) {
+    changes.carbsG = { before: log.carbsG, after: updates.carbsG };
+    set.carbsG = updates.carbsG;
+  }
+
+  const previousMealPeriod = log.mealPeriod;
+  if (typeof updates.mealPeriod !== 'undefined' && updates.mealPeriod !== log.mealPeriod) {
+    changes.mealPeriod = { before: log.mealPeriod, after: updates.mealPeriod };
+    set.mealPeriod = updates.mealPeriod;
+  }
+
+  if (Object.keys(changes).length > 0) {
+    const updatedAiRaw = buildUpdatedAiRaw(log.aiRaw, updates);
+    set.aiRaw = updatedAiRaw;
+  }
+
+  if (Object.keys(set).length <= 2) {
+    // No changes requested
+    const item = await fetchMealLogDetail({ userId: user.id, logId, locale });
+    return c.json({ ok: true, item });
+  }
+
+  const { error: updateError } = await supabaseAdmin
+    .from('MealLog')
+    .update(set)
+    .eq('id', logId)
+    .eq('userId', user.id);
+
+  if (updateError) {
+    console.error('update log: update failed', updateError);
+    throw new HttpError('食事記録の更新に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  if (typeof updates.mealPeriod !== 'undefined' && updates.mealPeriod !== previousMealPeriod) {
+    const { error: historyError } = await supabaseAdmin.from('MealLogPeriodHistory').insert({
+      mealLogId: logId,
+      previousMealPeriod,
+      nextMealPeriod: updates.mealPeriod,
+      source: 'manual',
+    });
+    if (historyError) {
+      console.error('update log: history insert failed', historyError);
     }
+  }
 
-    let updatedAiRaw = log.aiRaw;
-    if (Object.keys(changes).length > 0) {
-      updatedAiRaw = buildUpdatedAiRaw(log.aiRaw, updates);
-      setParts.push(sql`"aiRaw" = ${sql.json(updatedAiRaw)}`);
+  if (Object.keys(changes).length > 0) {
+    const { error: editError } = await supabaseAdmin.from('MealLogEdit').insert({
+      mealLogId: logId,
+      userId: user.id,
+      changes,
+    });
+    if (editError) {
+      console.error('update log: edit insert failed', editError);
     }
+  }
 
-    if (setParts.length === 2) {
-      // No changes requested
-      return log;
-    }
-
-    const updatedRows = await tx<
-      Array<{
-        id: string;
-      }>
-    >`
-      update "MealLog"
-      set ${sql.join(setParts, sql`, `)}
-      where "id" = ${logId}
-      returning "id";
-    `;
-
-    if (typeof updates.mealPeriod !== 'undefined' && updates.mealPeriod !== previousMealPeriod) {
-      await tx`
-        insert into "MealLogPeriodHistory" ("mealLogId", "previousMealPeriod", "nextMealPeriod", "source")
-        values (${logId}, ${previousMealPeriod}, ${updates.mealPeriod}, 'manual');
-      `;
-    }
-
-    if (Object.keys(changes).length > 0) {
-      await tx`
-        insert into "MealLogEdit" ("mealLogId", "userId", "changes")
-        values (${logId}, ${user.id}, ${sql.json(changes)});
-      `;
-    }
-
-    return updatedRows[0];
-  });
-
-  const item = await fetchMealLogDetail({ userId: user.id, logId: updatedLog.id, locale });
+  const item = await fetchMealLogDetail({ userId: user.id, logId, locale });
   return c.json({ ok: true, item });
 });
 
@@ -574,92 +575,46 @@ function cloneTranslations(translations: Record<Locale, LocalizationResolution['
 }
 
 async function fetchMealLogDetail(params: { userId: number; logId: string; locale: Locale }): Promise<MealLogDetail> {
-  const rows = await sql<
-    Array<{
-      id: string;
-      userId: number;
-      foodItem: string;
-      calories: number;
-      proteinG: number;
-      fatG: number;
-      carbsG: number;
-      mealPeriod: string | null;
-      landingType: string | null;
-      createdAt: Date;
-      imageUrl: string | null;
-      aiRaw: unknown;
-      favoriteId: number | null;
-    }>
-  >`
-    select
-      ml."id",
-      ml."userId",
-      ml."foodItem",
-      ml."calories",
-      ml."proteinG",
-      ml."fatG",
-      ml."carbsG",
-      ml."mealPeriod",
-      ml."landingType",
-      ml."createdAt",
-      ml."imageUrl",
-      ml."aiRaw",
-      fm."id" as "favoriteId"
-    from "MealLog" ml
-    left join "FavoriteMeal" fm on fm."sourceMealLogId" = ml."id" and fm."userId" = ml."userId"
-    where ml."id" = ${params.logId}
-      and ml."userId" = ${params.userId}
-      and ml."deletedAt" is null
-    limit 1;
-  `;
+  const { data: row, error } = await supabaseAdmin
+    .from('MealLog')
+    .select('id, userId, foodItem, calories, proteinG, fatG, carbsG, mealPeriod, landingType, createdAt, imageUrl, aiRaw, FavoriteMeal ( id )')
+    .eq('id', params.logId)
+    .eq('userId', params.userId)
+    .is('deletedAt', null)
+    .maybeSingle();
 
-  const row = rows[0];
+  if (error) {
+    console.error('fetchMealLogDetail: fetch failed', error);
+    throw new HttpError('食事記録が見つかりませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
   if (!row) {
     throw new HttpError('食事記録が見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
   }
 
-  const edits = await sql<
-    Array<{
-      id: number;
-      createdAt: Date;
-      userId: number;
-      changes: Record<string, unknown> | null;
-      userEmail: string | null;
-      userName: string | null;
-    }>
-  >`
-    select
-      e."id",
-      e."createdAt",
-      e."userId",
-      e."changes",
-      u."email" as "userEmail",
-      u."username" as "userName"
-    from "MealLogEdit" e
-    left join "User" u on u."id" = e."userId"
-    where e."mealLogId" = ${params.logId}
-    order by e."createdAt" desc;
-  `;
+  const favoriteId = Array.isArray(row.FavoriteMeal) ? row.FavoriteMeal[0]?.id ?? null : null;
 
-  const periodHistory = await sql<
-    Array<{
-      id: number;
-      previousMealPeriod: string | null;
-      nextMealPeriod: string | null;
-      source: string;
-      createdAt: Date;
-    }>
-  >`
-    select
-      h."id",
-      h."previousMealPeriod",
-      h."nextMealPeriod",
-      h."source",
-      h."createdAt"
-    from "MealLogPeriodHistory" h
-    where h."mealLogId" = ${params.logId}
-    order by h."createdAt" desc;
-  `;
+  const { data: editsData, error: editsError } = await supabaseAdmin
+    .from('MealLogEdit')
+    .select('id, createdAt, userId, changes, User ( email, username )')
+    .eq('mealLogId', params.logId)
+    .order('createdAt', { ascending: false });
+
+  if (editsError) {
+    console.error('fetchMealLogDetail: edits fetch failed', editsError);
+    throw new HttpError('編集履歴を取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  const { data: historyData, error: historyError } = await supabaseAdmin
+    .from('MealLogPeriodHistory')
+    .select('id, previousMealPeriod, nextMealPeriod, source, createdAt')
+    .eq('mealLogId', params.logId)
+    .order('createdAt', { ascending: false });
+
+  if (historyError) {
+    console.error('fetchMealLogDetail: period history fetch failed', historyError);
+    throw new HttpError('履歴を取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
 
   const localization = resolveMealLogLocalization(row.aiRaw, params.locale);
   const translation = localization.translation;
@@ -678,22 +633,24 @@ async function fetchMealLogDetail(params: { userId: number; logId: string; local
     locale: localization.resolvedLocale,
     requested_locale: localization.requestedLocale,
     fallback_applied: localization.fallbackApplied,
-    favorite_meal_id: row.favoriteId ?? null,
-    history: edits.map((entry) => ({
-      id: entry.id,
-      created_at: entry.createdAt.toISOString(),
-      user_id: entry.userId,
-      user_email: entry.userEmail ?? null,
-      user_name: entry.userName ?? null,
-      changes: entry.changes ?? {},
-    })),
-    time_history: periodHistory.map((entry) => ({
-      id: entry.id,
-      previous: toMealPeriodLabel(entry.previousMealPeriod),
-      next: toMealPeriodLabel(entry.nextMealPeriod),
-      source: entry.source,
-      changed_at: entry.createdAt.toISOString(),
-    })),
+    favorite_meal_id: favoriteId,
+    history:
+      editsData?.map((entry) => ({
+        id: entry.id,
+        created_at: new Date(entry.createdAt).toISOString(),
+        user_id: entry.userId,
+        user_email: (entry as any)?.User?.email ?? null,
+        user_name: (entry as any)?.User?.username ?? null,
+        changes: entry.changes ?? {},
+      })) ?? [],
+    time_history:
+      historyData?.map((entry) => ({
+        id: entry.id,
+        previous: toMealPeriodLabel(entry.previousMealPeriod),
+        next: toMealPeriodLabel(entry.nextMealPeriod),
+        source: entry.source,
+        changed_at: new Date(entry.createdAt).toISOString(),
+      })) ?? [],
   };
 }
 
