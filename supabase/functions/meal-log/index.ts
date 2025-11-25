@@ -26,7 +26,6 @@ import { requireAuth } from '../_shared/auth.ts';
 import { resolveMealLogLocalization, type LocalizationResolution, parseMealLogAiRaw, normalizeLocale, DEFAULT_LOCALE } from '../_shared/locale.ts';
 import { resolveRequestLocale } from '../_shared/request.ts';
 import { resolveRequestTimezone, normalizeTimezone } from '../_shared/timezone.ts';
-import { sql, withTransaction } from '../_shared/db.ts';
 import { supabaseAdmin } from '../_shared/supabase.ts';
 import { isPremium, evaluateAiUsage, recordAiUsage, summarizeUsageStatus, buildUsageLimitError } from '../_shared/ai.ts';
 import type { JwtUser } from '../_shared/auth.ts';
@@ -184,7 +183,7 @@ app.get('/api/logs', requireAuth, async (c) => {
       locale: localization.resolvedLocale,
       requested_locale: localization.requestedLocale,
       fallback_applied: localization.fallbackApplied,
-      favorite_meal_id: row.favoriteId ?? null,
+      favorite_meal_id: favoriteId,
     };
   });
 
@@ -1919,13 +1918,19 @@ function formatTrendLabel(dateTime: DateTime, locale?: string) {
 }
 
 async function getUserStreak(userId: number) {
-  const rows = await sql<{ createdAt: Date }[]>`
-    select "createdAt" from "MealLog"
-    where "userId" = ${userId} and "deletedAt" is null
-    order by "createdAt" desc;
-  `;
+  const { data: rows, error } = await supabaseAdmin
+    .from('MealLog')
+    .select('createdAt')
+    .eq('userId', userId)
+    .is('deletedAt', null)
+    .order('createdAt', { ascending: false });
 
-  if (!rows.length) {
+  if (error) {
+    console.error('getUserStreak: fetch failed', error);
+    throw new HttpError('食事記録を取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  if (!rows?.length) {
     return { current: 0, longest: 0, lastLoggedAt: null };
   }
 
@@ -1933,7 +1938,7 @@ async function getUserStreak(userId: number) {
   const uniqueDays: DateTime[] = [];
   let lastKey: string | null = null;
   for (const log of rows) {
-    const day = DateTime.fromJSDate(log.createdAt, { zone: 'utc' }).setZone(timezone).startOf('day');
+    const day = DateTime.fromISO(String(log.createdAt), { zone: 'utc' }).setZone(timezone).startOf('day');
     const key = day.toISODate();
     if (key !== lastKey) {
       uniqueDays.push(day);
