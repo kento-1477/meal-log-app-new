@@ -27,10 +27,18 @@ import { resolveMealLogLocalization, type LocalizationResolution, parseMealLogAi
 import { resolveRequestLocale } from '../_shared/request.ts';
 import { resolveRequestTimezone, normalizeTimezone } from '../_shared/timezone.ts';
 import { sql, withTransaction } from '../_shared/db.ts';
+import { supabaseAdmin } from '../_shared/supabase.ts';
 import { isPremium, evaluateAiUsage, recordAiUsage, summarizeUsageStatus, buildUsageLimitError } from '../_shared/ai.ts';
 import type { JwtUser } from '../_shared/auth.ts';
 
 const app = createApp();
+
+// Basic request logging to confirm Edge invocation
+app.use('*', async (c, next) => {
+  console.log('[meal-log] request', { method: c.req.method, url: c.req.url });
+  await next();
+});
+
 const DASHBOARD_TIMEZONE = Deno.env.get('DASHBOARD_TIMEZONE') ?? 'Asia/Tokyo';
 const DASHBOARD_TARGETS = {
   calories: { unit: 'kcal', value: 2200, decimals: 0 },
@@ -1505,23 +1513,28 @@ function favoriteToGeminiResponse(favorite: FavoriteMeal): GeminiNutritionRespon
 async function getDashboardSummary(params: { userId: number; period: string; from?: string; to?: string }) {
   const { range } = resolveRangeWithCustom(params.period, DASHBOARD_TIMEZONE, params.from, params.to);
 
-  const logs = await sql<
-    Array<{
-      createdAt: Date;
-      calories: number;
-      proteinG: number;
-      fatG: number;
-      carbsG: number;
-      mealPeriod: string | null;
-    }>
-  >`
-    select "createdAt", "calories", "proteinG", "fatG", "carbsG", "mealPeriod"
-    from "MealLog"
-    where "userId" = ${params.userId}
-      and "deletedAt" is null
-      and "createdAt" >= ${range.fromDate.toJSDate()}
-      and "createdAt" < ${range.toDate.toJSDate()};
-  `;
+  const { data: logsData, error } = await supabaseAdmin
+    .from('MealLog')
+    .select('createdAt, calories, proteinG, fatG, carbsG, mealPeriod')
+    .eq('userId', params.userId)
+    .is('deletedAt', null)
+    .gte('createdAt', range.fromDate.toISO() ?? range.fromDate.toString())
+    .lt('createdAt', range.toDate.toISO() ?? range.toDate.toString());
+
+  if (error) {
+    console.error('getDashboardSummary: failed to fetch logs', error);
+    throw new HttpError('ダッシュボードを取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  const logs =
+    logsData?.map((row) => ({
+      createdAt: new Date(row.createdAt),
+      calories: row.calories,
+      proteinG: row.proteinG,
+      fatG: row.fatG,
+      carbsG: row.carbsG,
+      mealPeriod: row.mealPeriod,
+    })) ?? [];
 
   const todayTotals = await fetchTodayTotals(params.userId, DASHBOARD_TIMEZONE);
   const dailyTargets = await resolveUserTargets(params.userId);
@@ -1542,22 +1555,18 @@ async function getDashboardSummary(params: { userId: number; period: string; fro
 }
 
 async function resolveUserTargets(userId: number) {
-  const rows = await sql<
-    Array<{
-      targetCalories: number | null;
-      targetProteinG: number | null;
-      targetFatG: number | null;
-      targetCarbsG: number | null;
-    }>
-  >`
-    select "targetCalories", "targetProteinG", "targetFatG", "targetCarbsG"
-    from "UserProfile"
-    where "userId" = ${userId}
-    limit 1;
-  `;
+  const { data: profile, error } = await supabaseAdmin
+    .from('UserProfile')
+    .select('targetCalories, targetProteinG, targetFatG, targetCarbsG')
+    .eq('userId', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('resolveUserTargets failed', error);
+    throw new HttpError('目標値を取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
 
   const defaults = getDefaultTargets();
-  const profile = rows[0];
   if (!profile) return defaults;
 
   const normalize = (value: number | null | undefined, fallback: number) =>
@@ -1573,27 +1582,28 @@ async function resolveUserTargets(userId: number) {
 
 async function fetchTodayTotals(userId: number, timezone: string) {
   const { fromDate, toDate } = resolveSingleDayRange('today', timezone);
-  const rows = await sql<
-    Array<{
-      calories: number | null;
-      proteinG: number | null;
-      fatG: number | null;
-      carbsG: number | null;
-    }>
-  >`
-    select
-      coalesce(sum("calories"), 0) as "calories",
-      coalesce(sum("proteinG"), 0) as "proteinG",
-      coalesce(sum("fatG"), 0) as "fatG",
-      coalesce(sum("carbsG"), 0) as "carbsG"
-    from "MealLog"
-    where "userId" = ${userId}
-      and "deletedAt" is null
-      and "createdAt" >= ${fromDate.toJSDate()}
-      and "createdAt" < ${toDate.toJSDate()};
-  `;
+  const { data, error } = await supabaseAdmin
+    .from('MealLog')
+    .select('calories, proteinG, fatG, carbsG')
+    .eq('userId', userId)
+    .is('deletedAt', null)
+    .gte('createdAt', fromDate.toISO() ?? fromDate.toString())
+    .lt('createdAt', toDate.toISO() ?? toDate.toString());
 
-  const totals = rows[0] ?? { calories: 0, proteinG: 0, fatG: 0, carbsG: 0 };
+  if (error) {
+    console.error('fetchTodayTotals failed', error);
+    throw new HttpError('合計値を取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  const totals = (data ?? []).reduce(
+    (acc, row) => ({
+      calories: acc.calories + (row.calories ?? 0),
+      proteinG: acc.proteinG + (row.proteinG ?? 0),
+      fatG: acc.fatG + (row.fatG ?? 0),
+      carbsG: acc.carbsG + (row.carbsG ?? 0),
+    }),
+    { calories: 0, proteinG: 0, fatG: 0, carbsG: 0 },
+  );
   return {
     calories: totals.calories ?? 0,
     protein_g: totals.proteinG ?? 0,
@@ -1854,23 +1864,22 @@ async function buildCalorieTrend(params: { userId: number; mode: 'daily' | 'week
   const now = DateTime.now().setZone(timezone);
   const { startInclusive, endExclusive } = resolveTrendRange(now, params.mode);
 
-  const rows = await sql<
-    Array<{
-      createdAt: Date;
-      calories: number;
-    }>
-  >`
-    select "createdAt", "calories"
-    from "MealLog"
-    where "userId" = ${params.userId}
-      and "deletedAt" is null
-      and "createdAt" >= ${startInclusive.toJSDate()}
-      and "createdAt" < ${endExclusive.toJSDate()};
-  `;
+  const { data: rows, error } = await supabaseAdmin
+    .from('MealLog')
+    .select('createdAt, calories')
+    .eq('userId', params.userId)
+    .is('deletedAt', null)
+    .gte('createdAt', startInclusive.toISO() ?? startInclusive.toString())
+    .lt('createdAt', endExclusive.toISO() ?? endExclusive.toString());
+
+  if (error) {
+    console.error('buildCalorieTrend: failed to fetch meal logs', error);
+    throw new HttpError('カロリートレンドを取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
 
   const bucket = new Map<string, number>();
-  for (const log of rows) {
-    const dt = DateTime.fromJSDate(log.createdAt, { zone: timezone });
+  for (const log of rows ?? []) {
+    const dt = DateTime.fromISO(String(log.createdAt), { zone: timezone });
     if (!dt.isValid) continue;
     const key = dt.startOf('day').toISODate();
     if (!key) continue;
