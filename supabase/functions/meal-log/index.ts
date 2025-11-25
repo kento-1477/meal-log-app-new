@@ -322,7 +322,7 @@ app.patch('/api/log/:id', requireAuth, async (c) => {
 
   const { data: log, error: fetchError } = await supabaseAdmin
     .from('MealLog')
-    .select('id, userId, foodItem, calories, proteinG, fatG, carbsG, mealPeriod, aiRaw')
+    .select('id, userId, foodItem, calories, proteinG, fatG, carbsG, mealPeriod, aiRaw, version')
     .eq('id', logId)
     .eq('userId', user.id)
     .is('deletedAt', null)
@@ -339,7 +339,7 @@ app.patch('/api/log/:id', requireAuth, async (c) => {
 
   const updates = mapUpdatePayload(body);
   const changes: Record<string, { before: unknown; after: unknown }> = {};
-  const set: Record<string, unknown> = { version: sql`"version" + 1`, updatedAt: new Date().toISOString() };
+  const set: Record<string, unknown> = { version: (log.version ?? 0) + 1, updatedAt: new Date().toISOString() };
 
   if (typeof updates.foodItem === 'string' && updates.foodItem !== log.foodItem) {
     changes.foodItem = { before: log.foodItem, after: updates.foodItem };
@@ -1151,139 +1151,117 @@ async function createFavoriteMeal(userId: number, payload: unknown): Promise<Fav
   const parsed = FavoriteMealCreateRequestSchema.parse(payload);
   const normalized = normalizeDraft(parsed);
 
-  const created = await withTransaction(async (tx) => {
-    const mealRows = await tx<[{ id: number }]>`
-      insert into "FavoriteMeal" (
-        "userId", "sourceMealLogId", "name", "notes", "calories", "proteinG", "fatG", "carbsG"
-      )
-      values (
-        ${userId},
-        ${normalized.source_log_id},
-        ${normalized.name},
-        ${normalized.notes ?? null},
-        ${normalized.totals.kcal},
-        ${normalized.totals.protein_g},
-        ${normalized.totals.fat_g},
-        ${normalized.totals.carbs_g}
-      )
-      returning "id";
-    `;
-    const favoriteId = mealRows[0].id;
+  const { data: favorite, error } = await supabaseAdmin
+    .from('FavoriteMeal')
+    .insert({
+      userId,
+      sourceMealLogId: normalized.source_log_id,
+      name: normalized.name,
+      notes: normalized.notes,
+      calories: normalized.totals.kcal,
+      proteinG: normalized.totals.protein_g,
+      fatG: normalized.totals.fat_g,
+      carbsG: normalized.totals.carbs_g,
+    })
+    .select('id')
+    .single();
 
-    if (normalized.items.length > 0) {
-      await tx`
-        insert into "FavoriteMealItem" ("favoriteMealId", "name", "grams", "calories", "proteinG", "fatG", "carbsG", "orderIndex")
-        values ${sql.join(
-          normalized.items.map((item, idx) => sql`(${favoriteId}, ${item.name}, ${item.grams}, ${item.calories ?? null}, ${item.protein_g ?? null}, ${item.fat_g ?? null}, ${item.carbs_g ?? null}, ${item.order_index ?? idx})`),
-          sql`, `,
-        )};
-      `;
+  if (error || !favorite) {
+    console.error('createFavoriteMeal: insert favorite failed', error);
+    throw new HttpError('お気に入りを作成できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  const favoriteId = favorite.id;
+
+  if (normalized.items.length > 0) {
+    const { error: itemsError } = await supabaseAdmin.from('FavoriteMealItem').insert(
+      normalized.items.map((item, idx) => ({
+        favoriteMealId: favoriteId,
+        name: item.name,
+        grams: item.grams,
+        calories: item.calories ?? null,
+        proteinG: item.protein_g ?? null,
+        fatG: item.fat_g ?? null,
+        carbsG: item.carbs_g ?? null,
+        orderIndex: item.order_index ?? idx,
+      })),
+    );
+    if (itemsError) {
+      console.error('createFavoriteMeal: insert items failed', itemsError);
+      throw new HttpError('お気に入りを作成できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
     }
+  }
 
-    return favoriteId;
-  });
-
-  return getFavoriteMeal(userId, created);
+  return getFavoriteMeal(userId, favoriteId);
 }
 
 async function listFavoriteMeals(userId: number): Promise<FavoriteMeal[]> {
-  const favorites = await sql<
-    Array<{
-      id: number;
-      name: string;
-      notes: string | null;
-      calories: number;
-      proteinG: number;
-      fatG: number;
-      carbsG: number;
-      sourceMealLogId: string | null;
-      createdAt: Date;
-      updatedAt: Date;
-    }>
-  >`
-    select "id", "name", "notes", "calories", "proteinG", "fatG", "carbsG", "sourceMealLogId", "createdAt", "updatedAt"
-    from "FavoriteMeal"
-    where "userId" = ${userId}
-    order by "createdAt" desc;
-  `;
+  const { data: favorites, error } = await supabaseAdmin
+    .from('FavoriteMeal')
+    .select('id, name, notes, calories, proteinG, fatG, carbsG, sourceMealLogId, createdAt, updatedAt')
+    .eq('userId', userId)
+    .order('createdAt', { ascending: false });
 
-  if (favorites.length === 0) return [];
+  if (error) {
+    console.error('listFavoriteMeals: fetch favorites failed', error);
+    throw new HttpError('お気に入り一覧を取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
 
-  const items = await sql<
-    Array<{
-      id: number;
-      favoriteMealId: number;
-      name: string;
-      grams: number;
-      calories: number | null;
-      proteinG: number | null;
-      fatG: number | null;
-      carbsG: number | null;
-      orderIndex: number;
-    }>
-  >`
-    select "id", "favoriteMealId", "name", "grams", "calories", "proteinG", "fatG", "carbsG", "orderIndex"
-    from "FavoriteMealItem"
-    where "favoriteMealId" in (${sql.join(favorites.map((f) => f.id), sql`, `)})
-    order by "orderIndex" asc, "id" asc;
-  `;
+  if (!favorites?.length) return [];
+
+  const ids = favorites.map((f) => f.id);
+  const { data: items, error: itemsError } = await supabaseAdmin
+    .from('FavoriteMealItem')
+    .select('id, favoriteMealId, name, grams, calories, proteinG, fatG, carbsG, orderIndex')
+    .in('favoriteMealId', ids)
+    .order('orderIndex', { ascending: true })
+    .order('id', { ascending: true });
+
+  if (itemsError) {
+    console.error('listFavoriteMeals: fetch items failed', itemsError);
+    throw new HttpError('お気に入り一覧を取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
 
   const itemsByFavorite = new Map<number, typeof items>();
-  for (const item of items) {
+  for (const item of items ?? []) {
     const list = itemsByFavorite.get(item.favoriteMealId) ?? [];
     list.push(item);
     itemsByFavorite.set(item.favoriteMealId, list);
   }
 
-  return favorites.map((fav) => mapFavoriteMeal(fav, itemsByFavorite.get(fav.id) ?? []));
+  return favorites.map((fav) => mapFavoriteMeal(fav as any, itemsByFavorite.get(fav.id) ?? []));
 }
 
 async function getFavoriteMeal(userId: number, favoriteId: number): Promise<FavoriteMeal> {
-  const favorites = await sql<
-    Array<{
-      id: number;
-      name: string;
-      notes: string | null;
-      calories: number;
-      proteinG: number;
-      fatG: number;
-      carbsG: number;
-      sourceMealLogId: string | null;
-      createdAt: Date;
-      updatedAt: Date;
-    }>
-  >`
-    select "id", "name", "notes", "calories", "proteinG", "fatG", "carbsG", "sourceMealLogId", "createdAt", "updatedAt"
-    from "FavoriteMeal"
-    where "id" = ${favoriteId} and "userId" = ${userId}
-    limit 1;
-  `;
+  const { data: favorite, error } = await supabaseAdmin
+    .from('FavoriteMeal')
+    .select('id, name, notes, calories, proteinG, fatG, carbsG, sourceMealLogId, createdAt, updatedAt')
+    .eq('id', favoriteId)
+    .eq('userId', userId)
+    .maybeSingle();
 
-  const favorite = favorites[0];
+  if (error) {
+    console.error('getFavoriteMeal: fetch favorite failed', error);
+    throw new HttpError('お気に入りを取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
   if (!favorite) {
     throw new HttpError('お気に入りが見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
   }
 
-  const items = await sql<
-    Array<{
-      id: number;
-      favoriteMealId: number;
-      name: string;
-      grams: number;
-      calories: number | null;
-      proteinG: number | null;
-      fatG: number | null;
-      carbsG: number | null;
-      orderIndex: number;
-    }>
-  >`
-    select "id", "favoriteMealId", "name", "grams", "calories", "proteinG", "fatG", "carbsG", "orderIndex"
-    from "FavoriteMealItem"
-    where "favoriteMealId" = ${favoriteId}
-    order by "orderIndex" asc, "id" asc;
-  `;
+  const { data: items, error: itemsError } = await supabaseAdmin
+    .from('FavoriteMealItem')
+    .select('id, favoriteMealId, name, grams, calories, proteinG, fatG, carbsG, orderIndex')
+    .eq('favoriteMealId', favoriteId)
+    .order('orderIndex', { ascending: true })
+    .order('id', { ascending: true });
 
-  return mapFavoriteMeal(favorite, items);
+  if (itemsError) {
+    console.error('getFavoriteMeal: fetch items failed', itemsError);
+    throw new HttpError('お気に入りを取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  return mapFavoriteMeal(favorite as any, items ?? []);
 }
 
 async function updateFavoriteMeal(userId: number, favoriteId: number, payload: unknown): Promise<FavoriteMeal> {
@@ -1292,43 +1270,70 @@ async function updateFavoriteMeal(userId: number, favoriteId: number, payload: u
 
   const totals = resolveTotals(parsed, existing);
 
-  await withTransaction(async (tx) => {
-    await tx`
-      update "FavoriteMeal"
-      set
-        "name" = ${parsed.name ?? existing.name},
-        "notes" = ${parsed.notes ?? existing.notes},
-        "sourceMealLogId" = ${parsed.source_log_id ?? existing.source_log_id},
-        "calories" = ${totals.kcal},
-        "proteinG" = ${totals.protein_g},
-        "fatG" = ${totals.fat_g},
-        "carbsG" = ${totals.carbs_g},
-        "updatedAt" = now()
-      where "id" = ${favoriteId} and "userId" = ${userId};
-    `;
+  const { error: updateError } = await supabaseAdmin
+    .from('FavoriteMeal')
+    .update({
+      name: parsed.name ?? existing.name,
+      notes: parsed.notes ?? existing.notes,
+      sourceMealLogId: parsed.source_log_id ?? existing.source_log_id,
+      calories: totals.kcal,
+      proteinG: totals.protein_g,
+      fatG: totals.fat_g,
+      carbsG: totals.carbs_g,
+      updatedAt: new Date().toISOString(),
+    })
+    .eq('id', favoriteId)
+    .eq('userId', userId);
 
-    if (Array.isArray(parsed.items)) {
-      await tx`delete from "FavoriteMealItem" where "favoriteMealId" = ${favoriteId};`;
-      if (parsed.items.length > 0) {
-        await tx`
-          insert into "FavoriteMealItem" ("favoriteMealId", "name", "grams", "calories", "proteinG", "fatG", "carbsG", "orderIndex")
-          values ${sql.join(
-            parsed.items.map((item, idx) => sql`(${favoriteId}, ${item.name}, ${item.grams}, ${item.calories ?? null}, ${item.protein_g ?? null}, ${item.fat_g ?? null}, ${item.carbs_g ?? null}, ${item.order_index ?? idx})`),
-            sql`, `,
-          )};
-        `;
+  if (updateError) {
+    console.error('updateFavoriteMeal: update failed', updateError);
+    throw new HttpError('お気に入りを更新できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  if (Array.isArray(parsed.items)) {
+    const { error: deleteError } = await supabaseAdmin.from('FavoriteMealItem').delete().eq('favoriteMealId', favoriteId);
+    if (deleteError) {
+      console.error('updateFavoriteMeal: delete items failed', deleteError);
+      throw new HttpError('お気に入りを更新できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+    }
+    if (parsed.items.length > 0) {
+      const { error: insertError } = await supabaseAdmin.from('FavoriteMealItem').insert(
+        parsed.items.map((item, idx) => ({
+          favoriteMealId: favoriteId,
+          name: item.name,
+          grams: item.grams,
+          calories: item.calories ?? null,
+          proteinG: item.protein_g ?? null,
+          fatG: item.fat_g ?? null,
+          carbsG: item.carbs_g ?? null,
+          orderIndex: item.order_index ?? idx,
+        })),
+      );
+      if (insertError) {
+        console.error('updateFavoriteMeal: insert items failed', insertError);
+        throw new HttpError('お気に入りを更新できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
       }
     }
-  });
+  }
 
   return getFavoriteMeal(userId, favoriteId);
 }
 
 async function deleteFavoriteMeal(userId: number, favoriteId: number): Promise<void> {
-  const result = await sql<{ id: number }[]>`
-    delete from "FavoriteMeal" where "id" = ${favoriteId} and "userId" = ${userId} returning "id";
-  `;
-  if (result.length === 0) {
+  const { data, error } = await supabaseAdmin
+    .from('FavoriteMeal')
+    .delete()
+    .eq('id', favoriteId)
+    .eq('userId', userId)
+    .select('id')
+    .maybeSingle();
+
+  if (error) {
+    console.error('deleteFavoriteMeal: delete failed', error);
+    throw new HttpError('お気に入りを削除できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  if (!data) {
     throw new HttpError('お気に入りが見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
   }
 }
@@ -1343,19 +1348,39 @@ async function logFavoriteMeal(userId: number, favoriteId: number) {
     translations: { [DEFAULT_LOCALE]: cloneResponse(baseResponse) },
   };
 
-  const logId = await withTransaction(async (tx) => {
-    const createdRows = await tx<[{ id: string }]>`
-      insert into "MealLog" ("userId", "foodItem", "calories", "proteinG", "fatG", "carbsG", "aiRaw", "zeroFloored", "guardrailNotes", "landingType")
-      values (${userId}, ${baseResponse.dish}, ${baseResponse.totals.kcal}, ${baseResponse.totals.protein_g}, ${baseResponse.totals.fat_g}, ${baseResponse.totals.carbs_g}, ${sql.json(aiPayload)}, ${false}, ${null}, ${baseResponse.landing_type ?? null})
-      returning "id";
-    `;
-    const newLogId = createdRows[0].id;
-    await tx`
-      insert into "MealLogPeriodHistory" ("mealLogId", "previousMealPeriod", "nextMealPeriod", "source")
-      values (${newLogId}, ${null}, ${null}, 'favorite');
-    `;
-    return newLogId;
+  const { data: createdLog, error: insertLogError } = await supabaseAdmin
+    .from('MealLog')
+    .insert({
+      userId,
+      foodItem: baseResponse.dish,
+      calories: baseResponse.totals.kcal,
+      proteinG: baseResponse.totals.protein_g,
+      fatG: baseResponse.totals.fat_g,
+      carbsG: baseResponse.totals.carbs_g,
+      aiRaw: aiPayload,
+      zeroFloored: false,
+      guardrailNotes: null,
+      landingType: baseResponse.landing_type ?? null,
+    })
+    .select('id')
+    .single();
+
+  if (insertLogError || !createdLog) {
+    console.error('logFavoriteMeal: insert meal log failed', insertLogError);
+    throw new HttpError('食事記録を作成できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  const logId = createdLog.id;
+
+  const { error: historyError } = await supabaseAdmin.from('MealLogPeriodHistory').insert({
+    mealLogId: logId,
+    previousMealPeriod: null,
+    nextMealPeriod: null,
+    source: 'favorite',
   });
+  if (historyError) {
+    console.error('logFavoriteMeal: insert period history failed', historyError);
+  }
 
   const localization = resolveMealLogLocalization(aiPayload, DEFAULT_LOCALE);
   const translations = cloneTranslationsMap(localization.translations);
