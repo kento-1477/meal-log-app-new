@@ -31,6 +31,13 @@ import { isPremium, evaluateAiUsage, recordAiUsage, summarizeUsageStatus, buildU
 import type { JwtUser } from '../_shared/auth.ts';
 
 const app = createApp();
+
+// Basic request logging to confirm Edge invocation
+app.use('*', async (c, next) => {
+  console.log('[meal-log] request', { method: c.req.method, url: c.req.url });
+  await next();
+});
+
 const DASHBOARD_TIMEZONE = Deno.env.get('DASHBOARD_TIMEZONE') ?? 'Asia/Tokyo';
 const DASHBOARD_TARGETS = {
   calories: { unit: 'kcal', value: 2200, decimals: 0 },
