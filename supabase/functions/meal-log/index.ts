@@ -38,6 +38,10 @@ app.use('*', async (c, next) => {
   await next();
 });
 
+// Explicit health aliases
+app.get('/health', (c) => c.json({ ok: true, service: 'meal-log' }));
+app.get('/api/health', (c) => c.json({ ok: true, service: 'meal-log' }));
+
 const DASHBOARD_TIMEZONE = Deno.env.get('DASHBOARD_TIMEZONE') ?? 'Asia/Tokyo';
 const DASHBOARD_TARGETS = {
   calories: { unit: 'kcal', value: 2200, decimals: 0 },
@@ -568,6 +572,12 @@ app.get('/api/streak', requireAuth, async (c) => {
 });
 
 app.options('*', (c) => c.text('ok'));
+
+// Not-found handler to capture unexpected paths
+app.notFound((c) => {
+  console.error('[meal-log] not found', { method: c.req.method, url: c.req.url });
+  return c.json({ error: 'Not Found' }, HTTP_STATUS.NOT_FOUND);
+});
 
 export default app;
 
