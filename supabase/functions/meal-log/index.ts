@@ -30,7 +30,7 @@ import { supabaseAdmin } from '../_shared/supabase.ts';
 import { isPremium, evaluateAiUsage, recordAiUsage, summarizeUsageStatus, buildUsageLimitError } from '../_shared/ai.ts';
 import type { JwtUser } from '../_shared/auth.ts';
 
-const app = createApp();
+const app = createApp().basePath('/meal-log');
 
 // Basic request logging to confirm Edge invocation
 app.use('*', async (c, next) => {
@@ -38,7 +38,8 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// Explicit health aliases
+// Root and health aliases (under /meal-log/...)
+app.get('/', (c) => c.json({ ok: true, service: 'meal-log', message: 'meal-log root' }));
 app.get('/health', (c) => c.json({ ok: true, service: 'meal-log' }));
 app.get('/api/health', (c) => c.json({ ok: true, service: 'meal-log' }));
 
