@@ -38,6 +38,10 @@ app.use('*', async (c, next) => {
   await next();
 });
 
+// Explicit health aliases
+app.get('/health', (c) => c.json({ ok: true, service: 'meal-log' }));
+app.get('/api/health', (c) => c.json({ ok: true, service: 'meal-log' }));
+
 const DASHBOARD_TIMEZONE = Deno.env.get('DASHBOARD_TIMEZONE') ?? 'Asia/Tokyo';
 const DASHBOARD_TARGETS = {
   calories: { unit: 'kcal', value: 2200, decimals: 0 },
@@ -132,6 +136,45 @@ const calorieQuerySchema = z.object({
 });
 
 app.get('/health', (c) => c.json({ ok: true, service: 'meal-log' }));
+
+// Premium status (simple placeholder based on isPremium + grants)
+app.get('/api/user/premium-status', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+
+  // Premium判定（既存ロジックに合わせて期間内のGrantを確認）
+  const { data: grants, error } = await supabaseAdmin
+    .from('PremiumGrant')
+    .select('source, startDate, endDate, createdAt, days')
+    .eq('userId', user.id)
+    .order('endDate', { ascending: false });
+
+  if (error) {
+    console.error('premium-status: fetch failed', error);
+    throw new HttpError('プレミアム状態を取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  const now = new Date();
+  const active = (grants ?? []).find((g) => new Date(g.startDate) <= now && new Date(g.endDate) >= now);
+  const isPremium = Boolean(active);
+  const expiresAt = active ? new Date(active.endDate).toISOString() : null;
+  const daysRemaining = active
+    ? Math.max(0, Math.ceil((new Date(active.endDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+    : 0;
+
+  return c.json({
+    isPremium,
+    source: (active?.source as string | null) ?? null,
+    daysRemaining,
+    expiresAt,
+    grants: (grants ?? []).map((g) => ({
+      source: g.source,
+      days: g.days ?? 0,
+      startDate: g.startDate,
+      endDate: g.endDate,
+      createdAt: g.createdAt ?? g.startDate,
+    })),
+  });
+});
 
 app.get('/api/logs', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
@@ -529,6 +572,12 @@ app.get('/api/streak', requireAuth, async (c) => {
 });
 
 app.options('*', (c) => c.text('ok'));
+
+// Not-found handler to capture unexpected paths
+app.notFound((c) => {
+  console.error('[meal-log] not found', { method: c.req.method, url: c.req.url });
+  return c.json({ error: 'Not Found' }, HTTP_STATUS.NOT_FOUND);
+});
 
 export default app;
 
