@@ -1,0 +1,119 @@
+# Supabase Edge 置き換えメモ（進捗・手順・ハマりポイント）
+
+本プロジェクトを Supabase Edge Functions へ移行する際の経緯と手順をまとめたメモです。次の担当者がゼロから着手できるように、現状、残タスク、デプロイ方法、ログの見方を記載しています。
+
+## 1. 現状サマリ
+- **auth**: supabase-js + bcrypt 化済み。セッション Cookie は `ml_session`。未認証時は 401 を返すように変更済み。
+- **meal-log**: ルートを `/meal-log` 配下に統一（`createApp().basePath('/meal-log')`）。認証なしは 401。DBアクセスは supabase-js に移行済み（CRUD/ダッシュボード/カロリートレンド/お気に入り等）。  
+- **ai**: デバッグ用の簡易エンドポイントのみ（/api/usage, /api/debug/ai, /api/debug/ai/analyze）。実際の Gemini 推論は未実装。
+- **referral**: プレースホルダー。invite-link/my-status/claim は実装されていない。
+- **iap**: 未移植。
+- **モバイル**: `API_BASE_URL` は Functions を指している。認証が必要な API は `ml_session` (Cookie) または Bearer で利用。
+
+## 2. 直近の変更ポイント
+- meal-log ルーティング修正：`/meal-log` をベースパスにし、/health, /api/health を追加。未認証は 401 JSON を返す。
+- ai: デバッグ用エンドポイントを追加し、AI使用状況の確認・カウントのみ可能（Gemini呼び出しはダミー）。
+- ログイン/パスワードハッシュを bcrypt 化、auth/meal-log の supabase-js への移行。
+- requireAuth: セッションなしの場合は throw せず 401 JSON で返却。
+
+## 3. 残タスク（優先順）
+1) **AI 本実装**  
+   - 既存 `apps/server` の gemini + log-service ロジックを Edge に移植。  
+   - `/ai/...` の本番パスをモバイル仕様に合わせる（モバイルは `/api/ai` → `/ai` 関数）。  
+   - usage 判定/recordAiUsage のフローは既存 `_shared/ai.ts` を使用。
+2) **Referral 本実装**  
+   - `referral-service.ts` を Edge に移植。invite-link/my-status/claim をモバイル仕様で実装。  
+   - PremiumGrant 付与ロジック、重複/本人チェック、統計返却など。
+3) **IAP 移植**  
+   - App Store/Google Play 検証ロジックと PremiumGrant/aiCredits 付与を Edge へ。  
+   - Secrets（ストア鍵）を Supabase に設定。
+4) **モバイル側 Auth/JWT 周りの整理**  
+   - Cookie `ml_session` / Bearer 両対応の動作確認とドキュメント化。  
+5) **meal-log 仕上げ**  
+   - 実機での 200/401/500 確認、キャッシュ/304 が必要なら再実装。  
+6) **インフラ/ドキュメント**  
+   - Secrets 設定手順、旧インフラ停止計画（Cloudflare/Render）をまとめる。  
+   - Logs/Analytics の見方をドキュメント化。
+
+## 4. デプロイ手順
+```bash
+# ルートで実行
+supabase functions deploy meal-log
+supabase functions deploy auth
+supabase functions deploy ai
+supabase functions deploy referral
+# iap を実装したら同様に deploy
+```
+- Secrets は Supabase Dashboard の Functions → Secrets で設定。  
+- サービスロール: `SERVICE_ROLE_KEY`（または旧 `SUPABASE_SERVICE_ROLE_KEY`）必須。  
+- Gemini 等を使う場合は `GEMINI_API_KEY` を追加。
+
+## 5. ログの見方（Logs Explorer）
+- BigQuery 方言なので `cross join unnest` が必要。例：  
+```sql
+select
+  timestamp,
+  request.url,
+  response.status_code as status,
+  event_message
+from function_edge_logs as t
+cross join unnest(t.metadata) as metadata
+cross join unnest(metadata.request) as request
+cross join unnest(metadata.response) as response
+where regexp_contains(request.url, r"/meal-log/")  -- 例: meal-log だけ絞る
+  and response.status_code >= 400                   -- エラーだけ見たい場合
+order by timestamp desc
+limit 50;
+```
+- SQL Editor（Postgres）ではなく Logs & Analytics の Explorer で実行すること。
+
+## 6. よくあるハマりどころ
+- Edge Functions のパスは「関数名が先頭に付く」: 関数名 `meal-log` → `/meal-log/...` にルートを書く。  
+- Test 画面ではパスを変えられない（常に `/meal-log`）。サブパスを試すなら curl など外部ツールで直接叩く。  
+- 未認証で叩くと 401。モバイル/ブラウザでログイン後の `ml_session` を Cookie か Bearer で渡す。  
+- Logs Explorer は BigQuery 方言。`select *` 禁止、JSON 演算子は使えないので `cross join unnest` を使う。
+
+## 7. 動作確認用の curl 例
+- ヘルスチェック（公開）  
+  ```bash
+  curl -i https://<project>.functions.supabase.co/meal-log/health
+  ```
+- 認証が必要なAPI例（CookieかBearerを付与する）  
+  ```bash
+  curl -i 'https://<project>.functions.supabase.co/meal-log/api/calories?mode=daily&locale=ja-JP' \
+    -H 'Cookie: ml_session=<JWT>'    # もしくは
+    -H 'Authorization: Bearer <JWT>'
+  ```
+- AIデバッグ（ダミー応答）  
+  ```bash
+  curl -i 'https://<project>.functions.supabase.co/ai/api/debug/ai' \
+    -H 'Cookie: ml_session=<JWT>'
+  curl -i 'https://<project>.functions.supabase.co/ai/api/debug/ai/analyze?text=カレー' \
+    -H 'Cookie: ml_session=<JWT>'
+  ```
+
+## 8. 次にやるべき実装の指針
+### AI
+- モバイルが期待するパスを確認（/api/ai/... を /ai 関数で受ける）。  
+- `apps/server` の `log-service.ts` + `gemini-service.ts` を参考に、Gemini呼び出し→栄養解析→usageカウントを Edge に移植。  
+- Secrets に `GEMINI_API_KEY`、必要ならモデル指定を追加。
+
+### Referral
+- `referral-service.ts` / `routes/referral.ts` を参考に、invite-link/my-status/claim をEdge実装。  
+- PremiumGrant付与や重複チェックなどのロジックを移植。
+
+### IAP
+- `iap-service.ts` / `routes/iap.ts` を参考に、Store検証→PremiumGrant/aiCredits付与を Edge に移植。  
+- ストア鍵を Secrets に設定。
+
+## 9. モバイル側の注意
+- `apps/mobile/app.json` の `extra.apiBaseUrl` は Functions を向く。  
+- `api.ts` で `/api/ai` → `/ai` 関数へルーティング。  
+- 認証ヘッダーは Cookie/Bearer のどちらかで。401時の再ログインフローを確認。
+
+## 10. 参考ファイル
+- `docs/supabase-edge-plan.md` : 置き換え計画の詳細版
+- `supabase/config.toml` : 関数ルーティング定義
+- `supabase/functions/_shared/*` : 共通http/auth/ai等
+
+このメモをベースに、AI → Referral → IAP の順で実装を進め、デプロイ後にモバイル実機で順次確認してください。未実装部分は既存apps/serverを参照しつつ、レスポンス形をモバイル仕様に合わせてください。
