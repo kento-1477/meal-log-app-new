@@ -18,6 +18,9 @@ tmp
 .cache
 *.sqlite
 .prisma
+supabase/.temp/
+tmp_write_test
+*.tar
 
 # Expo specific
 web-build
