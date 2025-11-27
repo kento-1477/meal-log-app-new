@@ -1,7 +1,6 @@
-import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
+import { createApp, HTTP_STATUS } from '../_shared/http.ts';
 import { requireAuth } from '../_shared/auth.ts';
 import { evaluateAiUsage, recordAiUsage } from '../_shared/ai.ts';
-import { supabaseAdmin } from '../_shared/supabase.ts';
 
 const app = createApp();
 
