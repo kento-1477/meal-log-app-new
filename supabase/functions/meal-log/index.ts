@@ -95,7 +95,7 @@ function resolveLogsRange(
   timezone: string,
   options: { allowThreeMonths?: boolean } = {},
 ): LogsRange | null {
-  const normalizedKey = (key as LogsRangeKey | undefined) ?? 'today';
+  const normalizedKey = (key as LogsRangeKey | undefined) ?? 'week';
   const zone = normalizeTimezone(timezone);
   const now = DateTime.now().setZone(zone).startOf('day');
   const allowThreeMonths = options.allowThreeMonths ?? false;
