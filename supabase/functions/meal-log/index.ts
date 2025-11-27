@@ -23,7 +23,15 @@ import {
 import type { Context } from 'hono';
 import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
 import { requireAuth } from '../_shared/auth.ts';
-import { resolveMealLogLocalization, type LocalizationResolution, parseMealLogAiRaw, normalizeLocale, DEFAULT_LOCALE } from '../_shared/locale.ts';
+import {
+  resolveMealLogLocalization,
+  type LocalizationResolution,
+  parseMealLogAiRaw,
+  normalizeLocale,
+  DEFAULT_LOCALE,
+  maybeTranslateNutritionResponse,
+  cloneResponse,
+} from '../_shared/locale.ts';
 import { resolveRequestLocale } from '../_shared/request.ts';
 import { resolveRequestTimezone, normalizeTimezone } from '../_shared/timezone.ts';
 import { supabaseAdmin } from '../_shared/supabase.ts';
@@ -903,8 +911,10 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
     [DEFAULT_LOCALE]: cloneResponse(enrichedResponse),
   };
   if (requestedLocale !== DEFAULT_LOCALE) {
-    const localized = cloneResponse(enrichedResponse);
-    seededTranslations[requestedLocale] = localized;
+    const localized = await maybeTranslateNutritionResponse(enrichedResponse, requestedLocale);
+    if (localized) {
+      seededTranslations[requestedLocale] = localized;
+    }
   }
 
   const aiPayload: GeminiNutritionResponse & { locale: Locale; translations: Record<Locale, GeminiNutritionResponse> } = {

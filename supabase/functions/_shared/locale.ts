@@ -1,4 +1,6 @@
+import { z } from 'zod';
 import { LocaleSchema, MealLogAiRawSchema, GeminiNutritionResponseSchema, type GeminiNutritionResponse, type Locale, type MealLogAiRaw } from '@shared/index.js';
+import { getEnv } from './env.ts';
 
 export const DEFAULT_LOCALE: Locale = 'en-US';
 export const SECONDARY_FALLBACK_LOCALE: Locale = 'ja-JP';
@@ -153,4 +155,147 @@ export function collectTranslations(raw: unknown): Record<Locale, GeminiNutritio
 export function parseMealLogAiRaw(raw: unknown): MealLogAiRaw | null {
   const parsed = MealLogAiRawSchema.safeParse(raw);
   return parsed.success ? parsed.data : null;
+}
+
+// ---- Translation helpers ----
+
+const TranslationResultSchema = z.object({
+  locale: LocaleSchema,
+  dish: z.string(),
+  items: z.array(
+    z.object({
+      index: z.number().int().nonnegative(),
+      name: z.string(),
+    }),
+  ),
+  warnings: z.array(z.string()).optional(),
+});
+
+type TranslationResult = z.infer<typeof TranslationResultSchema>;
+
+const translationTimeoutMs = Number(Deno.env.get('AI_ATTEMPT_TIMEOUT_MS') ?? 25000);
+const translationStrategyRaw = Deno.env.get('AI_TRANSLATION_STRATEGY') ?? 'ai';
+const translationStrategy = !Deno.env.get('GEMINI_API_KEY') && translationStrategyRaw === 'ai' ? 'none' : translationStrategyRaw;
+
+export async function maybeTranslateNutritionResponse(
+  base: GeminiNutritionResponse,
+  targetLocale: Locale,
+): Promise<GeminiNutritionResponse | null> {
+  if (targetLocale === DEFAULT_LOCALE) {
+    return cloneResponse(base);
+  }
+
+  if (translationStrategy === 'copy') {
+    return cloneResponse(base);
+  }
+
+  if (translationStrategy === 'none') {
+    return null;
+  }
+
+  const { translated, errored } = await translateWithGemini(base, targetLocale);
+  if (errored) {
+    console.warn('Failed to translate nutrition response', errored);
+  }
+  return translated;
+}
+
+async function translateWithGemini(
+  base: GeminiNutritionResponse,
+  targetLocale: Locale,
+): Promise<{ translated: GeminiNutritionResponse | null; errored: Error | null }> {
+  const apiKey = Deno.env.get('GEMINI_API_KEY');
+  if (!apiKey) {
+    return { translated: null, errored: null };
+  }
+
+  const prompt = buildTranslationPrompt(base, targetLocale);
+  const url = new URL('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent');
+  url.searchParams.set('key', apiKey);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), translationTimeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.2,
+          topK: 32,
+          topP: 0.8,
+          responseMimeType: 'application/json',
+        },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      return { translated: cloneResponse(base), errored: new Error(`Gemini translation failed: ${response.status} ${text}`) };
+    }
+
+    const data = (await response.json()) as any;
+    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (typeof raw !== 'string') {
+      return { translated: cloneResponse(base), errored: new Error('Gemini translation returned no text') };
+    }
+
+    const parsed: TranslationResult = TranslationResultSchema.parse(JSON.parse(raw));
+
+    const translated = cloneResponse(base);
+    translated.dish = parsed.dish;
+    translated.items = (translated.items ?? []).map((item, index) => {
+      const override = parsed.items.find((entry) => entry.index === index);
+      return override ? { ...item, name: override.name } : { ...item };
+    });
+    if (parsed.warnings?.length) {
+      translated.warnings = [...(translated.warnings ?? []), ...parsed.warnings];
+    }
+    translated.meta = {
+      ...(translated.meta ?? {}),
+      translation: {
+        locale: parsed.locale,
+        sourceLocale: DEFAULT_LOCALE,
+      },
+    };
+
+    return { translated, errored: null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function buildTranslationPrompt(base: GeminiNutritionResponse, targetLocale: Locale) {
+  const summary = {
+    dish: base.dish,
+    items: (base.items ?? []).map((item, index) => ({ index, name: item.name })),
+    warnings: base.warnings ?? [],
+  };
+
+  return `You are a professional translator. Translate the "dish" label and each item "name" into the locale ${targetLocale}. Preserve nutrition values and ordering using the provided index. Return ONLY JSON matching this TypeScript type and nothing else:
+{
+  "locale": string,
+  "dish": string,
+  "items": Array<{ "index": number, "name": string }>,
+  "warnings"?: string[]
+}
+Use natural wording for ${targetLocale}. Base JSON: ${JSON.stringify(summary)}`;
+}
+
+export function cloneResponse(payload: GeminiNutritionResponse): GeminiNutritionResponse {
+  return {
+    ...payload,
+    totals: { ...payload.totals },
+    items: (payload.items ?? []).map((item) => ({ ...item })),
+    warnings: [...(payload.warnings ?? [])],
+    meta: payload.meta ? { ...payload.meta } : undefined,
+  };
 }
