@@ -4,7 +4,7 @@ import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
 import { getAuthSession, requireAuth } from '../_shared/auth.ts';
 import { supabaseAdmin } from '../_shared/supabase.ts';
 
-const app = createApp();
+const app = createApp().basePath('/referral');
 
 const INVITE_CODE_LENGTH = 6;
 const FRIEND_PREMIUM_DAYS = 14;
