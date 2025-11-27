@@ -18,6 +18,12 @@ const ClaimRequestSchema = z.object({ code: z.string().min(1) });
 
 app.get('/health', (c) => c.json({ ok: true, service: 'referral' }));
 
+// Basic request logging for debugging
+app.use('*', async (c, next) => {
+  console.log('[referral] request', { method: c.req.method, url: c.req.url });
+  await next();
+});
+
 app.post('/api/referral/invite-link', requireAuth, async (c) => {
   const user = c.get('user');
   const link = await getOrCreateInviteLink(user.id);
