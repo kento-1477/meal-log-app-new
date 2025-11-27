@@ -310,7 +310,16 @@ async function getReferralStats(userId: number) {
 async function getRecentReferrals(userId: number, limit = 5) {
   const { data: referrals, error } = await supabaseAdmin
     .from('Referral')
-    .select('referredUserId, status, consecutiveDaysAchieved, createdAt, completedAt, referredUser:User(username)')
+    .select(
+      `
+      referredUserId,
+      status,
+      consecutiveDaysAchieved,
+      createdAt,
+      completedAt,
+      referredUser:User!Referral_referredUserId_fkey(username)
+    `,
+    )
     .eq('referrerUserId', userId)
     .order('createdAt', { ascending: false })
     .limit(limit);
@@ -321,7 +330,7 @@ async function getRecentReferrals(userId: number, limit = 5) {
   }
 
   return (referrals ?? []).map((r) => ({
-    friendUsername: r.referredUser?.username ?? `User_${r.referredUserId}`,
+    friendUsername: (r as any).referredUser?.username ?? `User_${r.referredUserId}`,
     status: r.status,
     consecutiveDays: r.consecutiveDaysAchieved ?? 0,
     createdAt: r.createdAt,
