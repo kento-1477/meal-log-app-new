@@ -3,12 +3,12 @@
 本プロジェクトを Supabase Edge Functions へ移行する際の経緯と手順をまとめたメモです。次の担当者がゼロから着手できるように、現状、残タスク、デプロイ方法、ログの見方を記載しています。
 
 ## 1. 現状サマリ
-- **auth**: supabase-js + bcrypt 化済み。セッション Cookie は `ml_session`。未認証時は 401 を返すように変更済み。
-- **meal-log**: ルートを `/meal-log` 配下に統一（`createApp().basePath('/meal-log')`）。認証なしは 401。DBアクセスは supabase-js に移行済み（CRUD/ダッシュボード/カロリートレンド/お気に入り等）。  
-- **ai**: デバッグ用の簡易エンドポイントのみ（/api/usage, /api/debug/ai, /api/debug/ai/analyze）。実際の Gemini 推論は未実装。
-- **referral**: プレースホルダー。invite-link/my-status/claim は実装されていない。
-- **iap**: 未移植。
-- **モバイル**: `API_BASE_URL` は Functions を指している。認証が必要な API は `ml_session` (Cookie) または Bearer で利用。
+- **auth**: supabase-js + bcrypt 化済み。セッション Cookie は `ml_session`。未認証時は 401 を返す。
+- **meal-log**: ルートを `/meal-log` 配下に統一。CRUD/ダッシュボード/カロリートレンド/お気に入り等を supabase-js へ移行済み。  
+- **ai**: Gemini 呼び出し＋usage カウントを実装。locale が ja-* の場合は日本語で応答。
+- **referral**: invite-link / my-status / claim を実装（PremiumGrant 付与、重複/本人/レート制限チェックあり）。
+- **iap**: App Store の購入検証＋PremiumGrant/aiCredits 付与を実装・デプロイ済み。**Google Play は未実装（後回し）**。
+- **モバイル**: `API_BASE_URL` は Functions を指している。認証 API は Cookie/Bearer 両対応。
 
 ## 2. 直近の変更ポイント
 - meal-log ルーティング修正：`/meal-log` をベースパスにし、/health, /api/health を追加。未認証は 401 JSON を返す。
@@ -17,21 +17,16 @@
 - requireAuth: セッションなしの場合は throw せず 401 JSON で返却。
 
 ## 3. 残タスク（優先順）
-1) **AI 本実装**  
-   - 既存 `apps/server` の gemini + log-service ロジックを Edge に移植。  
-   - `/ai/...` の本番パスをモバイル仕様に合わせる（モバイルは `/api/ai` → `/ai` 関数）。  
-   - usage 判定/recordAiUsage のフローは既存 `_shared/ai.ts` を使用。
-2) **Referral 本実装**  
-   - `referral-service.ts` を Edge に移植。invite-link/my-status/claim をモバイル仕様で実装。  
-   - PremiumGrant 付与ロジック、重複/本人チェック、統計返却など。
-3) **IAP 移植**  
-   - App Store/Google Play 検証ロジックと PremiumGrant/aiCredits 付与を Edge へ。  
-   - Secrets（ストア鍵）を Supabase に設定。
-4) **モバイル側 Auth/JWT 周りの整理**  
+1) **IAP (Google Play) 実装**  
+   - 現在は App Store のみ対応。Google Play 検証＋PremiumGrant/aiCredits 付与を Edge へ追加。  
+   - Play 用の秘密鍵を Secrets に設定。
+2) **AI/Meal-log の翻訳品質向上（必要なら）**  
+   - 旧 `maybeTranslateNutritionResponse` などの翻訳フローを Edge に移植。
+3) **モバイル側 Auth/JWT 周りの整理**  
    - Cookie `ml_session` / Bearer 両対応の動作確認とドキュメント化。  
-5) **meal-log 仕上げ**  
+4) **meal-log 仕上げ**  
    - 実機での 200/401/500 確認、キャッシュ/304 が必要なら再実装。  
-6) **インフラ/ドキュメント**  
+5) **インフラ/ドキュメント**  
    - Secrets 設定手順、旧インフラ停止計画（Cloudflare/Render）をまとめる。  
    - Logs/Analytics の見方をドキュメント化。
 
@@ -99,12 +94,11 @@ limit 50;
 - Secrets に `GEMINI_API_KEY`、必要ならモデル指定を追加。
 
 ### Referral
-- `referral-service.ts` / `routes/referral.ts` を参考に、invite-link/my-status/claim をEdge実装。  
-- PremiumGrant付与や重複チェックなどのロジックを移植。
+- Edge 実装済み（invite-link/my-status/claim）。レート制限・指紋チェックあり。
 
 ### IAP
-- `iap-service.ts` / `routes/iap.ts` を参考に、Store検証→PremiumGrant/aiCredits付与を Edge に移植。  
-- ストア鍵を Secrets に設定。
+- App Store 実装済み。Google Play は未実装（後回し）。  
+- Secrets: `APP_STORE_SHARED_SECRET`（および必要ならテスト用のオプション）を Supabase に設定。
 
 ## 9. モバイル側の注意
 - `apps/mobile/app.json` の `extra.apiBaseUrl` は Functions を向く。  
