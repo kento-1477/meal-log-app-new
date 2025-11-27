@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { LocaleSchema, MealLogAiRawSchema, GeminiNutritionResponseSchema, type GeminiNutritionResponse, type Locale, type MealLogAiRaw } from '@shared/index.js';
-import { getEnv } from './env.ts';
 
 export const DEFAULT_LOCALE: Locale = 'en-US';
 export const SECONDARY_FALLBACK_LOCALE: Locale = 'ja-JP';

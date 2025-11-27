@@ -1,16 +1,13 @@
 import { DateTime } from 'luxon';
 import { z } from 'zod';
 import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
-import { getAuthSession, requireAuth } from '../_shared/auth.ts';
+import { requireAuth } from '../_shared/auth.ts';
 import { supabaseAdmin } from '../_shared/supabase.ts';
 
 const app = createApp().basePath('/referral');
 
 const INVITE_CODE_LENGTH = 6;
 const FRIEND_PREMIUM_DAYS = 14;
-const REFERRER_PREMIUM_DAYS = 30;
-const CONSECUTIVE_DAYS_REQUIRED = 3;
-const REFERRAL_EXPIRY_DAYS = 30;
 const REFERRAL_RATE_LIMIT = 10;
 const REFERRAL_RATE_WINDOW_HOURS = 1;
 
