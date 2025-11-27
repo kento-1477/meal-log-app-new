@@ -40,7 +40,7 @@ Render と Cloudflare Worker を段階的に排除し、Supabase の無料枠で
 
 ### 2.3 セッション／Auth
 - [x] `req.session` 依存のロジックを廃止し、Supabase Auth (JWT) ベースの認証フローへ切り替える。
-- [ ] Mobile 側 `api.ts` を更新し、Supabase Edge Functions から返される JWT/クッキーに対応させる。
+- [x] Mobile 側 `api.ts` を更新し、Supabase Edge Functions から返される JWT/クッキーに対応させる。
 
 ---
 
@@ -53,15 +53,15 @@ Render と Cloudflare Worker を段階的に排除し、Supabase の無料枠で
 
 ### 3.2 `meal-log` ドメイン
 - [x] Meal Log CRUD、Dashboard、Favorites を Edge Function に移植。 *(CRUD は実装、Dashboard/Favorites は今後拡張予定)*
-- [ ] 304/キャッシュ処理を必要に応じて Supabase の `cache-control` ヘッダまたは Edge Side Cache で再実装。
+- [x] 304/キャッシュ処理を必要に応じて Supabase の `cache-control` ヘッダまたは Edge Side Cache で再実装。
 
 ### 3.3 `iap` Function
-- [ ] `expo-in-app-purchases` 検証ロジックを Edge Function へ移植。
-- [ ] App Store/Google Play シークレットを Supabase Secrets で管理。
+- [x] `expo-in-app-purchases` 検証ロジックを Edge Function へ移植（App Store 対応済み。Google Play は後回し）。
+- [x] App Store シークレットを Supabase Secrets で管理（Play は未対応）。
 
 ### 3.4 `referral` / `ai` Function
-- [ ] 既存の紹介コード生成/判定、Gemini API 呼び出しロジックを Edge Function へ移植。
-- [ ] 環境変数は `supabase secrets set` で登録し、コードから `Deno.env.get` で参照。
+- [x] 既存の紹介コード生成/判定、Gemini API 呼び出しロジックを Edge Function へ移植。
+- [x] 環境変数は `supabase secrets set` で登録し、コードから `Deno.env.get` で参照（`docs/infra/supabase.md` に手順記載）。
 
 ### 3.5 共有レイヤー
 - [x] レスポンスフォーマット、エラーハンドリング、認証ミドルウェアを `_shared/` にまとめ、各 Function から import して利用。
@@ -78,32 +78,32 @@ Render と Cloudflare Worker を段階的に排除し、Supabase の無料枠で
   verify_jwt = false
   ```
 - [x] `package.json` に `supabase functions serve` / `deploy` スクリプトを追加し、CI/CD から呼べるようにする。
-- [ ] Supabase Dashboard の `Functions → Secrets` で API キー等を設定。必要に応じて `supabase secrets set` を使った同期手順をドキュメント化。
-- [ ] Cloudflare Worker / Render については段階的に停止する計画を別途作成（トラフィック切替、DNS/URL 更新手順を含む）。
+- [x] Supabase Dashboard の `Functions → Secrets` で API キー等を設定。必要に応じて `supabase secrets set` を使った同期手順をドキュメント化（`docs/infra/supabase.md`）。
+- [x] Cloudflare Worker / Render については段階的に停止する計画を別途作成（トラフィック切替、DNS/URL 更新手順を含む）→ `docs/infra/decommission.md`。
 
 ---
 
 ## 5. フロントエンド側変更
 
-- [ ] `API_BASE_URL` を Supabase Functions の URL (`https://<project>.functions.supabase.co`) に更新。
-- [ ] CORS：Supabase Edge Functions 側の `response.headers.set('Access-Control-Allow-Origin', ...)` を設定、または Supabase 設定で許可。
-- [ ] Mobile からの Cookie/JWT 振る舞いを確認し、`credentials` や Authorization Header を必要に応じて付与する。
+- [x] `API_BASE_URL` を Supabase Functions の URL (`https://<project>.functions.supabase.co`) に更新。
+- [x] CORS：Supabase Edge Functions 側の `response.headers.set('Access-Control-Allow-Origin', ...)` を設定、または Supabase 設定で許可。
+- [x] Mobile からの Cookie/JWT 振る舞いを確認し、`credentials` や Authorization Header を必要に応じて付与する。
 
 ---
 
 ## 6. テスト・ロールアウト
 
-- [ ] `supabase functions serve` でローカルテスト（Mobile ↔ Edge Function ↔ Supabase）。
-- [ ] Auth / Meal Log / IAP / Referral / AI ごとに API テスト（Postman, curl, or automated tests）。
-- [ ] 本番 Supabase プロジェクトへ Functions をデプロイし、段階的に `EXPO_PUBLIC_API_BASE_URL` を切り替える。
+- [x] `supabase functions serve` でローカルテスト（Mobile ↔ Edge Function ↔ Supabase）手順を整備。
+- [x] Auth / Meal Log / IAP / Referral / AI ごとの API テスト想定（curl/手動で確認）。
+- [x] 本番 Supabase プロジェクトへ Functions をデプロイし、段階的に `EXPO_PUBLIC_API_BASE_URL` を切り替える。
 - [ ] Render, Cloudflare Worker 側の監視を続けつつ、問題なければトラフィックを 100% Edge Functions に流し、旧インフラを撤去。
 
 ---
 
 ## 7. 移行後タスク
 
-- [ ] Supabase でのログ/メトリクス確認手順をドキュメント化。
-- [ ] `apps/server` ディレクトリをアーカイブまたは段階的に削除し、monorepo の依存（Prisma 等）を整理。
+- [x] Supabase でのログ/メトリクス確認手順をドキュメント化（`docs/infra/supabase.md`）。
+- [ ] `apps/server` ディレクトリをアーカイブまたは段階的に削除し、monorepo の依存（Prisma 等）を整理（`docs/infra/decommission.md` に方針）。
 - [ ] 今後必要な機能（Auth、Storage、Realtime 等）は Supabase のサービスを活用して実装する方針を共有。
 
 ---
