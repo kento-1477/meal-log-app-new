@@ -318,6 +318,10 @@ async function fileToBase64(file: File) {
 }
 
 function buildPrompt(userMessage: string, locale: Locale = DEFAULT_LOCALE) {
+  const preferJapanese = locale.toLowerCase().startsWith('ja');
+  const languageInstruction = preferJapanese
+    ? 'Use Japanese for all text fields.'
+    : 'Use English (United States) for all text fields.';
   return `You are a nutrition analyst. Analyze the following meal description and respond ONLY with a JSON object that matches this TypeScript type: {
   "dish": string,
   "confidence": number between 0 and 1,
@@ -327,7 +331,7 @@ function buildPrompt(userMessage: string, locale: Locale = DEFAULT_LOCALE) {
   "landing_type"?: string | null,
   "meta"?: { "model": string, "fallback_model_used"?: boolean }
 }.
-Numbers must be floats, never strings. Calories must be > 0 when meal is realistic. Use realistic default assumptions if unspecified. The end-user locale is ${locale}; consider locale-specific context but keep all text fields in English (United States).
+Numbers must be floats, never strings. Calories must be > 0 when meal is realistic. Use realistic default assumptions if unspecified. The end-user locale is ${locale}; consider locale-specific context. ${languageInstruction}
 User description: ${userMessage}`;
 }
 
