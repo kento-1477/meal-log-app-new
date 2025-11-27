@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon';
-import type { UserTier, AiUsageSummary } from '@shared/index.js';
+import type { UserTier, AiUsageSummary } from '@shared/index.d.ts';
 import { supabaseAdmin } from './supabase.ts';
 import { HttpError, HTTP_STATUS } from './http.ts';
 
