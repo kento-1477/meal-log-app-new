@@ -926,6 +926,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
   }
 
   const logId = crypto.randomUUID();
+  const nowIso = new Date().toISOString();
 
   const { data: createdLog, error: logInsertError } = await supabaseAdmin
     .from('MealLog')
@@ -942,6 +943,8 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
       guardrailNotes: zeroFloored ? 'zeroFloored' : null,
       landingType: enrichedResponse.landing_type ?? null,
       mealPeriod,
+      createdAt: nowIso,
+      updatedAt: nowIso,
     })
     .select('id')
     .single();
