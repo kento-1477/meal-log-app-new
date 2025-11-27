@@ -1,5 +1,5 @@
 {
-  "version": "5",
+  "version": "2",
   "specifiers": {
     "npm:@supabase/supabase-js@^2.45.2": "2.86.0",
     "npm:@types/node@*": "24.2.0",
