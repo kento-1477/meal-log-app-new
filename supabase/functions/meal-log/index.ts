@@ -292,7 +292,7 @@ app.get('/api/logs', requireAuth, async (c) => {
     const dish = translation?.dish ?? row.foodItem;
     return {
       id: row.id,
-      created_at: row.createdAt.toISOString(),
+      created_at: new Date(row.createdAt).toISOString(),
       dish,
       protein_g: row.proteinG,
       fat_g: row.fatG,
@@ -842,7 +842,7 @@ async function fetchMealLogDetail(params: { userId: number; logId: string; local
     carbs_g: row.carbsG,
     calories: row.calories,
     meal_period: toMealPeriodLabel(row.mealPeriod) ?? row.landingType ?? null,
-    created_at: row.createdAt.toISOString(),
+    created_at: new Date(row.createdAt).toISOString(),
     image_url: row.imageUrl ?? null,
     ai_raw: buildAiRawPayload(localization),
     locale: localization.resolvedLocale,
