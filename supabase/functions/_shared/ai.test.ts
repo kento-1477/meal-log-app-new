@@ -201,7 +201,7 @@ function withFixedNow(nowIso: string, fn: () => Promise<void> | void) {
       if (value === undefined) {
         super(nowIso);
       } else {
-        // @ts-ignore: allow forwarding arbitrary constructor params
+        // @ts-expect-error: allow forwarding arbitrary constructor params
         super(value);
       }
     }
