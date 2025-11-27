@@ -925,9 +925,12 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
     warnings.push(`translation_fallback:${localization.resolvedLocale}`);
   }
 
+  const logId = crypto.randomUUID();
+
   const { data: createdLog, error: logInsertError } = await supabaseAdmin
     .from('MealLog')
     .insert({
+      id: logId,
       userId: params.userId,
       foodItem: translation.dish ?? params.message,
       calories: enrichedResponse.totals.kcal,
@@ -947,11 +950,11 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
     console.error('processMealLog: insert meal log failed', logInsertError);
     throw new HttpError('食事記録を作成できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
   }
-
-  const logId = createdLog.id;
+  // Use returned id if present; fallback to generated one.
+  const createdLogId = createdLog.id ?? logId;
 
   const { error: historyError } = await supabaseAdmin.from('MealLogPeriodHistory').insert({
-    mealLogId: logId,
+    mealLogId: createdLogId,
     previousMealPeriod: null,
     nextMealPeriod: mealPeriod,
     source: 'auto',
@@ -963,7 +966,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
   if (params.file && imageBase64) {
     const imageUrl = `data:${params.file.type};base64,${imageBase64}`;
     const { error: mediaError } = await supabaseAdmin.from('MediaAsset').insert({
-      mealLogId: logId,
+      mealLogId: createdLogId,
       mimeType: params.file.type,
       url: imageUrl,
       sizeBytes: params.file.size,
@@ -971,7 +974,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
     if (mediaError) {
       console.error('processMealLog: insert media asset failed', mediaError);
     }
-    const { error: updateImageError } = await supabaseAdmin.from('MealLog').update({ imageUrl }).eq('id', logId);
+    const { error: updateImageError } = await supabaseAdmin.from('MealLog').update({ imageUrl }).eq('id', createdLogId);
     if (updateImageError) {
       console.error('processMealLog: update imageUrl failed', updateImageError);
     }
@@ -1007,7 +1010,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
     totals: translation.totals,
     items: responseItems,
     fallbackDish: translation.dish ?? params.message,
-    sourceMealLogId: log,
+    sourceMealLogId: createdLogId,
   });
 
   return {
@@ -1015,7 +1018,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
     success: true,
     idempotent: false,
     idempotency_key: requestKey,
-    logId: log,
+    logId: createdLogId,
     requestLocale: localization.requestedLocale,
     locale: localization.resolvedLocale,
     translations: responseTranslations,
