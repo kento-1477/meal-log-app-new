@@ -72,7 +72,7 @@ export async function getAuthSession(c: Context): Promise<AuthSession | null> {
 export const requireAuth: MiddlewareHandler = async (c, next) => {
   const session = await getAuthSession(c);
   if (!session) {
-    throw new HttpError('認証が必要です', { status: HTTP_STATUS.UNAUTHORIZED, expose: true });
+    return c.json({ error: '認証が必要です' }, HTTP_STATUS.UNAUTHORIZED);
   }
   c.set('user', session.user);
   await next();
