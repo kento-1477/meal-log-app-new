@@ -15,6 +15,7 @@
 - ai: デバッグ用エンドポイントを追加し、AI使用状況の確認・カウントのみ可能（Gemini呼び出しはダミー）。
 - ログイン/パスワードハッシュを bcrypt 化、auth/meal-log の supabase-js への移行。
 - requireAuth: セッションなしの場合は throw せず 401 JSON で返却。
+- CORS: `ALLOWED_ORIGINS` 未設定の場合はリクエスト元オリジンを許可するよう fallback を調整（Cookie を使った認証に対応）。
 
 ## 3. 残タスク（優先順）
 1) **IAP (Google Play) 実装**  

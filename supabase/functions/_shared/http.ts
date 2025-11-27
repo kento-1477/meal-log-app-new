@@ -51,8 +51,9 @@ export function createApp() {
     '*',
     cors({
       origin: (origin) => {
-        if (!origin || allowOrigins.length === 0) return allowOrigins[0] ?? '*';
-        return allowOrigins.includes(origin) ? origin : allowOrigins[0] ?? '*';
+        if (!origin) return allowOrigins[0] ?? '*';
+        if (allowOrigins.length === 0) return origin;
+        return allowOrigins.includes(origin) ? origin : allowOrigins[0] ?? origin;
       },
       allowHeaders: ['Content-Type', 'Authorization', 'X-Timezone', 'X-Device-Id', 'Accept-Language'],
       allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

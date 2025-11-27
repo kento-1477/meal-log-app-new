@@ -18,7 +18,7 @@ Render と Cloudflare Worker を段階的に排除し、Supabase の無料枠で
 
 - [x] Supabase CLI を導入し、`supabase/` ディレクトリをプロジェクトルートに配置する。
 - [x] `supabase/functions/<domain>` ごとにフォルダを切り、`supabase/config.toml` でルーティング定義を行う。
-- [ ] `apps/server/src/routes` / `services` を棚卸しし、以下のドメイン毎に Edge Function へマッピングする。
+- [x] `apps/server/src/routes` / `services` を棚卸しし、以下のドメイン毎に Edge Function へマッピングする。
   - `auth`（ログイン/登録/セッション）
   - `meal-log`（ログ CRUD、ダッシュボード、favorites）
   - `iap`（In-App Purchases エンドポイント）

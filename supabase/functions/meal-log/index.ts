@@ -8,6 +8,10 @@ import type {
   FavoriteMealDraft,
   GeminiNutritionResponse,
   FavoriteMeal,
+  UpdateUserProfileRequest,
+  UserProfile,
+  SlotSelectionRequest,
+  NutritionPlanInput,
 } from '@shared/index.js';
 import {
   UpdateMealLogRequestSchema,
@@ -19,6 +23,11 @@ import {
   DashboardSummarySchema,
   DashboardTargetsSchema,
   CalorieTrendResponseSchema,
+  UserProfileResponseSchema,
+  UpdateUserProfileRequestSchema,
+  SlotSelectionRequestSchema,
+  UserProfileSchema,
+  computeNutritionPlan,
 } from '@shared/index.js';
 import type { Context } from 'hono';
 import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
@@ -58,6 +67,18 @@ const DASHBOARD_TARGETS = {
   fat_g: { unit: 'g', value: 70, decimals: 1 },
   carbs_g: { unit: 'g', value: 260, decimals: 1 },
 } as const;
+
+const SHARE_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+const FOOD_CATALOGUE = [
+  { name: '鶏むね肉グリル', calories: 165, protein_g: 31, fat_g: 3.6, carbs_g: 0 },
+  { name: '鮭の塩焼き', calories: 230, protein_g: 25, fat_g: 14, carbs_g: 0 },
+  { name: 'サーモン寿司', calories: 320, protein_g: 20, fat_g: 9, carbs_g: 38 },
+  { name: 'サラダボウル', calories: 180, protein_g: 5, fat_g: 8, carbs_g: 20 },
+  { name: '味噌汁', calories: 80, protein_g: 6, fat_g: 3, carbs_g: 8 },
+  { name: 'カレーライス', calories: 650, protein_g: 18, fat_g: 24, carbs_g: 80 },
+  { name: '照り焼きチキン', calories: 420, protein_g: 28, fat_g: 18, carbs_g: 32 },
+  { name: 'オートミール', calories: 380, protein_g: 13, fat_g: 7, carbs_g: 67 },
+] as const;
 
 const toMealPeriodLabel = (period: string | null | undefined) => (period ? period.toLowerCase() : null);
 
@@ -144,6 +165,11 @@ const calorieQuerySchema = z.object({
   locale: z.string().optional(),
 });
 
+const exportQuerySchema = z.object({
+  range: z.enum(['day', 'week', 'month']).default('day'),
+  anchor: z.string().optional(),
+});
+
 app.get('/health', (c) => c.json({ ok: true, service: 'meal-log' }));
 
 // Premium status (simple placeholder based on isPremium + grants)
@@ -183,6 +209,50 @@ app.get('/api/user/premium-status', requireAuth, async (c) => {
       createdAt: g.createdAt ?? g.startDate,
     })),
   });
+});
+
+app.get('/api/profile', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const profile = await getOrCreateUserProfile(user.id);
+  const payload = { ok: true, profile: serializeProfile(profile) };
+  UserProfileResponseSchema.parse(payload);
+  return c.json(payload);
+});
+
+app.put('/api/profile', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const body = UpdateUserProfileRequestSchema.parse(await c.req.json());
+  const existing = await getOrCreateUserProfile(user.id);
+  const { auto_recalculate: autoRecalculate, ...rest } = body;
+  const updateData = mapProfileInput(rest);
+
+  const nutritionInput = buildNutritionInput(rest, existing);
+  const userProvidedTargets =
+    hasOwn(rest, 'target_calories') || hasOwn(rest, 'target_protein_g') || hasOwn(rest, 'target_fat_g') || hasOwn(rest, 'target_carbs_g');
+  const hasPersistedTargets = hasMacroTargets(existing);
+  const hasPlanInputs = canComputeNutritionPlan(nutritionInput);
+  const shouldAutoPopulate = !userProvidedTargets && !hasPersistedTargets && hasPlanInputs;
+
+  if ((autoRecalculate || shouldAutoPopulate) && hasPlanInputs) {
+    const plan = computeNutritionPlan(nutritionInput);
+    if (plan) {
+      updateData.targetCalories = plan.targetCalories;
+      updateData.targetProteinG = plan.proteinGrams;
+      updateData.targetFatG = plan.fatGrams;
+      updateData.targetCarbsG = plan.carbGrams;
+    }
+  }
+
+  const updated = await upsertUserProfile(user.id, updateData);
+  const payload = { ok: true, profile: serializeProfile(updated), referralClaimed: false, referralResult: null };
+  UserProfileResponseSchema.parse(payload);
+  return c.json(payload);
+});
+
+app.delete('/api/user/account', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  await deleteUserAccount(user.id);
+  return c.json({ ok: true });
 });
 
 app.get('/api/logs', requireAuth, async (c) => {
@@ -242,12 +312,84 @@ app.get('/api/logs', requireAuth, async (c) => {
   return c.json({ ok: true, items, range: range.key, timezone } satisfies MealLogListResponse);
 });
 
+app.get('/api/logs/summary', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const locale = resolveRequestLocale(c.req.raw);
+  const url = new URL(c.req.url);
+  const days = Math.min(Number(url.searchParams.get('days') ?? 7), 30);
+  const since = DateTime.now().minus({ days }).toJSDate();
+
+  const { data: rows, error } = await supabaseAdmin
+    .from('MealLog')
+    .select('calories, proteinG, fatG, carbsG, createdAt')
+    .eq('userId', user.id)
+    .is('deletedAt', null)
+    .gte('createdAt', since.toISOString())
+    .order('createdAt', { ascending: true });
+
+  if (error) {
+    console.error('logs summary: fetch failed', error);
+    throw new HttpError('サマリーの取得に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  const dayBuckets = new Map<
+    string,
+    {
+      calories: number;
+      protein_g: number;
+      fat_g: number;
+      carbs_g: number;
+    }
+  >();
+
+  for (const log of rows ?? []) {
+    const dayKey = new Date(log.createdAt).toISOString().slice(0, 10);
+    const bucket = dayBuckets.get(dayKey) ?? { calories: 0, protein_g: 0, fat_g: 0, carbs_g: 0 };
+    bucket.calories += log.calories ?? 0;
+    bucket.protein_g += log.proteinG ?? 0;
+    bucket.fat_g += log.fatG ?? 0;
+    bucket.carbs_g += log.carbsG ?? 0;
+    dayBuckets.set(dayKey, bucket);
+  }
+
+  const daily = Array.from(dayBuckets.entries()).map(([date, totals]) => ({ date, ...totals }));
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const today = dayBuckets.get(todayKey) ?? { calories: 0, protein_g: 0, fat_g: 0, carbs_g: 0 };
+
+  return c.json({ ok: true, today, daily, locale });
+});
+
 app.get('/api/log/:id', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
   const logId = c.req.param('id');
   const locale = resolveRequestLocale(c.req.raw);
   const item = await fetchMealLogDetail({ userId: user.id, logId, locale });
   return c.json({ ok: true, item });
+});
+
+app.get('/api/log/:id/share', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const logId = c.req.param('id');
+  const locale = resolveRequestLocale(c.req.raw);
+  const share = await buildSharePayload({ userId: user.id, mealLogId: logId, locale });
+  return c.json({ ok: true, share });
+});
+
+app.get('/api/logs/export', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const locale = resolveRequestLocale(c.req.raw);
+  const url = new URL(c.req.url);
+  const parsed = exportQuerySchema.safeParse(Object.fromEntries(url.searchParams.entries()));
+  if (!parsed.success) {
+    throw new HttpError('未対応の期間指定です', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
+  }
+  const dataset = await getLogsForExport({
+    userId: user.id,
+    range: parsed.data.range,
+    anchor: parsed.data.anchor,
+    locale,
+  });
+  return c.json({ ok: true, range: parsed.data.range, export: dataset });
 });
 
 const handleCreateLog = async (c: Context) => {
@@ -276,6 +418,24 @@ const handleCreateLog = async (c: Context) => {
 app.post('/api/log', requireAuth, handleCreateLog);
 // Legacy path used by mobile client; keep as alias to avoid 404.
 app.post('/log', requireAuth, handleCreateLog);
+
+app.post('/api/log/choose-slot', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const body = SlotSelectionRequestSchema.parse(await c.req.json());
+  const updated = await chooseSlot(user.id, body);
+  return c.json({ ok: true, item: updated });
+});
+
+app.get('/api/foods/search', requireAuth, async (c) => {
+  const url = new URL(c.req.url);
+  const q = (url.searchParams.get('q') ?? '').trim().toLowerCase();
+  const limit = Math.min(Number(url.searchParams.get('limit') ?? 6), 20);
+  if (!q) {
+    return c.json({ q, candidates: FOOD_CATALOGUE.slice(0, limit) });
+  }
+  const candidates = FOOD_CATALOGUE.filter((item) => item.name.toLowerCase().includes(q)).slice(0, limit);
+  return c.json({ q, candidates });
+});
 
 app.delete('/api/log/:id', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
@@ -779,6 +939,527 @@ function buildUpdatedAiRaw(aiRaw: unknown, updates: ReturnType<typeof mapUpdateP
   }
 
   return aiRaw;
+}
+
+type DbUserProfile = {
+  userId: number;
+  displayName?: string | null;
+  gender?: string | null;
+  birthdate?: string | Date | null;
+  heightCm?: number | null;
+  unitPreference?: string | null;
+  marketingSource?: string | null;
+  referralCode?: string | null;
+  goals?: string[] | null;
+  targetCalories?: number | null;
+  targetProteinG?: number | null;
+  targetFatG?: number | null;
+  targetCarbsG?: number | null;
+  bodyWeightKg?: number | null;
+  currentWeightKg?: number | null;
+  targetWeightKg?: number | null;
+  planIntensity?: string | null;
+  targetDate?: string | Date | null;
+  activityLevel?: string | null;
+  appleHealthLinked?: boolean | null;
+  questionnaireCompletedAt?: string | Date | null;
+  language?: string | null;
+  createdAt?: string | Date | null;
+  updatedAt?: string | Date | null;
+};
+
+async function getOrCreateUserProfile(userId: number): Promise<DbUserProfile> {
+  const { data, error } = await supabaseAdmin.from('UserProfile').select('*').eq('userId', userId).maybeSingle();
+  if (error) {
+    console.error('profile: fetch failed', error);
+    throw new HttpError('プロフィールの取得に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+  if (data) return data;
+
+  const nowIso = new Date().toISOString();
+  const { data: created, error: createError } = await supabaseAdmin
+    .from('UserProfile')
+    .insert({ userId, createdAt: nowIso, updatedAt: nowIso })
+    .select('*')
+    .single();
+
+  if (createError || !created) {
+    console.error('profile: create failed', createError);
+    throw new HttpError('プロフィールの作成に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+  return created;
+}
+
+function serializeProfile(profile: DbUserProfile): UserProfile {
+  const toIso = (value: string | Date | null | undefined) => {
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  };
+
+  const payload = {
+    display_name: profile.displayName ?? null,
+    gender: (profile.gender as UserProfile['gender']) ?? null,
+    birthdate: toIso(profile.birthdate),
+    height_cm: profile.heightCm ?? null,
+    unit_preference: (profile.unitPreference as UserProfile['unit_preference']) ?? null,
+    marketing_source: profile.marketingSource ?? null,
+    marketing_referral_code: profile.referralCode ?? null,
+    goals: profile.goals ?? [],
+    target_calories: profile.targetCalories ?? null,
+    target_protein_g: profile.targetProteinG ?? null,
+    target_fat_g: profile.targetFatG ?? null,
+    target_carbs_g: profile.targetCarbsG ?? null,
+    body_weight_kg: profile.bodyWeightKg ?? null,
+    current_weight_kg: profile.currentWeightKg ?? null,
+    target_weight_kg: profile.targetWeightKg ?? null,
+    plan_intensity: (profile.planIntensity as UserProfile['plan_intensity']) ?? null,
+    target_date: toIso(profile.targetDate),
+    activity_level: (profile.activityLevel as UserProfile['activity_level']) ?? null,
+    apple_health_linked: profile.appleHealthLinked ?? false,
+    questionnaire_completed_at: toIso(profile.questionnaireCompletedAt),
+    language: (profile.language as UserProfile['language']) ?? null,
+    updated_at: toIso(profile.updatedAt) ?? new Date().toISOString(),
+  };
+
+  UserProfileSchema.parse(payload);
+  return payload;
+}
+
+function mapProfileInput(input: UpdateUserProfileRequest) {
+  const data: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+
+  if (hasOwn(input, 'display_name')) data.displayName = input.display_name ?? null;
+  if (hasOwn(input, 'gender')) data.gender = input.gender ?? null;
+  if (hasOwn(input, 'birthdate')) data.birthdate = input.birthdate ? new Date(input.birthdate) : null;
+  if (hasOwn(input, 'height_cm')) data.heightCm = input.height_cm ?? null;
+  if (hasOwn(input, 'unit_preference')) data.unitPreference = input.unit_preference ?? null;
+  if (hasOwn(input, 'marketing_source')) data.marketingSource = input.marketing_source ?? null;
+  if (hasOwn(input, 'marketing_referral_code')) data.referralCode = input.marketing_referral_code ?? null;
+  if (hasOwn(input, 'goals')) data.goals = input.goals ?? [];
+  if (hasOwn(input, 'target_calories')) data.targetCalories = input.target_calories ?? null;
+  if (hasOwn(input, 'target_protein_g')) data.targetProteinG = input.target_protein_g ?? null;
+  if (hasOwn(input, 'target_fat_g')) data.targetFatG = input.target_fat_g ?? null;
+  if (hasOwn(input, 'target_carbs_g')) data.targetCarbsG = input.target_carbs_g ?? null;
+  if (hasOwn(input, 'body_weight_kg')) data.bodyWeightKg = input.body_weight_kg ?? null;
+  if (hasOwn(input, 'current_weight_kg')) data.currentWeightKg = input.current_weight_kg ?? null;
+  if (hasOwn(input, 'target_weight_kg')) data.targetWeightKg = input.target_weight_kg ?? null;
+  if (hasOwn(input, 'plan_intensity')) data.planIntensity = input.plan_intensity ?? null;
+  if (hasOwn(input, 'target_date')) data.targetDate = input.target_date ? new Date(input.target_date) : null;
+  if (hasOwn(input, 'activity_level')) data.activityLevel = input.activity_level ?? null;
+  if (hasOwn(input, 'apple_health_linked')) data.appleHealthLinked = input.apple_health_linked ?? null;
+  if (hasOwn(input, 'questionnaire_completed_at')) data.questionnaireCompletedAt = input.questionnaire_completed_at ?? null;
+  if (hasOwn(input, 'language')) data.language = input.language ?? null;
+
+  return data;
+}
+
+function buildNutritionInput(input: UpdateUserProfileRequest, existing: DbUserProfile): NutritionPlanInput {
+  const toDateOrNull = (value: string | Date | null | undefined) => {
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
+
+  const maybe = <K extends keyof UpdateUserProfileRequest>(key: K, fallback: unknown) =>
+    hasOwn(input, key) ? (input[key] as UpdateUserProfileRequest[K]) : fallback;
+
+  return {
+    gender: maybe('gender', existing.gender ?? null),
+    birthdate: toDateOrNull(maybe('birthdate', existing.birthdate ?? null)),
+    heightCm: maybe('height_cm', existing.heightCm ?? null) as number | null | undefined,
+    currentWeightKg: (maybe('current_weight_kg', existing.currentWeightKg ?? existing.bodyWeightKg ?? null) ??
+      null) as number | null,
+    targetWeightKg: maybe('target_weight_kg', existing.targetWeightKg ?? null) as number | null | undefined,
+    activityLevel: maybe('activity_level', existing.activityLevel ?? null) as NutritionPlanInput['activityLevel'],
+    planIntensity: maybe('plan_intensity', existing.planIntensity ?? null) as NutritionPlanInput['planIntensity'],
+    goals: maybe('goals', existing.goals ?? []),
+  };
+}
+
+function hasOwn<T extends object>(obj: T, key: keyof any): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function hasMacroTargets(profile: DbUserProfile | null | undefined) {
+  if (!profile) return false;
+  return (
+    profile.targetCalories != null ||
+    profile.targetProteinG != null ||
+    profile.targetFatG != null ||
+    profile.targetCarbsG != null
+  );
+}
+
+function canComputeNutritionPlan(input: NutritionPlanInput) {
+  try {
+    return Boolean(computeNutritionPlan(input));
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function upsertUserProfile(userId: number, data: Record<string, unknown>): Promise<DbUserProfile> {
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from('UserProfile')
+    .select('id')
+    .eq('userId', userId)
+    .maybeSingle();
+
+  if (existingError) {
+    console.error('profile: check existing failed', existingError);
+    throw new HttpError('プロフィールの更新に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  if (existing) {
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from('UserProfile')
+      .update(data)
+      .eq('userId', userId)
+      .select('*')
+      .single();
+    if (updateError || !updated) {
+      console.error('profile: update failed', updateError);
+      throw new HttpError('プロフィールの更新に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+    }
+    return updated;
+  }
+
+  const { data: created, error: createError } = await supabaseAdmin
+    .from('UserProfile')
+    .insert({ userId, ...data })
+    .select('*')
+    .single();
+  if (createError || !created) {
+    console.error('profile: insert failed', createError);
+    throw new HttpError('プロフィールの作成に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+  return created;
+}
+
+async function deleteUserAccount(userId: number) {
+  const { data: logs, error: logsError } = await supabaseAdmin.from('MealLog').select('id').eq('userId', userId);
+  if (logsError) {
+    console.error('account delete: fetch logs failed', logsError);
+    throw new HttpError('アカウント削除に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+  const logIds = (logs ?? []).map((row) => row.id);
+
+  if (logIds.length > 0) {
+    const { error: mediaError } = await supabaseAdmin.from('MediaAsset').delete().in('mealLogId', logIds);
+    if (mediaError) {
+      console.error('account delete: delete media failed', mediaError);
+      throw new HttpError('アカウント削除に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+    }
+    const { error: editError } = await supabaseAdmin.from('MealLogEdit').delete().in('mealLogId', logIds);
+    if (editError) {
+      console.error('account delete: delete edits failed', editError);
+      throw new HttpError('アカウント削除に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+    }
+    const { error: periodError } = await supabaseAdmin.from('MealLogPeriodHistory').delete().in('mealLogId', logIds);
+    if (periodError) {
+      console.error('account delete: delete period history failed', periodError);
+      throw new HttpError('アカウント削除に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+    }
+    const { error: shareError } = await supabaseAdmin.from('LogShareToken').delete().in('mealLogId', logIds);
+    if (shareError) {
+      console.error('account delete: delete share tokens failed', shareError);
+      throw new HttpError('アカウント削除に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+    }
+    const { error: favoriteUpdateError } = await supabaseAdmin
+      .from('FavoriteMeal')
+      .update({ sourceMealLogId: null })
+      .eq('userId', userId)
+      .in('sourceMealLogId', logIds);
+    if (favoriteUpdateError) {
+      console.error('account delete: detach favorites failed', favoriteUpdateError);
+      throw new HttpError('アカウント削除に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+    }
+  }
+
+  const deletions = [
+    { label: 'favorites', promise: supabaseAdmin.from('FavoriteMeal').delete().eq('userId', userId) },
+    { label: 'ingest', promise: supabaseAdmin.from('IngestRequest').delete().eq('userId', userId) },
+    { label: 'ai usage', promise: supabaseAdmin.from('AiUsageCounter').delete().eq('userId', userId) },
+    { label: 'iap', promise: supabaseAdmin.from('IapReceipt').delete().eq('userId', userId) },
+    { label: 'premium', promise: supabaseAdmin.from('PremiumGrant').delete().eq('userId', userId) },
+    { label: 'referral', promise: supabaseAdmin.from('Referral').delete().or(`referrerUserId.eq.${userId},referredUserId.eq.${userId}`) },
+    { label: 'referral links', promise: supabaseAdmin.from('ReferralInviteLink').delete().eq('userId', userId) },
+    { label: 'share tokens', promise: supabaseAdmin.from('LogShareToken').delete().eq('userId', userId) },
+    { label: 'meal logs', promise: supabaseAdmin.from('MealLog').delete().eq('userId', userId) },
+    { label: 'profile', promise: supabaseAdmin.from('UserProfile').delete().eq('userId', userId) },
+    { label: 'user', promise: supabaseAdmin.from('User').delete().eq('id', userId) },
+  ] as const;
+
+  for (const entry of deletions) {
+    const { error: deleteError } = await entry.promise;
+    if (deleteError) {
+      console.error(`account delete: ${entry.label} delete failed`, deleteError);
+      throw new HttpError('アカウント削除に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+    }
+  }
+}
+
+async function buildSharePayload(params: { userId: number; mealLogId: string; locale: Locale }) {
+  const { data: log, error } = await supabaseAdmin
+    .from('MealLog')
+    .select('id, foodItem, calories, proteinG, fatG, carbsG, aiRaw, createdAt, landingType')
+    .eq('id', params.mealLogId)
+    .eq('userId', params.userId)
+    .is('deletedAt', null)
+    .maybeSingle();
+
+  if (error) {
+    console.error('share: fetch log failed', error);
+    throw new HttpError('食事記録の取得に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+  if (!log) {
+    throw new HttpError('食事記録が見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
+  }
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from('LogShareToken')
+    .select('id, token, expiresAt')
+    .eq('mealLogId', params.mealLogId)
+    .eq('userId', params.userId)
+    .gt('expiresAt', nowIso)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) {
+    console.error('share: fetch token failed', existingError);
+    throw new HttpError('共有リンクの生成に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  let token = existing?.token ?? crypto.randomUUID();
+  let expiresAt = existing?.expiresAt ?? new Date(now.getTime() + SHARE_TOKEN_TTL_MS).toISOString();
+
+  if (existing) {
+    await supabaseAdmin.from('LogShareToken').update({ lastAccessed: nowIso }).eq('id', existing.id);
+  } else {
+    const { data: created, error: insertError } = await supabaseAdmin
+      .from('LogShareToken')
+      .insert({
+        token,
+        mealLogId: params.mealLogId,
+        userId: params.userId,
+        expiresAt,
+        lastAccessed: nowIso,
+        createdAt: nowIso,
+      })
+      .select('token, expiresAt')
+      .single();
+
+    if (insertError || !created) {
+      console.error('share: insert token failed', insertError);
+      throw new HttpError('共有リンクの生成に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+    }
+    token = created.token;
+    expiresAt = created.expiresAt;
+  }
+
+  const localization = resolveMealLogLocalization(log.aiRaw, params.locale);
+  const translation = localization.translation;
+  const text = formatShareText(
+    {
+      foodItem: translation?.dish ?? log.foodItem,
+      calories: log.calories,
+      proteinG: log.proteinG,
+      fatG: log.fatG,
+      carbsG: log.carbsG,
+      createdAt: log.createdAt instanceof Date ? log.createdAt : new Date(log.createdAt),
+      resolvedLocale: localization.resolvedLocale,
+      requestedLocale: localization.requestedLocale,
+      fallbackApplied: localization.fallbackApplied,
+    },
+    params.locale,
+  );
+
+  return {
+    text,
+    token,
+    expiresAt: new Date(expiresAt).toISOString(),
+  };
+}
+
+const SHARE_STRINGS = {
+  ja: {
+    heading: '食事記録',
+    calories: 'カロリー',
+    macros: (protein: number, fat: number, carbs: number) => `P: ${roundLabel(protein)} g / F: ${roundLabel(fat)} g / C: ${roundLabel(carbs)} g`,
+    recordedAt: '記録日時',
+    fallback: (requested: Locale, resolved: Locale) => `※ ${requested} 未対応のため ${resolved} を表示しています`,
+  },
+  en: {
+    heading: 'Meal Log',
+    calories: 'Calories',
+    macros: (protein: number, fat: number, carbs: number) => `Macros — P: ${roundLabel(protein)} g / F: ${roundLabel(fat)} g / C: ${roundLabel(carbs)} g`,
+    recordedAt: 'Recorded at',
+    fallback: (requested: Locale, resolved: Locale) => `* Showing in ${resolved} because ${requested} is not available`,
+  },
+} as const;
+
+function resolveShareStrings(locale: Locale) {
+  if (locale?.toLowerCase().startsWith('en')) {
+    return SHARE_STRINGS.en;
+  }
+  return SHARE_STRINGS.ja;
+}
+
+function formatShareText(
+  log: {
+    foodItem: string;
+    calories: number;
+    proteinG: number;
+    fatG: number;
+    carbsG: number;
+    createdAt: Date;
+    resolvedLocale: Locale;
+    requestedLocale: Locale;
+    fallbackApplied: boolean;
+  },
+  locale: Locale,
+) {
+  const strings = resolveShareStrings(locale);
+  const recordedAt = DateTime.fromJSDate(log.createdAt)
+    .setZone('Asia/Tokyo')
+    .setLocale(locale.startsWith('en') ? 'en' : 'ja');
+
+  const lines = [
+    `${strings.heading}: ${log.foodItem}`,
+    `${strings.calories}: ${Math.round(log.calories)} kcal`,
+    strings.macros(log.proteinG, log.fatG, log.carbsG),
+    `${strings.recordedAt}: ${recordedAt.toFormat('yyyy/LL/dd HH:mm')}`,
+  ];
+  if (log.fallbackApplied && log.requestedLocale !== log.resolvedLocale) {
+    lines.push(strings.fallback(log.requestedLocale, log.resolvedLocale));
+  }
+  return lines.join('\n');
+}
+
+function roundLabel(value: number | null | undefined) {
+  if (!Number.isFinite(value ?? null)) return 0;
+  return Math.round((value as number) * 10) / 10;
+}
+
+async function getLogsForExport(params: { userId: number; range: 'day' | 'week' | 'month'; anchor?: string; locale: Locale }) {
+  const { from, to } = resolveExportRange(params.range, params.anchor);
+  const { data: logs, error } = await supabaseAdmin
+    .from('MealLog')
+    .select('id, foodItem, calories, proteinG, fatG, carbsG, mealPeriod, aiRaw, createdAt, landingType')
+    .eq('userId', params.userId)
+    .is('deletedAt', null)
+    .gte('createdAt', from.toISO())
+    .lt('createdAt', to.toISO())
+    .order('createdAt', { ascending: true });
+
+  if (error) {
+    console.error('logs export: fetch failed', error);
+    throw new HttpError('エクスポートの取得に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  const items =
+    logs?.map((log) => {
+      const localization = resolveMealLogLocalization(log.aiRaw, params.locale);
+      const translation = localization.translation;
+      return {
+        id: log.id,
+        recordedAt: (log.createdAt instanceof Date ? log.createdAt : new Date(log.createdAt)).toISOString(),
+        foodItem: translation?.dish ?? log.foodItem,
+        calories: log.calories,
+        proteinG: log.proteinG,
+        fatG: log.fatG,
+        carbsG: log.carbsG,
+        mealPeriod: log.mealPeriod ?? log.landingType ?? null,
+        locale: localization.resolvedLocale,
+        requestedLocale: localization.requestedLocale,
+        fallbackApplied: localization.fallbackApplied,
+      };
+    }) ?? [];
+
+  return {
+    from: from.toISO(),
+    to: to.toISO(),
+    items,
+  };
+}
+
+function resolveExportRange(range: 'day' | 'week' | 'month', anchor?: string) {
+  const base = anchor ? DateTime.fromISO(anchor) : DateTime.now();
+  if (!base.isValid) {
+    throw new HttpError('アンカー日付が無効です', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
+  }
+
+  switch (range) {
+    case 'day': {
+      const from = base.startOf('day');
+      const to = from.plus({ days: 1 });
+      return { from, to };
+    }
+    case 'week': {
+      const from = base.startOf('week');
+      const to = from.plus({ weeks: 1 });
+      return { from, to };
+    }
+    case 'month': {
+      const from = base.startOf('month');
+      const to = from.plus({ months: 1 });
+      return { from, to };
+    }
+    default:
+      throw new HttpError('未対応の期間指定です', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
+  }
+}
+
+async function chooseSlot(userId: number, request: SlotSelectionRequest) {
+  const { data: log, error } = await supabaseAdmin
+    .from('MealLog')
+    .select('id, userId, aiRaw, version')
+    .eq('id', request.logId)
+    .eq('userId', userId)
+    .is('deletedAt', null)
+    .maybeSingle();
+
+  if (error) {
+    console.error('choose-slot: fetch failed', error);
+    throw new HttpError('食事記録の取得に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+  if (!log) {
+    throw new HttpError('食事記録が見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
+  }
+
+  if ((log.version ?? 0) !== request.prevVersion) {
+    throw new HttpError('編集競合が発生しました。最新の内容を確認してください', {
+      status: HTTP_STATUS.CONFLICT,
+      expose: true,
+    });
+  }
+
+  const aiRaw = (log.aiRaw ?? {}) as Record<string, unknown> & { slots?: Record<string, unknown> };
+  const slots = { ...(aiRaw.slots ?? {}) };
+  slots[request.key] = request.value;
+
+  const nextVersion = (log.version ?? 0) + 1;
+  const { data: updated, error: updateError } = await supabaseAdmin
+    .from('MealLog')
+    .update({
+      aiRaw: { ...aiRaw, slots },
+      version: nextVersion,
+      updatedAt: new Date().toISOString(),
+    })
+    .eq('id', log.id)
+    .eq('userId', userId)
+    .select('id, aiRaw, version, updatedAt')
+    .single();
+
+  if (updateError || !updated) {
+    console.error('choose-slot: update failed', updateError);
+    throw new HttpError('スロットの更新に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  return updated;
 }
 
 type ProcessMealLogParams = {
