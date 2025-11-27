@@ -79,7 +79,7 @@ Render と Cloudflare Worker を段階的に排除し、Supabase の無料枠で
   ```
 - [x] `package.json` に `supabase functions serve` / `deploy` スクリプトを追加し、CI/CD から呼べるようにする。
 - [x] Supabase Dashboard の `Functions → Secrets` で API キー等を設定。必要に応じて `supabase secrets set` を使った同期手順をドキュメント化（`docs/infra/supabase.md`）。
-- [ ] Cloudflare Worker / Render については段階的に停止する計画を別途作成（トラフィック切替、DNS/URL 更新手順を含む）。
+- [x] Cloudflare Worker / Render については段階的に停止する計画を別途作成（トラフィック切替、DNS/URL 更新手順を含む）→ `docs/infra/decommission.md`。
 
 ---
 
@@ -103,7 +103,7 @@ Render と Cloudflare Worker を段階的に排除し、Supabase の無料枠で
 ## 7. 移行後タスク
 
 - [x] Supabase でのログ/メトリクス確認手順をドキュメント化（`docs/infra/supabase.md`）。
-- [ ] `apps/server` ディレクトリをアーカイブまたは段階的に削除し、monorepo の依存（Prisma 等）を整理。
+- [ ] `apps/server` ディレクトリをアーカイブまたは段階的に削除し、monorepo の依存（Prisma 等）を整理（`docs/infra/decommission.md` に方針）。
 - [ ] 今後必要な機能（Auth、Storage、Realtime 等）は Supabase のサービスを活用して実装する方針を共有。
 
 ---
