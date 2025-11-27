@@ -47,6 +47,8 @@ import { supabaseAdmin } from '../_shared/supabase.ts';
 import { isPremium, evaluateAiUsage, recordAiUsage, summarizeUsageStatus, buildUsageLimitError } from '../_shared/ai.ts';
 import type { JwtUser } from '../_shared/auth.ts';
 
+const encoder = new TextEncoder();
+
 const app = createApp().basePath('/meal-log');
 
 // Basic request logging to confirm Edge invocation
@@ -309,7 +311,8 @@ app.get('/api/logs', requireAuth, async (c) => {
     };
   });
 
-  return c.json({ ok: true, items, range: range.key, timezone } satisfies MealLogListResponse);
+  const payload = { ok: true, items, range: range.key, timezone } satisfies MealLogListResponse;
+  return respondWithCache(c, payload);
 });
 
 app.get('/api/logs/summary', requireAuth, async (c) => {
@@ -356,7 +359,7 @@ app.get('/api/logs/summary', requireAuth, async (c) => {
   const todayKey = new Date().toISOString().slice(0, 10);
   const today = dayBuckets.get(todayKey) ?? { calories: 0, protein_g: 0, fat_g: 0, carbs_g: 0 };
 
-  return c.json({ ok: true, today, daily, locale });
+  return respondWithCache(c, { ok: true, today, daily, locale });
 });
 
 app.get('/api/log/:id', requireAuth, async (c) => {
@@ -364,7 +367,7 @@ app.get('/api/log/:id', requireAuth, async (c) => {
   const logId = c.req.param('id');
   const locale = resolveRequestLocale(c.req.raw);
   const item = await fetchMealLogDetail({ userId: user.id, logId, locale });
-  return c.json({ ok: true, item });
+  return respondWithCache(c, { ok: true, item });
 });
 
 app.get('/api/log/:id/share', requireAuth, async (c) => {
@@ -372,7 +375,7 @@ app.get('/api/log/:id/share', requireAuth, async (c) => {
   const logId = c.req.param('id');
   const locale = resolveRequestLocale(c.req.raw);
   const share = await buildSharePayload({ userId: user.id, mealLogId: logId, locale });
-  return c.json({ ok: true, share });
+  return respondWithCache(c, { ok: true, share });
 });
 
 app.get('/api/logs/export', requireAuth, async (c) => {
@@ -389,7 +392,7 @@ app.get('/api/logs/export', requireAuth, async (c) => {
     anchor: parsed.data.anchor,
     locale,
   });
-  return c.json({ ok: true, range: parsed.data.range, export: dataset });
+  return respondWithCache(c, { ok: true, range: parsed.data.range, export: dataset });
 });
 
 const handleCreateLog = async (c: Context) => {
@@ -708,7 +711,7 @@ app.get('/api/dashboard/summary', requireAuth, async (c) => {
   });
   const payload = { ok: true, summary } as const;
   DashboardSummarySchema.parse(summary);
-  return c.json(payload);
+  return respondWithCache(c, payload);
 });
 
 app.get('/api/dashboard/targets', requireAuth, async (c) => {
@@ -716,7 +719,7 @@ app.get('/api/dashboard/targets', requireAuth, async (c) => {
   const targets = await resolveUserTargets(user.id);
   const payload = { ok: true, targets };
   DashboardTargetsSchema.parse(targets);
-  return c.json(payload);
+  return respondWithCache(c, payload);
 });
 
 app.get('/api/calories', requireAuth, async (c) => {
@@ -1753,6 +1756,28 @@ async function fileToBase64(file: File) {
 function buildRequestKey(params: ProcessMealLogParams) {
   const hashString = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
   return `${Date.now()}-${params.userId}-${hashString}`;
+}
+
+async function respondWithCache(c: Context, payload: unknown, status: number = HTTP_STATUS.OK) {
+  const etag = await computeEtag(payload);
+  const ifNoneMatch = c.req.header('if-none-match');
+  c.header('Cache-Control', 'private, max-age=60');
+  c.header('ETag', etag);
+
+  if (ifNoneMatch && ifNoneMatch === etag) {
+    return c.body(null, 304);
+  }
+
+  return c.json(payload, status);
+}
+
+async function computeEtag(value: unknown): Promise<string> {
+  const data = encoder.encode(JSON.stringify(value));
+  const hash = await crypto.subtle.digest('SHA-1', data);
+  const hex = Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  return `W/"${hex}"`;
 }
 
 function inferMealPeriod(timezone: string | undefined, referenceDate: Date | undefined = undefined): string {
