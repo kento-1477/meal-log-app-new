@@ -21,7 +21,11 @@ app.get('/health', (c) => c.json({ ok: true, service: 'referral' }));
 // Basic request logging for debugging
 app.use('*', async (c, next) => {
   console.log('[referral] request', { method: c.req.method, url: c.req.url });
-  await next();
+  const res = await next();
+  if (res) {
+    console.log('[referral] response', { method: c.req.method, url: c.req.url, status: res.status });
+  }
+  return res;
 });
 
 app.post('/api/referral/invite-link', requireAuth, async (c) => {
