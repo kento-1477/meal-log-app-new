@@ -1,6 +1,8 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { setCookie } from 'hono/cookie';
+import type { CookieOptions } from 'hono/utils/cookie';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ZodError } from 'zod';
 import { boolEnv } from './env.ts';
 
@@ -70,7 +72,7 @@ export function createApp() {
   return app;
 }
 
-export function handleError(c: Hono.Context, error: unknown) {
+export function handleError(c: Context, error: unknown) {
   if (error instanceof HttpError) {
     return c.json(
       {
@@ -78,7 +80,7 @@ export function handleError(c: Hono.Context, error: unknown) {
         code: error.code,
         data: error.data,
       },
-      error.status,
+      error.status as ContentfulStatusCode,
     );
   }
 
@@ -89,7 +91,7 @@ export function handleError(c: Hono.Context, error: unknown) {
         code: 'VALIDATION_ERROR',
         details: error.errors,
       },
-      HTTP_STATUS.BAD_REQUEST,
+      HTTP_STATUS.BAD_REQUEST as ContentfulStatusCode,
     );
   }
 
@@ -97,11 +99,11 @@ export function handleError(c: Hono.Context, error: unknown) {
     {
       error: 'Internal Server Error',
     },
-    HTTP_STATUS.INTERNAL_ERROR,
+    HTTP_STATUS.INTERNAL_ERROR as ContentfulStatusCode,
   );
 }
 
-export function setJsonCookie(c: Hono.Context, name: string, value: string, options: Partial<Parameters<typeof setCookie>[2]> = {}) {
+export function setJsonCookie(c: Context, name: string, value: string, options: CookieOptions = {}) {
   setCookie(c, name, value, {
     httpOnly: true,
     secure: true,
