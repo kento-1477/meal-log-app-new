@@ -242,7 +242,7 @@ app.get('/api/log/:id', requireAuth, async (c) => {
   return c.json({ ok: true, item });
 });
 
-app.post('/api/log', requireAuth, async (c) => {
+const handleCreateLog = async (c: Context) => {
   const user = c.get('user') as JwtUser;
   const form = await parseMultipart(c);
   if (!form.message && !form.file) {
@@ -263,7 +263,11 @@ app.post('/api/log', requireAuth, async (c) => {
   });
 
   return c.json(response);
-});
+};
+
+app.post('/api/log', requireAuth, handleCreateLog);
+// Legacy path used by mobile client; keep as alias to avoid 404.
+app.post('/log', requireAuth, handleCreateLog);
 
 app.delete('/api/log/:id', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
