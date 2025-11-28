@@ -28,6 +28,19 @@
   - `apps/server` ディレクトリをアーカイブ（必要なら別ブランチに退避）。
   - README / docs から Render 前提の記述を削除し、Supabase 専用に統一。
 
+### 具体的な整理手順（例）
+1. ワークスペース削除  
+   - `package.json` の `workspaces` から `apps/server` を外す。  
+   - `package-lock.json` は `npm install` で再生成。
+2. CI/スクリプト更新  
+   - `.github/workflows` 等に `apps/server` を参照するジョブがあれば削除。  
+   - `npm run dev:server` などサーバ用スクリプトも削除/README修正。
+3. 依存削減  
+   - Prisma や `@types/express` などサーバ専用依存を root から削除し、`npm prune`。  
+4. ディレクトリ退避  
+   - `apps/server` を `apps/server-legacy/` に移動するか、別ブランチで保管。  
+   - 参照が残っていないことを `rg "apps/server"` で確認。
+
 ## ロールバック方針
 - もし Edge Functions に障害が出た場合は、一時的に `EXPO_PUBLIC_API_BASE_URL` を旧API（Cloudflare/Render）へ戻し、再ビルドして配布。  
 - Cloudflare Worker を再度有効化してプロキシを復活させる。  
