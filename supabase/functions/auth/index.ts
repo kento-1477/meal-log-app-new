@@ -50,9 +50,10 @@ const handleRegister = async (c: Hono.Context) => {
     }
 
     const passwordHash = await hashPassword(input.password);
+    const nowIso = new Date().toISOString();
     const { data: row, error: insertError } = await supabaseAdmin
       .from('User')
-      .insert({ email: input.email, passwordHash })
+      .insert({ email: input.email, passwordHash, createdAt: nowIso, updatedAt: nowIso })
       .select('id, email, aiCredits')
       .single();
 
