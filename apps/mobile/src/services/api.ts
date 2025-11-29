@@ -25,6 +25,7 @@ import type {
   OnboardingStatus,
 } from '@meal-log/shared';
 import {
+  HTTP_STATUS,
   DashboardSummarySchema,
   DashboardTargetsSchema,
   MealLogListResponseSchema,
@@ -153,6 +154,10 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     }
     const error = new Error(message || '不明なエラーが発生しました') as ApiError;
     error.status = response.status;
+    if (response.status === HTTP_STATUS.UNAUTHORIZED && message === response.statusText) {
+      // サーバーがメッセージを返さなかった401は明示的に認証失敗メッセージをセット
+      error.message = 'メールアドレスまたはパスワードが正しくありません';
+    }
     if (data && typeof data === 'object') {
       if (typeof data.code === 'string') {
         error.code = data.code;
