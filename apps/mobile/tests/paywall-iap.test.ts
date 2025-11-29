@@ -70,7 +70,11 @@ test('purchasePremiumPlan resolves with server response', async () => {
     });
   });
 
-  const submitStub = mock.fn(async () => baseResponse);
+  let submitCallCount = 0;
+  const submitStub = async () => {
+    submitCallCount += 1;
+    return baseResponse;
+  };
   __setSubmitIapPurchaseImplementation(submitStub);
 
   const result = await purchasePremiumPlan();
@@ -78,7 +82,7 @@ test('purchasePremiumPlan resolves with server response', async () => {
   assert.equal(result.productId, PREMIUM_PRODUCT_ID);
   assert.equal(result.response.ok, true);
   assert.equal(result.response.premiumStatus.isPremium, true);
-  assert.equal(submitStub.mock.callCount(), 1);
+  assert.equal(submitCallCount, 1);
 });
 
 test('purchasePremiumPlan rejects when user cancels', async () => {
@@ -110,7 +114,11 @@ test('restorePurchases returns restored premium entries', async () => {
     });
   });
 
-  const submitStub = mock.fn(async () => baseResponse);
+  let submitCallCount = 0;
+  const submitStub = async () => {
+    submitCallCount += 1;
+    return baseResponse;
+  };
   __setSubmitIapPurchaseImplementation(submitStub);
 
   const result = await restorePurchases([PREMIUM_PRODUCT_ID]);
@@ -118,5 +126,5 @@ test('restorePurchases returns restored premium entries', async () => {
   assert.equal(result.restored.length, 1);
   assert.equal(result.restored[0].productId, PREMIUM_PRODUCT_ID);
   assert.equal(result.restored[0].response.premiumStatus.isPremium, true);
-  assert.equal(submitStub.mock.callCount(), 1);
+  assert.equal(submitCallCount, 1);
 });
