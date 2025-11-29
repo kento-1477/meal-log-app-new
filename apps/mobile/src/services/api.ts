@@ -152,11 +152,20 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     } catch (_error) {
       // ignore json parse errors
     }
-    const error = new Error(message || '不明なエラーが発生しました') as ApiError;
+    const fallbackMessages: Record<number, string> = {
+      [HTTP_STATUS.UNAUTHORIZED]: 'メールアドレスまたはパスワードが正しくありません',
+      [HTTP_STATUS.FORBIDDEN]: 'アクセスが許可されていません',
+      [HTTP_STATUS.NOT_FOUND]: 'リソースが見つかりません',
+      [HTTP_STATUS.BAD_REQUEST]: '入力内容が正しくありません',
+      [HTTP_STATUS.TOO_MANY_REQUESTS]: 'リクエストが多すぎます。時間をおいて再度お試しください',
+      [HTTP_STATUS.INTERNAL_ERROR]: 'サーバーでエラーが発生しました',
+      [HTTP_STATUS.NOT_IMPLEMENTED]: '未対応の機能です'
+    };
+    const error = new Error(message || fallbackMessages[response.status] || '不明なエラーが発生しました') as ApiError;
     error.status = response.status;
     if (response.status === HTTP_STATUS.UNAUTHORIZED && message === response.statusText) {
       // サーバーがメッセージを返さなかった401は明示的に認証失敗メッセージをセット
-      error.message = 'メールアドレスまたはパスワードが正しくありません';
+      error.message = fallbackMessages[HTTP_STATUS.UNAUTHORIZED];
     }
     if (data && typeof data === 'object') {
       if (typeof data.code === 'string') {
