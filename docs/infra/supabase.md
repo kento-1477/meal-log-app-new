@@ -49,3 +49,15 @@ limit 50;
 ## 旧インフラ停止のメモ
 - Cloudflare Worker: Supabase Functions への切替が完了したら、DNS/Route を Functions に向け、Worker を disable。
 - Render (apps/server): トラフィック切替後、インスタンス停止・課金停止。データは Supabase に移行済みか最終確認。
+
+## EAS env / ビルドプロファイル
+- production: ストア提出用 (`EXPO_PUBLIC_API_BASE_URL` は Supabase Functions に固定)
+- preview: 内部配布 (internal)
+- development: dev client + iOS シミュレータ用 (`ios.simulator=true`)
+
+## 開発ビルド (dev client) が必要な理由
+- Expo Go では `expo-in-app-purchases` や `@react-native-clipboard/clipboard` が動かないため、dev client を使う。
+- 手順（apps/mobile で実行）:
+  1. `eas build -p ios --profile development`（シミュレータ用開発ビルド）
+  2. `eas build:run -p ios --profile development` でシミュレータにインストール
+  3. `npx expo start --dev-client --host tunnel` で Metro を起動し、`i` で接続
