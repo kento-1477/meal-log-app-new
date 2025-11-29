@@ -39,6 +39,7 @@ import {
   getFavorites,
   getMealLogShare,
   getStreak,
+  getSession,
   postMealLog,
   type MealLogResponse,
   type ApiError,
@@ -113,6 +114,7 @@ export default function ChatScreen() {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [bottomSectionHeight, setBottomSectionHeight] = useState(0);
   const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const usageRefreshInFlight = useRef(false);
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
 
@@ -203,8 +205,17 @@ export default function ChatScreen() {
     }
   }, [favoritesVisible, favoritesQuery]);
 
+  const usageResetHasPassed = useMemo(() => {
+    if (!usage?.resetsAt) return false;
+    const resetMs = Date.parse(usage.resetsAt);
+    return Number.isFinite(resetMs) && resetMs <= Date.now();
+  }, [usage?.resetsAt]);
+
   useEffect(() => {
     if (!hasUsage || usagePlan !== 'FREE' || (usageRemaining ?? 0) > 0) {
+      return;
+    }
+    if (usageResetHasPassed) {
       return;
     }
     let cancelled = false;
@@ -221,7 +232,43 @@ export default function ChatScreen() {
     return () => {
       cancelled = true;
     };
-  }, [hasUsage, usagePlan, usageRemaining]);
+  }, [hasUsage, usagePlan, usageRemaining, usageResetHasPassed]);
+
+  useEffect(() => {
+    if (!usage) return;
+    if (usage.remaining > 0 || usage.credits > 0) return;
+    if (!usageResetHasPassed) return;
+    if (usageRefreshInFlight.current) return;
+
+    let cancelled = false;
+    usageRefreshInFlight.current = true;
+
+    (async () => {
+      try {
+        const session = await getSession();
+        if (cancelled) return;
+        if (session.authenticated && session.user) {
+          setUser(session.user);
+          setUsage(session.usage ?? null);
+          setStatus('authenticated');
+        } else {
+          setUser(null);
+          setUsage(null);
+          setStatus('unauthenticated');
+        }
+      } catch (error) {
+        console.warn('Failed to refresh usage after reset', error);
+      } finally {
+        if (!cancelled) {
+          usageRefreshInFlight.current = false;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setStatus, setUsage, setUser, usage, usageResetHasPassed]);
 
   useEffect(() => {
     if (!hasStreak || userPlan !== 'FREE') {
@@ -328,7 +375,7 @@ export default function ChatScreen() {
     return Math.max(windowHeight - (tabBarHeight + headerAllowance), 320);
   }, [enhancedExchange, inset.top, tabBarHeight, windowHeight]);
 
-  const canSend = !usage || usage.remaining > 0 || usage.credits > 0;
+  const canSend = !usage || usage.remaining > 0 || usage.credits > 0 || usageResetHasPassed;
   const hasTypedInput = input.trim().length > 0;
   const hasAttachment = Boolean(composingImageUri);
   const canSubmitMessage = hasTypedInput || hasAttachment;
