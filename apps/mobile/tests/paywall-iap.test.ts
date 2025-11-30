@@ -52,20 +52,23 @@ test.afterEach(() => {
 });
 
 test('purchasePremiumPlan resolves with server response', async () => {
-  __setImplementation('purchaseItemAsync', async () => {
-    queueMicrotask(() => {
-      __emit({
-        responseCode: IAPResponseCode.OK,
-        results: [
-          {
-            productId: PREMIUM_PRODUCT_ID,
-            transactionId: 'txn-premium-1',
-            originalTransactionIdentifier: 'orig-premium-1',
-            acknowledged: false,
-            quantity: 1,
-            transactionReceipt: 'receipt-premium',
-          },
-        ],
+  __setImplementation('purchaseItemAsync', () => {
+    return new Promise<void>((resolve) => {
+      queueMicrotask(() => {
+        __emit({
+          responseCode: IAPResponseCode.OK,
+          results: [
+            {
+              productId: PREMIUM_PRODUCT_ID,
+              transactionId: 'txn-premium-1',
+              originalTransactionIdentifier: 'orig-premium-1',
+              acknowledged: false,
+              quantity: 1,
+              transactionReceipt: 'receipt-premium',
+            },
+          ],
+        });
+        resolve();
       });
     });
   });
@@ -86,9 +89,12 @@ test('purchasePremiumPlan resolves with server response', async () => {
 });
 
 test('purchasePremiumPlan rejects when user cancels', async () => {
-  __setImplementation('purchaseItemAsync', async () => {
-    queueMicrotask(() => {
-      __emit({ responseCode: IAPResponseCode.USER_CANCELED, results: [] });
+  __setImplementation('purchaseItemAsync', () => {
+    return new Promise<void>((resolve) => {
+      queueMicrotask(() => {
+        __emit({ responseCode: IAPResponseCode.USER_CANCELED, results: [] });
+        resolve();
+      });
     });
   });
 
@@ -96,20 +102,23 @@ test('purchasePremiumPlan rejects when user cancels', async () => {
 });
 
 test('restorePurchases returns restored premium entries', async () => {
-  __setImplementation('restorePurchasesAsync', async () => {
-    queueMicrotask(() => {
-      __emit({
-        responseCode: IAPResponseCode.OK,
-        results: [
-          {
-            productId: PREMIUM_PRODUCT_ID,
-            transactionId: 'txn-premium-restore',
-            originalTransactionIdentifier: 'orig-premium-restore',
-            acknowledged: false,
-            quantity: 1,
-            transactionReceipt: 'receipt-premium-restore',
-          },
-        ],
+  __setImplementation('restorePurchasesAsync', () => {
+    return new Promise<void>((resolve) => {
+      queueMicrotask(() => {
+        __emit({
+          responseCode: IAPResponseCode.OK,
+          results: [
+            {
+              productId: PREMIUM_PRODUCT_ID,
+              transactionId: 'txn-premium-restore',
+              originalTransactionIdentifier: 'orig-premium-restore',
+              acknowledged: false,
+              quantity: 1,
+              transactionReceipt: 'receipt-premium-restore',
+            },
+          ],
+        });
+        resolve();
       });
     });
   });
