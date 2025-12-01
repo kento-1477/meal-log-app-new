@@ -52,25 +52,32 @@ test.afterEach(() => {
 });
 
 test('purchasePremiumPlan resolves with server response', async () => {
-  __setImplementation('purchaseItemAsync', async () => {
-    queueMicrotask(() => {
-      __emit({
-        responseCode: IAPResponseCode.OK,
-        results: [
-          {
-            productId: PREMIUM_PRODUCT_ID,
-            transactionId: 'txn-premium-1',
-            originalTransactionIdentifier: 'orig-premium-1',
-            acknowledged: false,
-            quantity: 1,
-            transactionReceipt: 'receipt-premium',
-          },
-        ],
+  __setImplementation('purchaseItemAsync', () => {
+    return new Promise<void>((resolve) => {
+      queueMicrotask(() => {
+        __emit({
+          responseCode: IAPResponseCode.OK,
+          results: [
+            {
+              productId: PREMIUM_PRODUCT_ID,
+              transactionId: 'txn-premium-1',
+              originalTransactionIdentifier: 'orig-premium-1',
+              acknowledged: false,
+              quantity: 1,
+              transactionReceipt: 'receipt-premium',
+            },
+          ],
+        });
+        resolve();
       });
     });
   });
 
-  const submitStub = mock.fn(async () => baseResponse);
+  let submitCallCount = 0;
+  const submitStub = async () => {
+    submitCallCount += 1;
+    return baseResponse;
+  };
   __setSubmitIapPurchaseImplementation(submitStub);
 
   const result = await purchasePremiumPlan();
@@ -78,13 +85,16 @@ test('purchasePremiumPlan resolves with server response', async () => {
   assert.equal(result.productId, PREMIUM_PRODUCT_ID);
   assert.equal(result.response.ok, true);
   assert.equal(result.response.premiumStatus.isPremium, true);
-  assert.equal(submitStub.mock.callCount(), 1);
+  assert.equal(submitCallCount, 1);
 });
 
 test('purchasePremiumPlan rejects when user cancels', async () => {
-  __setImplementation('purchaseItemAsync', async () => {
-    queueMicrotask(() => {
-      __emit({ responseCode: IAPResponseCode.USER_CANCELED, results: [] });
+  __setImplementation('purchaseItemAsync', () => {
+    return new Promise<void>((resolve) => {
+      queueMicrotask(() => {
+        __emit({ responseCode: IAPResponseCode.USER_CANCELED, results: [] });
+        resolve();
+      });
     });
   });
 
@@ -92,25 +102,32 @@ test('purchasePremiumPlan rejects when user cancels', async () => {
 });
 
 test('restorePurchases returns restored premium entries', async () => {
-  __setImplementation('restorePurchasesAsync', async () => {
-    queueMicrotask(() => {
-      __emit({
-        responseCode: IAPResponseCode.OK,
-        results: [
-          {
-            productId: PREMIUM_PRODUCT_ID,
-            transactionId: 'txn-premium-restore',
-            originalTransactionIdentifier: 'orig-premium-restore',
-            acknowledged: false,
-            quantity: 1,
-            transactionReceipt: 'receipt-premium-restore',
-          },
-        ],
+  __setImplementation('restorePurchasesAsync', () => {
+    return new Promise<void>((resolve) => {
+      queueMicrotask(() => {
+        __emit({
+          responseCode: IAPResponseCode.OK,
+          results: [
+            {
+              productId: PREMIUM_PRODUCT_ID,
+              transactionId: 'txn-premium-restore',
+              originalTransactionIdentifier: 'orig-premium-restore',
+              acknowledged: false,
+              quantity: 1,
+              transactionReceipt: 'receipt-premium-restore',
+            },
+          ],
+        });
+        resolve();
       });
     });
   });
 
-  const submitStub = mock.fn(async () => baseResponse);
+  let submitCallCount = 0;
+  const submitStub = async () => {
+    submitCallCount += 1;
+    return baseResponse;
+  };
   __setSubmitIapPurchaseImplementation(submitStub);
 
   const result = await restorePurchases([PREMIUM_PRODUCT_ID]);
@@ -118,5 +135,5 @@ test('restorePurchases returns restored premium entries', async () => {
   assert.equal(result.restored.length, 1);
   assert.equal(result.restored[0].productId, PREMIUM_PRODUCT_ID);
   assert.equal(result.restored[0].response.premiumStatus.isPremium, true);
-  assert.equal(submitStub.mock.callCount(), 1);
+  assert.equal(submitCallCount, 1);
 });
