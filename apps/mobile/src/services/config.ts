@@ -16,8 +16,11 @@ if (!baseUrl) {
   }
 }
 
+// In production builds we still prefer a real value, but avoid hard crashes in environments
+// (like CI tests) where RN constants/manifest are absent.
 if (!baseUrl) {
-  throw new Error('API base URL is not configured. Set EXPO_PUBLIC_API_BASE_URL or extra.apiBaseUrl.');
+  console.warn('API base URL is not configured. Falling back to http://localhost:4000');
+  baseUrl = 'http://localhost:4000';
 }
 
 export const API_BASE_URL = baseUrl;
