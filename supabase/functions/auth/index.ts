@@ -1,6 +1,6 @@
 import { RegisterRequestSchema, LoginRequestSchema } from '@shared/index.js';
 import bcrypt from 'bcryptjs';
-import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
+import { createApp, HTTP_STATUS, HttpError, handleError } from '../_shared/http.ts';
 import { clearAuth, getAuthSession, persistAuth, signUserToken } from '../_shared/auth.ts';
 import { evaluateAiUsage, summarizeUsageStatus } from '../_shared/ai.ts';
 import { supabaseAdmin } from '../_shared/supabase.ts';
@@ -83,7 +83,7 @@ const handleRegister = async (c: Hono.Context) => {
     );
   } catch (err) {
     console.error('register error', err);
-    throw err;
+    return handleError(c, err);
   }
 };
 
@@ -152,7 +152,7 @@ const handleLogin = async (c: Hono.Context) => {
     });
   } catch (err) {
     console.error('login error', err);
-    throw err;
+    return handleError(c, err);
   }
 };
 
