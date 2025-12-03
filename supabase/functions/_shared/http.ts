@@ -85,12 +85,17 @@ export function handleError(c: Context, error: unknown) {
     );
   }
 
-  if (error instanceof ZodError) {
+  const isZodError =
+    error instanceof ZodError ||
+    (error && typeof error === 'object' && (error as any).name === 'ZodError');
+
+  if (isZodError) {
+    const zod = error as ZodError;
     return c.json(
       {
         error: '入力内容が正しくありません',
         code: 'VALIDATION_ERROR',
-        details: error.errors,
+        details: zod.errors ?? (zod as any).issues,
       },
       HTTP_STATUS.BAD_REQUEST as ContentfulStatusCode,
     );

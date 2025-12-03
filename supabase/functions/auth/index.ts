@@ -98,7 +98,18 @@ const handleLogin = async (c: Hono.Context) => {
       SERVICE_ROLE_KEY: Deno.env.get('SERVICE_ROLE_KEY') ? 'set' : 'missing',
     });
     const body = await c.req.json();
-    const input = LoginRequestSchema.parse(body);
+    let input: ReturnType<typeof LoginRequestSchema['parse']>;
+    try {
+      input = LoginRequestSchema.parse(body);
+    } catch (err) {
+      console.error('login validation error', err);
+      throw new HttpError('入力内容が正しくありません', {
+        status: HTTP_STATUS.BAD_REQUEST,
+        code: 'VALIDATION_ERROR',
+        expose: true,
+        data: (err as any)?.issues,
+      });
+    }
 
     const { data: record, error } = await supabaseAdmin
       .from('User')

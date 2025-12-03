@@ -33,7 +33,15 @@ export async function authenticateUser(params: { email: string; password: string
     });
   }
 
-  const valid = await argon2.verify(user.passwordHash, params.password);
+  let valid = false;
+  try {
+    valid = await argon2.verify(user.passwordHash, params.password);
+  } catch (error) {
+    // e.g. bcrypt hashes saved before migration will fail argon2.verify
+    logger.warn({ err: error, userId: user.id }, 'Failed to verify password hash; treating as invalid credentials');
+    valid = false;
+  }
+
   if (!valid) {
     throw Object.assign(new Error('メールアドレスまたはパスワードが正しくありません'), {
       statusCode: 401,
