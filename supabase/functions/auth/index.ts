@@ -1,6 +1,6 @@
 import { RegisterRequestSchema, LoginRequestSchema } from '@shared/index.js';
 import bcrypt from 'bcryptjs';
-import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
+import { createApp, HTTP_STATUS, HttpError, handleError } from '../_shared/http.ts';
 import { clearAuth, getAuthSession, persistAuth, signUserToken } from '../_shared/auth.ts';
 import { evaluateAiUsage, summarizeUsageStatus } from '../_shared/ai.ts';
 import { supabaseAdmin } from '../_shared/supabase.ts';
@@ -83,7 +83,7 @@ const handleRegister = async (c: Hono.Context) => {
     );
   } catch (err) {
     console.error('register error', err);
-    throw err;
+    return handleError(c, err);
   }
 };
 
@@ -98,7 +98,18 @@ const handleLogin = async (c: Hono.Context) => {
       SERVICE_ROLE_KEY: Deno.env.get('SERVICE_ROLE_KEY') ? 'set' : 'missing',
     });
     const body = await c.req.json();
-    const input = LoginRequestSchema.parse(body);
+    let input: ReturnType<typeof LoginRequestSchema['parse']>;
+    try {
+      input = LoginRequestSchema.parse(body);
+    } catch (err) {
+      console.error('login validation error', err);
+      throw new HttpError('入力内容が正しくありません', {
+        status: HTTP_STATUS.BAD_REQUEST,
+        code: 'VALIDATION_ERROR',
+        expose: true,
+        data: (err as any)?.issues,
+      });
+    }
 
     const { data: record, error } = await supabaseAdmin
       .from('User')
@@ -141,7 +152,7 @@ const handleLogin = async (c: Hono.Context) => {
     });
   } catch (err) {
     console.error('login error', err);
-    throw err;
+    return handleError(c, err);
   }
 };
 

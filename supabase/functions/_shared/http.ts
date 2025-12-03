@@ -74,23 +74,36 @@ export function createApp() {
 }
 
 export function handleError(c: Context, error: unknown) {
-  if (error instanceof HttpError) {
+  // Accept HttpError or any object with a numeric `status` to avoid instanceof mismatches after bundling
+  const isHttpError =
+    error instanceof HttpError ||
+    (error && typeof error === 'object' && typeof (error as any).status === 'number');
+
+  if (isHttpError) {
+    const err = error as HttpError;
+    const status = typeof err.status === 'number' ? (err.status as ContentfulStatusCode) : HTTP_STATUS.INTERNAL_ERROR;
+    const expose = (err as any).expose !== false;
     return c.json(
       {
-        error: error.expose === false ? 'Internal Server Error' : error.message,
-        code: error.code,
-        data: error.data,
+        error: expose ? err.message : 'Internal Server Error',
+        code: err.code,
+        data: (err as any).data,
       },
-      error.status as ContentfulStatusCode,
+      status,
     );
   }
 
-  if (error instanceof ZodError) {
+  const isZodError =
+    error instanceof ZodError ||
+    (error && typeof error === 'object' && (error as any).name === 'ZodError');
+
+  if (isZodError) {
+    const zod = error as ZodError;
     return c.json(
       {
         error: '入力内容が正しくありません',
         code: 'VALIDATION_ERROR',
-        details: error.errors,
+        details: zod.errors ?? (zod as any).issues,
       },
       HTTP_STATUS.BAD_REQUEST as ContentfulStatusCode,
     );
