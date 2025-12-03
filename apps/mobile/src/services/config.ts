@@ -9,9 +9,11 @@ const isTestEnv =
 
 let baseUrl = resolvedBaseUrl;
 
-if (!baseUrl && isTestEnv) {
-  // In test environments, allow a local fallback to prevent imports from crashing.
-  baseUrl = 'http://localhost:4000';
+if (!baseUrl) {
+  const allowFallback = isTestEnv || process.env.NODE_ENV !== 'production';
+  if (allowFallback) {
+    baseUrl = 'http://localhost:4000';
+  }
 }
 
 if (!baseUrl) {
