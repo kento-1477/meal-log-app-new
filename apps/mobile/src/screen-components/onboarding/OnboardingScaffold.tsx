@@ -54,7 +54,8 @@ export function OnboardingScaffold({
   const { locale } = useTranslation();
   const isJapanese = isJapaneseLocale(locale);
 
-  const keyboardOffset = Platform.OS === 'ios' ? insets.top + 24 : 0;
+  // Avoid leaving extra gap above the keyboard; push content right up to the keyboard edge.
+  const keyboardOffset = 0;
   const hasHeaderAction = Boolean(headerActionLabel && onHeaderAction);
   const showTopAction = hasHeaderAction && headerActionPosition === 'left';
   const showRightAction = hasHeaderAction && !showTopAction;
