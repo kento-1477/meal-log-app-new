@@ -74,14 +74,22 @@ export function createApp() {
 }
 
 export function handleError(c: Context, error: unknown) {
-  if (error instanceof HttpError) {
+  // Accept HttpError or any object with a numeric `status` to avoid instanceof mismatches after bundling
+  const isHttpError =
+    error instanceof HttpError ||
+    (error && typeof error === 'object' && typeof (error as any).status === 'number');
+
+  if (isHttpError) {
+    const err = error as HttpError;
+    const status = typeof err.status === 'number' ? (err.status as ContentfulStatusCode) : HTTP_STATUS.INTERNAL_ERROR;
+    const expose = (err as any).expose !== false;
     return c.json(
       {
-        error: error.expose === false ? 'Internal Server Error' : error.message,
-        code: error.code,
-        data: error.data,
+        error: expose ? err.message : 'Internal Server Error',
+        code: err.code,
+        data: (err as any).data,
       },
-      error.status as ContentfulStatusCode,
+      status,
     );
   }
 
