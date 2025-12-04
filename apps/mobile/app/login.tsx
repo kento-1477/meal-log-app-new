@@ -67,7 +67,12 @@ export default function LoginScreen() {
       const needsOnboarding = !(response?.onboarding?.completed ?? false);
       router.replace(needsOnboarding ? '/(onboarding)/welcome' : '/(tabs)/chat');
     } catch (err) {
-      setError((err as Error).message ?? t('login.error.generic'));
+      const apiError = err as { message?: string; status?: number };
+      if (apiError.status === 401) {
+        setError(t('login.error.invalidCredentials'));
+      } else {
+        setError(apiError.message ?? t('login.error.generic'));
+      }
       setStatus('error');
       setOnboarding(null);
     } finally {

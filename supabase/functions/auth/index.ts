@@ -43,8 +43,9 @@ const handleRegister = async (c: Hono.Context) => {
     }
 
     if (existing) {
-      throw new HttpError('登録手続きを完了できませんでした。入力内容をご確認ください。', {
+      throw new HttpError('このメールアドレスのアカウントは既に存在します。ログインをお試しください。', {
         status: HTTP_STATUS.BAD_REQUEST,
+        code: 'auth.email_exists',
         expose: true,
       });
     }
@@ -59,7 +60,14 @@ const handleRegister = async (c: Hono.Context) => {
 
     if (insertError || !row) {
       console.error('register: failed to create user', insertError);
-      throw new HttpError('登録手続きを完了できませんでした。入力内容をご確認ください。', {
+      if (insertError?.code === '23505') {
+        throw new HttpError('このメールアドレスのアカウントは既に存在します。ログインをお試しください。', {
+          status: HTTP_STATUS.BAD_REQUEST,
+          code: 'auth.email_exists',
+          expose: true,
+        });
+      }
+      throw new HttpError('登録手続きを完了できませんでした。時間をおいて再度お試しください。', {
         status: HTTP_STATUS.INTERNAL_ERROR,
         expose: true,
       });
