@@ -111,7 +111,7 @@ export default function OnboardingAnalysisScreen() {
   }, [mutation.isSuccess]);
 
   const handleContinue = () => {
-    router.replace('/(tabs)/dashboard');
+    router.replace('/(tabs)/chat');
   };
 
   const renderContent = () => {
@@ -203,9 +203,7 @@ export default function OnboardingAnalysisScreen() {
               </View>
             </View>
           ) : null}
-          <Text style={styles.link} onPress={handleContinue}>
-            {t('onboarding.analysis.goHome')}
-          </Text>
+          {/* button removed; handled by primary CTA */}
         </View>
       </View>
     );
