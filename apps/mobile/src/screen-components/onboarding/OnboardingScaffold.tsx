@@ -173,7 +173,7 @@ export function OnboardingScaffold({
               )}
             </View>
 
-            <View style={[styles.footer, { paddingBottom: Math.max(0, insets.bottom) }]}>
+            <View style={[styles.footer, { paddingBottom: 0 }]}>
               {footer}
               {onNext ? (
                 <PrimaryButton
