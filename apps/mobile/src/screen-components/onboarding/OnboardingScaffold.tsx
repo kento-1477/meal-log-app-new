@@ -173,7 +173,7 @@ export function OnboardingScaffold({
               )}
             </View>
 
-            <View style={[styles.footer, { paddingBottom: Math.max(12, insets.bottom + 6) }]}>
+            <View style={[styles.footer, { paddingBottom: Math.max(6, insets.bottom + 4) }]}>
               {footer}
               {onNext ? (
                 <PrimaryButton
@@ -251,8 +251,8 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingHorizontal: 24,
-    paddingTop: 10,
-    gap: 12,
+    paddingTop: 8,
+    gap: 10,
     backgroundColor: 'rgba(255,255,255,0.95)',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
