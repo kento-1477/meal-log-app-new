@@ -1,5 +1,6 @@
 import { RegisterRequestSchema, LoginRequestSchema } from '@shared/index.js';
 import bcrypt from 'bcryptjs';
+import { ZodError, type ZodIssue } from 'zod';
 import { createApp, HTTP_STATUS, HttpError, handleError } from '../_shared/http.ts';
 import { clearAuth, getAuthSession, persistAuth, signUserToken } from '../_shared/auth.ts';
 import { evaluateAiUsage, summarizeUsageStatus } from '../_shared/ai.ts';
@@ -14,6 +15,47 @@ const LOGIN_PATHS = ['/login', '/api/login', '/auth/login', '/auth/api/login'] a
 const LOGOUT_PATHS = ['/logout', '/api/logout', '/auth/logout', '/auth/api/logout'] as const;
 const SESSION_PATHS = ['/session', '/api/session', '/auth/session', '/auth/api/session'] as const;
 
+function formatAuthValidationError(issues: ZodIssue[]) {
+  const first = issues?.[0];
+  const field = first?.path?.[0];
+  if (!first) {
+    return { message: '入力内容が正しくありません', code: 'VALIDATION_ERROR' };
+  }
+
+  if (field === 'email') {
+    return {
+      message: 'メールアドレスの形式が正しくありません。',
+      code: 'auth.invalid_email',
+      details: issues,
+    };
+  }
+
+  if (field === 'password') {
+    if (first.code === 'too_small') {
+      return {
+        message: 'パスワードは8文字以上で入力してください。',
+        code: 'auth.password_too_short',
+        details: issues,
+      };
+    }
+    return {
+      message: 'パスワードの入力内容を確認してください。',
+      code: 'auth.password_invalid',
+      details: issues,
+    };
+  }
+
+  if (first.code === 'invalid_type') {
+    return {
+      message: 'メールアドレスとパスワードを入力してください。',
+      code: 'auth.required',
+      details: issues,
+    };
+  }
+
+  return { message: '入力内容が正しくありません', code: 'VALIDATION_ERROR', details: issues };
+}
+
 const handleRegister = async (c: Hono.Context) => {
   try {
     console.log('register called', c.req.url);
@@ -25,7 +67,19 @@ const handleRegister = async (c: Hono.Context) => {
       SERVICE_ROLE_KEY: Deno.env.get('SERVICE_ROLE_KEY') ? 'set' : 'missing',
     });
     const body = await c.req.json();
-    const input = RegisterRequestSchema.parse(body);
+    let input: ReturnType<typeof RegisterRequestSchema['parse']>;
+    try {
+      input = RegisterRequestSchema.parse(body);
+    } catch (err) {
+      console.error('register validation error', err);
+      const formatted = err instanceof ZodError ? formatAuthValidationError(err.issues) : formatAuthValidationError([]);
+      throw new HttpError(formatted.message, {
+        status: HTTP_STATUS.BAD_REQUEST,
+        code: formatted.code,
+        expose: true,
+        data: formatted.details,
+      });
+    }
 
     const { data: existing, error: existingError } = await supabaseAdmin
       .from('User')
@@ -111,11 +165,12 @@ const handleLogin = async (c: Hono.Context) => {
       input = LoginRequestSchema.parse(body);
     } catch (err) {
       console.error('login validation error', err);
-      throw new HttpError('入力内容が正しくありません', {
+      const formatted = err instanceof ZodError ? formatAuthValidationError(err.issues) : formatAuthValidationError([]);
+      throw new HttpError(formatted.message, {
         status: HTTP_STATUS.BAD_REQUEST,
-        code: 'VALIDATION_ERROR',
+        code: formatted.code,
         expose: true,
-        data: (err as any)?.issues,
+        data: formatted.details,
       });
     }
 
