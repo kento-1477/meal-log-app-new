@@ -1,7 +1,7 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { AuroraBackground } from '@/components/AuroraBackground';
 import { colors } from '@/theme/colors';
 import { fontFamilies, textStyles } from '@/theme/typography';
@@ -54,10 +54,25 @@ export function OnboardingScaffold({
   const { locale } = useTranslation();
   const isJapanese = isJapaneseLocale(locale);
 
-  const keyboardOffset = Platform.OS === 'ios' ? insets.top + 24 : 0;
+  // Avoid leaving extra gap above the keyboard; push content right up to the keyboard edge.
+  const keyboardOffset = 0;
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const hasHeaderAction = Boolean(headerActionLabel && onHeaderAction);
   const showTopAction = hasHeaderAction && headerActionPosition === 'left';
   const showRightAction = hasHeaderAction && !showTopAction;
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () =>
+      setKeyboardVisible(true),
+    );
+    const hideSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () =>
+      setKeyboardVisible(false),
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const renderHeaderAction = (placement: 'right' | 'top') => {
     if (!headerActionLabel || !onHeaderAction) {
@@ -98,7 +113,7 @@ export function OnboardingScaffold({
         style={styles.avoiding}
         keyboardVerticalOffset={keyboardOffset}
       >
-        <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top || 12 }]}>
+        <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top || 12 }]} edges={['top', 'left', 'right']}>
           <View style={styles.wrapper}>
             <View style={styles.headerContainer}>
               {showTopAction ? <View style={styles.headerTopRow}>{renderHeaderAction('top')}</View> : null}
@@ -172,7 +187,7 @@ export function OnboardingScaffold({
               )}
             </View>
 
-            <View style={[styles.footer, { paddingBottom: Math.max(24, insets.bottom + 12) }]}>
+            <View style={[styles.footer, { paddingBottom: keyboardVisible ? 0 : Math.max(16, insets.bottom + 12) }]}>
               {footer}
               {onNext ? (
                 <PrimaryButton
@@ -250,8 +265,8 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingHorizontal: 24,
-    paddingTop: 12,
-    gap: 12,
+    paddingTop: 8,
+    gap: 10,
     backgroundColor: 'rgba(255,255,255,0.95)',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,

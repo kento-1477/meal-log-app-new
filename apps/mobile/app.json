@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Meal Log",
-    "slug": "meal-log",
+    "slug": "meal-log-app",
     "scheme": "meallog",
     "version": "0.1.0",
     "platforms": ["ios", "android"],
@@ -75,6 +75,7 @@
           "root": "app"
         }
       ],
+      "./plugins/withRNScreensPod.js",
       [
         "expo-secure-store",
         {
@@ -96,7 +97,7 @@
         "root": "app"
       },
       "eas": {
-        "projectId": "632c3f03-537f-430c-baf5-c2add0d5d08d"
+        "projectId": "4bdc2bdf-00de-4667-87fb-3f70a2c3effa"
       }
     }
   }
