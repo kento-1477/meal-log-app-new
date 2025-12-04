@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { AuroraBackground } from '@/components/AuroraBackground';
 import { colors } from '@/theme/colors';
 import { fontFamilies, textStyles } from '@/theme/typography';
