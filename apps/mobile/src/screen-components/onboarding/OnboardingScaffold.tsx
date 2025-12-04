@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -56,9 +56,23 @@ export function OnboardingScaffold({
 
   // Avoid leaving extra gap above the keyboard; push content right up to the keyboard edge.
   const keyboardOffset = 0;
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const hasHeaderAction = Boolean(headerActionLabel && onHeaderAction);
   const showTopAction = hasHeaderAction && headerActionPosition === 'left';
   const showRightAction = hasHeaderAction && !showTopAction;
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () =>
+      setKeyboardVisible(true),
+    );
+    const hideSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () =>
+      setKeyboardVisible(false),
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const renderHeaderAction = (placement: 'right' | 'top') => {
     if (!headerActionLabel || !onHeaderAction) {
@@ -173,7 +187,7 @@ export function OnboardingScaffold({
               )}
             </View>
 
-            <View style={[styles.footer, { paddingBottom: 0 }]}>
+            <View style={[styles.footer, { paddingBottom: keyboardVisible ? 0 : Math.max(16, insets.bottom + 12) }]}>
               {footer}
               {onNext ? (
                 <PrimaryButton
