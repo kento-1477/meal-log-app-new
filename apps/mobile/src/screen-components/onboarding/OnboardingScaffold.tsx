@@ -99,7 +99,7 @@ export function OnboardingScaffold({
         style={styles.avoiding}
         keyboardVerticalOffset={keyboardOffset}
       >
-        <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top || 12 }]}>
+        <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top || 12 }]} edges={['top', 'left', 'right']}>
           <View style={styles.wrapper}>
             <View style={styles.headerContainer}>
               {showTopAction ? <View style={styles.headerTopRow}>{renderHeaderAction('top')}</View> : null}
