@@ -9,6 +9,8 @@
     "packages/shared"
   ],
   "scripts": {
+    "supabase:serve": "cd supabase && supabase functions serve --env-file .env.supabase.local",
+    "supabase:deploy": "cd supabase && supabase functions deploy --import-map ./functions/deno.json auth meal-log iap referral ai",
     "dev:server": "npm run dev --workspace apps/server",
     "dev:mobile": "npm run start --workspace apps/mobile",
     "lint": "eslint .",
@@ -37,6 +39,9 @@
     "prettier": "^3.3.3",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "expo-router": "~6.0.11",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-screens": "~4.16.0"
   }
 }
