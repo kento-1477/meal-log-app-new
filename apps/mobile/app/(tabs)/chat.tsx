@@ -19,6 +19,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -31,6 +32,7 @@ import { NutritionCard } from '@/components/NutritionCard';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { AuroraBackground } from '@/components/AuroraBackground';
 import { BrandHeader } from '@/components/BrandHeader';
+import { PrimaryButton } from '@/components/PrimaryButton';
 import { useChatStore } from '@/store/chat';
 import { useSessionStore } from '@/store/session';
 import {
@@ -375,7 +377,17 @@ export default function ChatScreen() {
     return Math.max(windowHeight - (tabBarHeight + headerAllowance), 320);
   }, [enhancedExchange, inset.top, tabBarHeight, windowHeight]);
 
+  const usageProgress = useMemo(() => {
+    if (!usage || usage.limit <= 0 || usageResetHasPassed) {
+      return 0;
+    }
+    const usedCount = Math.max(0, usage.limit - usage.remaining);
+    const ratio = usedCount / usage.limit;
+    return Math.max(0, Math.min(1, ratio));
+  }, [usage, usageResetHasPassed]);
+
   const canSend = !usage || usage.remaining > 0 || usage.credits > 0 || usageResetHasPassed;
+  const isLimitReached = Boolean(usage) && !canSend;
   const hasTypedInput = input.trim().length > 0;
   const hasAttachment = Boolean(composingImageUri);
   const canSubmitMessage = hasTypedInput || hasAttachment;
@@ -732,9 +744,6 @@ export default function ChatScreen() {
     );
   };
 
-  const planLabel = userPlan === 'PREMIUM' ? t('usage.plan.standard') : t('usage.plan.free');
-  const headerSubtitle = planLabel;
-
   return (
     <AuroraBackground style={styles.container}>
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -743,22 +752,31 @@ export default function ChatScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={styles.headerWrap}>
-            <BrandHeader
-              title={t('chat.header')}
-              subtitle={headerSubtitle}
-              actionLabel={userPlan === 'FREE' ? t('usage.limitModal.purchase') : undefined}
-              onAction={userPlan === 'FREE' ? handleOpenPaywall : undefined}
-            />
+            <BrandHeader title={t('chat.header')} />
             {usage ? (
-              <View style={styles.statusPillRow}>
-                <View style={styles.statusPill}>
-                  <Text style={styles.statusLabel}>{t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}</Text>
+              <View style={styles.usageBlock}>
+                <View
+                  style={styles.usageProgressTrack}
+                  accessibilityRole="progressbar"
+                  accessibilityValue={{ now: Math.round(usageProgress * 100), min: 0, max: 100 }}
+                >
+                  <LinearGradient
+                    colors={[colors.accent, colors.accentSage]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[styles.usageProgressFill, { width: `${usageProgress * 100}%` }]}
+                  />
                 </View>
-                {usage.credits > 0 ? (
+                <View style={styles.statusPillRow}>
                   <View style={styles.statusPill}>
-                    <Text style={styles.statusLabel}>{t('usage.banner.credits', { credits: usage.credits })}</Text>
+                    <Text style={styles.statusLabel}>{t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}</Text>
                   </View>
-                ) : null}
+                  {usage.credits > 0 ? (
+                    <View style={styles.statusPill}>
+                      <Text style={styles.statusLabel}>{t('usage.banner.credits', { credits: usage.credits })}</Text>
+                    </View>
+                  ) : null}
+                </View>
               </View>
             ) : null}
           </View>
@@ -798,62 +816,72 @@ export default function ChatScreen() {
           style={styles.bottomSection}
           onLayout={(event) => setBottomSectionHeight(event.nativeEvent.layout.height)}
         >
-          {composingImageUri ? (
-            <View style={[styles.previewContainer, keyboardVisible && styles.previewHidden]}>
-              <Image source={{ uri: composingImageUri }} style={styles.preview} />
-              <TouchableOpacity onPress={() => setComposingImage(null)} style={styles.removeImage}>
-                <Text style={{ color: '#fff' }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-          {!canSend ? (
-            <View style={styles.limitBanner}>
-              <Text style={styles.limitHint} numberOfLines={2} ellipsizeMode="tail">
+          {isLimitReached ? (
+            <LinearGradient
+              colors={[colors.accentSoft, colors.cardAuroraMid]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.limitCard, { paddingBottom: Math.max(18, inset.bottom + 4) }]}
+            >
+              <Text style={styles.limitCardTitle}>{t('chat.limitReached.title')}</Text>
+              <Text style={styles.limitCardDescription} numberOfLines={2} ellipsizeMode="tail">
                 {t('usage.limitHint')}
               </Text>
-            </View>
-          ) : null}
-          <View style={styles.quickActionsRow}>
-            {quickActions.map((action) => (
-              <TouchableOpacity key={action.key} style={styles.quickAction} onPress={action.onPress}>
-                <Feather name={action.icon} size={14} color={colors.textPrimary} />
-                <Text style={styles.quickActionLabel}>{action.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <View
-            style={[styles.composerArea, styles.composerDocked, { paddingBottom: Math.max(12, inset.bottom) }]}
-          >
-            <View style={styles.inputRow}>
-              <TextInput
-                style={styles.textInput}
-                placeholder={t('chat.placeholder')}
-                value={input}
-                onChangeText={setInput}
-                multiline={false}
-                numberOfLines={1}
-                blurOnSubmit={false}
-                returnKeyType={canSend ? 'send' : 'done'}
-                enablesReturnKeyAutomatically
-                onSubmitEditing={() => {
-                  if (!sendButtonDisabled) {
-                    void handleSend();
-                  }
-                }}
-              />
-              <TouchableOpacity
-                onPress={() => {
-                  if (!sendButtonDisabled) {
-                    void handleSend();
-                  }
-                }}
-                disabled={sendButtonDisabled}
-                style={[styles.sendButton, sendButtonDisabled && styles.sendButtonDisabled]}
+              <PrimaryButton label={t('usage.limitModal.purchase')} onPress={handleOpenPaywall} />
+            </LinearGradient>
+          ) : (
+            <>
+              {composingImageUri ? (
+                <View style={[styles.previewContainer, keyboardVisible && styles.previewHidden]}>
+                  <Image source={{ uri: composingImageUri }} style={styles.preview} />
+                  <TouchableOpacity onPress={() => setComposingImage(null)} style={styles.removeImage}>
+                    <Text style={{ color: '#fff' }}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+              <View style={styles.quickActionsRow}>
+                {quickActions.map((action) => (
+                  <TouchableOpacity key={action.key} style={styles.quickAction} onPress={action.onPress}>
+                    <Feather name={action.icon} size={14} color={colors.textPrimary} />
+                    <Text style={styles.quickActionLabel}>{action.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View
+                style={[styles.composerArea, styles.composerDocked, { paddingBottom: Math.max(12, inset.bottom) }]}
               >
-                {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>{sendLabel}</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
+                <View style={styles.inputRow}>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder={t('chat.placeholder')}
+                    value={input}
+                    onChangeText={setInput}
+                    multiline={false}
+                    numberOfLines={1}
+                    blurOnSubmit={false}
+                    returnKeyType={canSend ? 'send' : 'done'}
+                    enablesReturnKeyAutomatically
+                    onSubmitEditing={() => {
+                      if (!sendButtonDisabled) {
+                        void handleSend();
+                      }
+                    }}
+                  />
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (!sendButtonDisabled) {
+                        void handleSend();
+                      }
+                    }}
+                    disabled={sendButtonDisabled}
+                    style={[styles.sendButton, sendButtonDisabled && styles.sendButtonDisabled]}
+                  >
+                    {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>{sendLabel}</Text>}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </>
+          )}
         </View>
       </KeyboardAvoidingView>
       <Modal
@@ -1036,14 +1064,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 12,
     paddingBottom: 4,
+    gap: 10,
+  },
+  usageBlock: {
+    paddingHorizontal: 24,
+    paddingBottom: 10,
+    gap: 10,
+  },
+  usageProgressTrack: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  usageProgressFill: {
+    height: '100%',
+    borderRadius: 999,
   },
   statusPillRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     flexWrap: 'wrap',
-    paddingHorizontal: 24,
-    paddingBottom: 8,
   },
   statusPill: {
     borderRadius: 999,
@@ -1216,18 +1260,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  limitBanner: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+  limitCard: {
+    borderRadius: 20,
+    padding: 18,
+    gap: 12,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
+    backgroundColor: colors.surface,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
   },
-  limitHint: {
-    ...textStyles.caption,
+  limitCardTitle: {
+    ...textStyles.titleMedium,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  limitCardDescription: {
+    ...textStyles.body,
     color: colors.textSecondary,
-    textAlign: 'center',
   },
   favoritesModalContainer: {
     flex: 1,

@@ -3,6 +3,7 @@ import * as InAppPurchases from 'expo-in-app-purchases';
 import {
   IAP_CREDIT_PRODUCT_ID,
   IAP_PREMIUM_PRODUCT_ID,
+  IAP_PREMIUM_MONTHLY_PRODUCT_ID,
   type IapPurchaseRequest,
   type IapPurchaseResponse,
 } from '@meal-log/shared';
@@ -18,6 +19,7 @@ export function __setSubmitIapPurchaseImplementation(fn?: SubmitPurchaseFn) {
 
 export const CREDIT_PRODUCT_ID = IAP_CREDIT_PRODUCT_ID;
 export const PREMIUM_PRODUCT_ID = IAP_PREMIUM_PRODUCT_ID;
+export const PREMIUM_MONTHLY_PRODUCT_ID = IAP_PREMIUM_MONTHLY_PRODUCT_ID;
 export const IAP_UNSUPPORTED_ERROR = 'iap.unsupportedPlatform';
 
 export interface IapProductDetails {

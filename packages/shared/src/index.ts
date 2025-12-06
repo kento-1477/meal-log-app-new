@@ -154,6 +154,7 @@ export type IapEnvironment = z.infer<typeof IapEnvironmentSchema>;
 
 export const IAP_CREDIT_PRODUCT_ID = 'com.meallog.credits.100';
 export const IAP_PREMIUM_PRODUCT_ID = 'com.meallog.premium.annual';
+export const IAP_PREMIUM_MONTHLY_PRODUCT_ID = 'com.meallog.premium.monthly';
 
 export interface IapProductDefinition {
   productId: string;
@@ -164,6 +165,7 @@ export interface IapProductDefinition {
 export const IAP_PRODUCTS: readonly IapProductDefinition[] = [
   { productId: IAP_CREDIT_PRODUCT_ID, credits: 100 },
   { productId: IAP_PREMIUM_PRODUCT_ID, premiumDays: 365 },
+  { productId: IAP_PREMIUM_MONTHLY_PRODUCT_ID, premiumDays: 30 },
 ];
 
 export type IapProduct = (typeof IAP_PRODUCTS)[number];
