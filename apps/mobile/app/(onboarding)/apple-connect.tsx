@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { SafeAreaView, StyleSheet, Text, View, Platform, TouchableOpacity, Image, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
+// expo-apple-authentication is provided by the native runtime; eslint can't resolve it in monorepo CI
+// eslint-disable-next-line import/no-unresolved
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '@/theme/colors';
