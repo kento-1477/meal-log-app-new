@@ -107,7 +107,7 @@ export default function PaywallScreen() {
   const monthlyProduct = products?.monthly;
 
   const purchaseMutation = useMutation({
-    mutationFn: purchasePremiumPlan,
+    mutationFn: (plan: 'yearly' | 'monthly') => purchasePremiumPlan(plan),
     onMutate: () => {
       setPremiumStoreLoading(true);
       setPremiumStoreError(null);
@@ -195,8 +195,8 @@ export default function PaywallScreen() {
       Alert.alert(t('paywall.status.alreadyPremium'));
       return;
     }
-    purchaseMutation.mutate();
-  }, [isPremium, purchaseMutation, t]);
+    purchaseMutation.mutate(selectedPlan);
+  }, [isPremium, purchaseMutation, selectedPlan, t]);
 
   const handleRestore = useCallback(() => {
     restoreMutation.mutate();
@@ -356,7 +356,7 @@ export default function PaywallScreen() {
           <TouchableOpacity
             style={[styles.ctaButton, (platformUnsupported || isPremium || premiumLoading) && styles.buttonDisabled]}
             onPress={handlePurchase}
-            disabled={platformUnsupported || isPremium || premiumLoading || purchaseMutation.isLoading}
+            disabled={platformUnsupported || isPremium || premiumLoading || purchaseMutation.isPending}
             activeOpacity={0.9}
           >
             <LinearGradient
@@ -365,7 +365,7 @@ export default function PaywallScreen() {
               end={{ x: 1, y: 1 }}
               style={styles.ctaGradient}
             >
-              {purchaseMutation.isLoading ? (
+              {purchaseMutation.isPending ? (
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.ctaText}>{t('paywall.cta.startTrial')}</Text>
@@ -375,8 +375,8 @@ export default function PaywallScreen() {
 
           {/* Footer Links */}
           <View style={styles.footerLinks}>
-            <TouchableOpacity onPress={handleRestore} disabled={restoreMutation.isLoading}>
-              {restoreMutation.isLoading ? (
+            <TouchableOpacity onPress={handleRestore} disabled={restoreMutation.isPending}>
+              {restoreMutation.isPending ? (
                 <ActivityIndicator size="small" color={colors.textSecondary} />
               ) : (
                 <Text style={styles.footerLink}>{t('paywall.footer.restore')}</Text>

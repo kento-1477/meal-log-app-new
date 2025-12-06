@@ -64,8 +64,11 @@ export async function fetchIapProducts(productIds: string[]): Promise<IapProduct
   });
 }
 
-export async function purchasePremiumPlan(): Promise<PurchaseResult> {
-  return purchaseProduct(PREMIUM_PRODUCT_ID);
+export type PremiumPlanType = 'yearly' | 'monthly';
+
+export async function purchasePremiumPlan(plan: PremiumPlanType = 'yearly'): Promise<PurchaseResult> {
+  const productId = plan === 'monthly' ? PREMIUM_MONTHLY_PRODUCT_ID : PREMIUM_PRODUCT_ID;
+  return purchaseProduct(productId);
 }
 
 export async function purchaseCreditPack(): Promise<PurchaseResult> {
