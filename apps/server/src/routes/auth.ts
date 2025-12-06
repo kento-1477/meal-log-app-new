@@ -3,14 +3,45 @@ import { StatusCodes } from 'http-status-codes';
 import {
   RegisterRequestSchema,
   LoginRequestSchema,
+  AppleAuthRequestSchema,
 } from '@meal-log/shared';
-import { authenticateUser, findUserById, registerUser } from '../services/auth-service.js';
+import { authenticateUser, findUserById, registerUser, upsertAppleUser, linkAppleAccount } from '../services/auth-service.js';
 import { evaluateAiUsage, summarizeUsageStatus } from '../services/ai-usage-service.js';
 import { ZodError, ZodIssue } from 'zod';
 import { prisma } from '../db/prisma.js';
 import { authRateLimiter } from '../middleware/rate-limits.js';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 export const authRouter = Router();
+const appleAudience = (process.env.APPLE_SERVICE_ID ?? '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+const appleJwks = createRemoteJWKSet(new URL('https://appleid.apple.com/auth/keys'));
+
+async function verifyAppleIdentityToken(identityToken: string) {
+  if (appleAudience.length === 0) {
+    const error = new Error('Appleサインインの設定が不足しています') as Error & { statusCode?: number; expose?: boolean };
+    error.statusCode = StatusCodes.INTERNAL_SERVER_ERROR;
+    throw error;
+  }
+
+  const { payload } = await jwtVerify(identityToken, appleJwks, {
+    issuer: 'https://appleid.apple.com',
+    audience: appleAudience,
+  });
+
+  const sub = payload.sub;
+  const email = typeof payload.email === 'string' ? payload.email : null;
+  if (!sub) {
+    const error = new Error('Appleの認証情報を検証できませんでした') as Error & { statusCode?: number; expose?: boolean };
+    error.statusCode = StatusCodes.UNAUTHORIZED;
+    error.expose = true;
+    throw error;
+  }
+
+  return { sub, email };
+}
 
 authRouter.post('/register', authRateLimiter, async (req, res, next) => {
   try {
@@ -66,6 +97,71 @@ authRouter.post('/login', authRateLimiter, async (req, res, next) => {
       });
     }
     await destroySession(req);
+    next(error);
+  }
+});
+
+authRouter.post('/login/apple', authRateLimiter, async (req, res, next) => {
+  try {
+    const body = AppleAuthRequestSchema.parse(req.body);
+    const verified = await verifyAppleIdentityToken(body.identityToken);
+    const email = body.email ?? verified.email ?? null;
+
+    const user = await upsertAppleUser({ sub: verified.sub, email });
+    await regenerateSession(req);
+    req.session.userId = user.id;
+    req.session.aiCredits = user.aiCredits;
+    const usageStatus = await evaluateAiUsage(user.id);
+    const usage = summarizeUsageStatus(usageStatus);
+    const onboarding = await getOnboardingStatus(user.id);
+    res.status(StatusCodes.OK).json({
+      message: 'ログインに成功しました',
+      user,
+      usage,
+      onboarding,
+    });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: formatValidationError(error, 'login'),
+        code: 'VALIDATION_ERROR',
+        details: error.errors,
+      });
+    }
+    await destroySession(req);
+    next(error);
+  }
+});
+
+authRouter.post('/link/apple', authRateLimiter, async (req, res, next) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(StatusCodes.UNAUTHORIZED).json({ error: '認証が必要です' });
+    }
+    const body = AppleAuthRequestSchema.parse(req.body);
+    const verified = await verifyAppleIdentityToken(body.identityToken);
+    const email = body.email ?? verified.email ?? undefined;
+
+    const user = await linkAppleAccount(req.session.userId, { sub: verified.sub, email });
+    req.session.userId = user.id;
+    req.session.aiCredits = user.aiCredits;
+    const usageStatus = await evaluateAiUsage(user.id);
+    const usage = summarizeUsageStatus(usageStatus);
+    const onboarding = await getOnboardingStatus(user.id);
+    res.status(StatusCodes.OK).json({
+      message: 'Appleアカウントをリンクしました',
+      user,
+      usage,
+      onboarding,
+    });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        error: formatValidationError(error, 'login'),
+        code: 'VALIDATION_ERROR',
+        details: error.errors,
+      });
+    }
     next(error);
   }
 });

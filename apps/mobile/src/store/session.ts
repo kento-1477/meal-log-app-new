@@ -9,6 +9,8 @@ type User = {
   username?: string | null;
   plan?: UserTier;
   aiCredits: number;
+  appleLinked?: boolean | null;
+  appleEmail?: string | null;
 };
 
 type Status = 'idle' | 'loading' | 'authenticated' | 'unauthenticated' | 'error';
