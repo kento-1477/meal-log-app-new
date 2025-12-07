@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react';
-import { useCallback, useEffect, useMemo } from 'react';
-import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -18,6 +18,7 @@ import {
   fetchIapProducts,
   IAP_UNSUPPORTED_ERROR,
   PREMIUM_PRODUCT_ID,
+  PREMIUM_MONTHLY_PRODUCT_ID,
   purchasePremiumPlan,
   restorePurchases,
 } from '@/services/iap';
@@ -29,43 +30,38 @@ import {
   trackPaywallRestoreSuccess,
   trackPaywallRestoreFailure,
 } from '@/analytics/events';
+import { PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '@/config/legal';
 
-type PlanComparisonRow = {
-  key: string;
-  icon: ComponentProps<typeof Feather>['name'];
-  labelKey: string;
-  freeKey: string;
-  premiumKey: string;
-};
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const PaywallHeaderImage = require('../assets/images/paywall-header.png');
 
-const PLAN_COMPARISON_ROWS: PlanComparisonRow[] = [
+type PlanType = 'yearly' | 'monthly';
+
+interface ComparisonRow {
+  feature: string;
+  subtitle?: string;
+  free: string;
+  premium: string;
+  premiumIcon?: boolean;
+}
+
+const COMPARISON_DATA: ComparisonRow[] = [
   {
-    key: 'ai',
-    icon: 'message-circle',
-    labelKey: 'paywall.comparison.ai.label',
-    freeKey: 'paywall.comparison.ai.free',
-    premiumKey: 'paywall.comparison.ai.premium',
+    feature: 'paywall.table.aiAnalysis',
+    subtitle: 'paywall.table.perDay',
+    free: '3回',
+    premium: '20回',
   },
   {
-    key: 'history',
-    icon: 'archive',
-    labelKey: 'paywall.comparison.history.label',
-    freeKey: 'paywall.comparison.history.free',
-    premiumKey: 'paywall.comparison.history.premium',
+    feature: 'paywall.table.historyRetention',
+    free: '30日',
+    premium: '90日',
   },
   {
-    key: 'dashboard',
-    icon: 'bar-chart-2',
-    labelKey: 'paywall.comparison.dashboard.label',
-    freeKey: 'paywall.comparison.dashboard.free',
-    premiumKey: 'paywall.comparison.dashboard.premium',
-  },
-  {
-    key: 'recent',
-    icon: 'clock',
-    labelKey: 'paywall.comparison.recent.label',
-    freeKey: 'paywall.comparison.recent.free',
-    premiumKey: 'paywall.comparison.recent.premium',
+    feature: 'paywall.table.monthlyCalorieDeficit',
+    free: '—',
+    premium: '✓',
+    premiumIcon: true,
   },
 ];
 
@@ -80,23 +76,31 @@ export default function PaywallScreen() {
   const setPremiumStoreError = usePremiumStore((state) => state.setError);
   const setPremiumStoreLoading = usePremiumStore((state) => state.setLoading);
 
+  const [selectedPlan, setSelectedPlan] = useState<PlanType>('yearly');
+
   const {
-    data: premiumProduct,
+    data: products,
     isLoading: productLoading,
     error: productError,
     refetch: refetchProducts,
   } = useQuery({
-    queryKey: ['paywall', 'product', PREMIUM_PRODUCT_ID],
+    queryKey: ['paywall', 'products'],
     queryFn: async () => {
-      const [product] = await fetchIapProducts([PREMIUM_PRODUCT_ID]);
-      return product ?? null;
+      const result = await fetchIapProducts([PREMIUM_PRODUCT_ID, PREMIUM_MONTHLY_PRODUCT_ID]);
+      return {
+        yearly: result.find((p) => p.productId === PREMIUM_PRODUCT_ID) ?? null,
+        monthly: result.find((p) => p.productId === PREMIUM_MONTHLY_PRODUCT_ID) ?? null,
+      };
     },
     enabled: Platform.OS === 'ios',
     staleTime: 10 * 60 * 1000,
   });
 
+  const yearlyProduct = products?.yearly;
+  const monthlyProduct = products?.monthly;
+
   const purchaseMutation = useMutation({
-    mutationFn: purchasePremiumPlan,
+    mutationFn: (plan: 'yearly' | 'monthly') => purchasePremiumPlan(plan),
     onMutate: () => {
       setPremiumStoreLoading(true);
       setPremiumStoreError(null);
@@ -112,7 +116,7 @@ export default function PaywallScreen() {
     onError: (error: unknown) => {
       const err = error as { code?: string; message?: string } | Error;
       if ((err as any)?.code === 'iap.cancelled') {
-        trackPaywallPurchaseCancel({ productId: PREMIUM_PRODUCT_ID });
+        trackPaywallPurchaseCancel({ productId: selectedPlan === 'yearly' ? PREMIUM_PRODUCT_ID : PREMIUM_MONTHLY_PRODUCT_ID });
         setPremiumStoreLoading(false);
         return;
       }
@@ -135,7 +139,7 @@ export default function PaywallScreen() {
   });
 
   const restoreMutation = useMutation({
-    mutationFn: () => restorePurchases([PREMIUM_PRODUCT_ID]),
+    mutationFn: () => restorePurchases([PREMIUM_PRODUCT_ID, PREMIUM_MONTHLY_PRODUCT_ID]),
     onMutate: () => {
       setPremiumStoreLoading(true);
       setPremiumStoreError(null);
@@ -184,48 +188,50 @@ export default function PaywallScreen() {
       Alert.alert(t('paywall.status.alreadyPremium'));
       return;
     }
-    purchaseMutation.mutate();
-  }, [isPremium, purchaseMutation, t]);
+    purchaseMutation.mutate(selectedPlan);
+  }, [isPremium, purchaseMutation, selectedPlan, t]);
 
   const handleRestore = useCallback(() => {
     restoreMutation.mutate();
   }, [restoreMutation]);
 
-  const handleReturnToChat = useCallback(() => {
-    router.replace('/(tabs)/chat');
+  const handleClose = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)/chat');
+    }
   }, [router]);
 
-  const comparisonRows = useMemo(
-    () =>
-      PLAN_COMPARISON_ROWS.map((row) => ({
-        key: row.key,
-        icon: row.icon,
-        label: t(row.labelKey),
-        free: t(row.freeKey),
-        premium: t(row.premiumKey),
-      })),
-    [t],
-  );
-
-  const planColumnLabels = useMemo(
-    () => ({
-      free: t('paywall.comparison.column.free'),
-      premium: t('paywall.comparison.column.premium'),
-    }),
-    [t],
-  );
-
-  const heroStatusLabel = isPremium ? t('paywall.hero.status.premium') : t('paywall.hero.status.free');
-
-  const priceLabel = useMemo(() => {
-    if (productLoading) {
-      return t('paywall.price.loading');
+  const handleOpenUrl = useCallback(async (url: string) => {
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+      }
+    } catch (err) {
+      console.warn('Failed to open URL', err);
     }
-    if (!premiumProduct) {
-      return t('paywall.price.unavailable');
-    }
-    return premiumProduct.localizedPrice ?? premiumProduct.price;
-  }, [premiumProduct, productLoading, t]);
+  }, []);
+
+  const yearlyPriceInfo = useMemo(() => {
+    if (productLoading) return { price: t('paywall.price.loading'), perMonth: '' };
+    if (!yearlyProduct) return { price: t('paywall.price.unavailable'), perMonth: '' };
+    const price = yearlyProduct.localizedPrice ?? `¥${yearlyProduct.priceAmount}`;
+    const perMonth = yearlyProduct.priceAmount > 0 ? `¥${Math.round(yearlyProduct.priceAmount / 12)}` : '';
+    return { price, perMonth };
+  }, [yearlyProduct, productLoading, t]);
+
+  const monthlyPriceInfo = useMemo(() => {
+    if (productLoading) return { price: t('paywall.price.loading') };
+    if (!monthlyProduct) return { price: t('paywall.price.unavailable') };
+    return { price: monthlyProduct.localizedPrice ?? `¥${monthlyProduct.priceAmount}` };
+  }, [monthlyProduct, productLoading, t]);
+
+  const dailyPrice = useMemo(() => {
+    if (!yearlyProduct) return '16';
+    return Math.round(yearlyProduct.priceAmount / 365).toString();
+  }, [yearlyProduct]);
 
   const platformUnsupported = Platform.OS !== 'ios';
 
@@ -249,139 +255,151 @@ export default function PaywallScreen() {
 
   return (
     <View style={styles.screen}>
-      <LinearGradient colors={['#F6F8FF', '#FFF4F2']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.backgroundGradient} />
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
-        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-          <View style={styles.pageHeader}>
-            <View>
-              <Text style={styles.planLabel}>{t('paywall.planLabel')}</Text>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {/* Close Button */}
+          <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
+            <Feather name="x" size={24} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          {/* Header Image */}
+          <View style={styles.headerImageContainer}>
+            <LinearGradient
+              colors={['#22C55E', '#16A34A']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.headerGradient}
+            />
+            <Image source={PaywallHeaderImage} style={styles.headerImage} resizeMode="cover" />
+          </View>
+
+          {/* Headline */}
+          <Text style={styles.headline}>{t('paywall.headline')}</Text>
+
+          {/* Comparison Table */}
+          <View style={styles.tableContainer}>
+            {/* Table Header */}
+            <View style={styles.tableHeader}>
+              <View style={styles.tableFeatureCol}>
+                <Text style={styles.tableHeaderText}>{t('paywall.table.feature')}</Text>
+              </View>
+              <View style={styles.tableFreeCol}>
+                <Text style={styles.tableHeaderText}>{t('paywall.table.free')}</Text>
+              </View>
+              <View style={styles.tablePremiumCol}>
+                <Text style={styles.tablePremiumHeaderText}>{t('paywall.table.premium')}</Text>
+              </View>
             </View>
-            <TouchableOpacity style={styles.backButton} onPress={handleReturnToChat}>
-              <Text style={styles.backButtonLabel}>{t('paywall.backToChat')}</Text>
+
+            {/* Table Rows */}
+            {COMPARISON_DATA.map((row, index) => (
+              <View key={index} style={styles.tableRow}>
+                <View style={styles.tableFeatureCol}>
+                  <Text style={styles.tableFeatureText}>{t(row.feature)}</Text>
+                  {row.subtitle && <Text style={styles.tableSubtitle}>{t(row.subtitle)}</Text>}
+                </View>
+                <View style={styles.tableFreeCol}>
+                  <Text style={styles.tableFreeValue}>{row.free}</Text>
+                </View>
+                <View style={styles.tablePremiumCol}>
+                  {row.premiumIcon ? (
+                    <Feather name="check" size={20} color="#22C55E" />
+                  ) : (
+                    <Text style={styles.tablePremiumValue}>{row.premium}</Text>
+                  )}
+                </View>
+              </View>
+            ))}
+          </View>
+
+          {/* Plan Selection Cards */}
+          <View style={styles.planCardsContainer}>
+            {/* Yearly Plan */}
+            <TouchableOpacity
+              style={[styles.planCard, selectedPlan === 'yearly' && styles.planCardSelected]}
+              onPress={() => setSelectedPlan('yearly')}
+              activeOpacity={0.8}
+            >
+              <View style={styles.popularBadge}>
+                <Text style={styles.popularBadgeText}>{t('paywall.plan.yearly.badge')}</Text>
+              </View>
+              <Text style={styles.planTitle}>{t('paywall.plan.yearly')}</Text>
+              <Text style={styles.planPrice}>{yearlyPriceInfo.price}</Text>
+              <Text style={styles.planSubtitle}>/年</Text>
+              {yearlyPriceInfo.perMonth && (
+                <Text style={styles.planPerMonth}>{yearlyPriceInfo.perMonth}/月</Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Monthly Plan */}
+            <TouchableOpacity
+              style={[styles.planCard, selectedPlan === 'monthly' && styles.planCardSelected]}
+              onPress={() => setSelectedPlan('monthly')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.planTitle}>{t('paywall.plan.monthly')}</Text>
+              <Text style={styles.planPrice}>{monthlyPriceInfo.price}</Text>
             </TouchableOpacity>
           </View>
 
-          <LinearGradient
-            colors={['#FFFFFF', '#FFF4EA']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.heroCard}
-          >
-            <View style={styles.statusPill}>
-              <Text style={styles.statusPillText}>{heroStatusLabel}</Text>
-            </View>
-            <Text style={styles.heroTitle}>{t('paywall.hero.title')}</Text>
-            <Text style={styles.heroDescription}>{t('paywall.hero.description')}</Text>
-            <View style={styles.priceRow}>
-              {productLoading ? <ActivityIndicator color={colors.accentInk} /> : <Text style={styles.heroPrice}>{priceLabel}</Text>}
-            </View>
-            {isPremium ? (
-              <Text style={styles.heroStatusDetail}>
-                {t('paywall.status.active', { days: premiumStatus?.daysRemaining ?? 0 })}
-              </Text>
-            ) : null}
-            <Text style={styles.priceNote}>{t('paywall.hero.priceNote')}</Text>
-          </LinearGradient>
+          {/* Trial Info */}
+          <Text style={styles.trialInfo}>{t('paywall.trial.info', { daily: dailyPrice })}</Text>
 
-          {platformUnsupported ? (
-            <View style={styles.noticeCard}>
-              <Feather name="smartphone" size={18} color={colors.accentInk} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.noticeTitle}>{t('paywall.error.unsupported')}</Text>
-                <Text style={styles.noticeDescription}>{t('paywall.error.unsupportedDescription')}</Text>
-              </View>
-            </View>
-          ) : null}
-
-          {productError ? (
-            <View style={styles.noticeCard}>
-              <Feather name="refresh-ccw" size={18} color={colors.accent} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.noticeTitle}>{t('paywall.error.loadFailed')}</Text>
-                <Text style={styles.noticeDescription}>{t('paywall.error.loadFailedDescription')}</Text>
-              </View>
-              <TouchableOpacity onPress={() => refetchProducts()} style={styles.retryButton}>
-                <Text style={styles.retryLabel}>{t('paywall.retry')}</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-
+          {/* CTA Button */}
           <TouchableOpacity
-            style={[styles.primaryButton, (platformUnsupported || isPremium || premiumLoading) && styles.buttonDisabled]}
+            style={[styles.ctaButton, (platformUnsupported || isPremium || premiumLoading) && styles.buttonDisabled]}
             onPress={handlePurchase}
-            disabled={platformUnsupported || isPremium || premiumLoading || purchaseMutation.isLoading}
+            disabled={platformUnsupported || isPremium || premiumLoading || purchaseMutation.isPending}
             activeOpacity={0.9}
           >
             <LinearGradient
-              colors={['#FFB347', '#F97316']}
+              colors={['#22C55E', '#16A34A']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={styles.primaryButtonGradient}
+              style={styles.ctaGradient}
             >
-              {purchaseMutation.isLoading ? (
+              {purchaseMutation.isPending ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.primaryButtonLabel}>
-                  {isPremium ? t('paywall.primaryButton.premium') : t('paywall.primaryButton.default')}
-                </Text>
+                <Text style={styles.ctaText}>{t('paywall.cta.startTrial')}</Text>
               )}
             </LinearGradient>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.secondaryButton, (platformUnsupported || restoreMutation.isLoading) && styles.buttonDisabled]}
-            onPress={handleRestore}
-            disabled={platformUnsupported || restoreMutation.isLoading}
-          >
-            {restoreMutation.isLoading ? (
-              <ActivityIndicator color={colors.accent} />
-            ) : (
-              <Text style={styles.secondaryButtonLabel}>{t('paywall.secondaryButton.restore')}</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.ghostButton} onPress={handleReturnToChat}>
-            <Text style={styles.ghostButtonLabel}>{t('paywall.secondaryButton.stayFree')}</Text>
-          </TouchableOpacity>
-
-          <View style={styles.comparisonCard}>
-            <View style={styles.comparisonHeader}>
-              <Text style={styles.comparisonHeading}>{t('paywall.comparison.heading')}</Text>
-            </View>
-            <View style={styles.planLegend}>
-              <View style={[styles.planChip, styles.planChipFree]}>
-                <Text style={[styles.planChipLabel, styles.planChipLabelFree]}>{planColumnLabels.free}</Text>
-              </View>
-              <View style={[styles.planChip, styles.planChipPremium]}>
-                <Text style={[styles.planChipLabel, styles.planChipLabelPremium]}>{planColumnLabels.premium}</Text>
-              </View>
-            </View>
-            {comparisonRows.map((row) => (
-              <View key={row.key} style={styles.comparisonRow}>
-                <View style={styles.comparisonLabelCell}>
-                  <View style={styles.comparisonIcon}>
-                    <Feather name={row.icon} size={16} color={colors.accentInk} />
-                  </View>
-                  <Text style={styles.comparisonLabel}>{row.label}</Text>
-                </View>
-                <View style={styles.planColumns}>
-                  <View style={[styles.planCell, styles.planCellFree]}>
-                    <View style={[styles.planChip, styles.planChipFree]}>
-                      <Text style={[styles.planChipLabel, styles.planChipLabelFree]}>{planColumnLabels.free}</Text>
-                    </View>
-                    <Text style={styles.planCellText}>{row.free}</Text>
-                  </View>
-                  <View style={[styles.planCell, styles.planCellPremium]}>
-                    <View style={[styles.planChip, styles.planChipPremium]}>
-                      <Text style={[styles.planChipLabel, styles.planChipLabelPremium]}>{planColumnLabels.premium}</Text>
-                    </View>
-                    <Text style={styles.planCellText}>{row.premium}</Text>
-                  </View>
-                </View>
-              </View>
-            ))}
-            <Text style={styles.comparisonNote}>{t('paywall.comparison.note')}</Text>
+          {/* Footer Links */}
+          <View style={styles.footerLinks}>
+            <TouchableOpacity onPress={handleRestore} disabled={restoreMutation.isPending}>
+              {restoreMutation.isPending ? (
+                <ActivityIndicator size="small" color={colors.textSecondary} />
+              ) : (
+                <Text style={styles.footerLink}>{t('paywall.footer.restore')}</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleOpenUrl(TERMS_OF_SERVICE_URL)}>
+              <Text style={styles.footerLink}>{t('paywall.footer.terms')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleOpenUrl(PRIVACY_POLICY_URL)}>
+              <Text style={styles.footerLink}>{t('paywall.footer.privacy')}</Text>
+            </TouchableOpacity>
           </View>
+
+          {/* Error Notice */}
+          {productError ? (
+            <View style={styles.errorCard}>
+              <Feather name="alert-circle" size={18} color={colors.error} />
+              <Text style={styles.errorText}>{t('paywall.error.loadFailed')}</Text>
+              <TouchableOpacity onPress={() => refetchProducts()}>
+                <Text style={styles.retryLink}>{t('paywall.retry')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {platformUnsupported ? (
+            <View style={styles.errorCard}>
+              <Feather name="smartphone" size={18} color={colors.accentInk} />
+              <Text style={styles.errorText}>{t('paywall.error.unsupported')}</Text>
+            </View>
+          ) : null}
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -407,267 +425,240 @@ function transformPremiumStatus(payload: PremiumStatusPayload) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
-  },
-  backgroundGradient: {
-    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFFFFF',
   },
   safeArea: {
     flex: 1,
   },
-  container: {
-    paddingHorizontal: 24,
-    paddingVertical: 28,
-    gap: 20,
+  scrollContent: {
+    paddingBottom: 40,
   },
-  pageHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  planLabel: {
-    ...textStyles.caption,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    color: colors.textSecondary,
-  },
-  backButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: 'rgba(255,255,255,0.7)',
-  },
-  backButtonLabel: {
-    ...textStyles.caption,
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  heroCard: {
-    borderRadius: 28,
-    padding: 24,
-    gap: 14,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.18,
-    shadowRadius: 32,
-    elevation: 10,
-  },
-  statusPill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.7)',
-  },
-  statusPillText: {
-    ...textStyles.caption,
-    color: colors.accentInk,
-  },
-  heroTitle: {
-    ...textStyles.display,
-    fontSize: 30,
-    lineHeight: 36,
-    color: colors.accentInk,
-  },
-  heroDescription: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    lineHeight: 24,
-  },
-  priceRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 12,
-    marginTop: 4,
-  },
-  heroPrice: {
-    ...textStyles.titleLarge,
-    fontSize: 32,
-    color: colors.accentInk,
-  },
-  heroStatusDetail: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-  },
-  priceNote: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-  },
-  noticeCard: {
-    flexDirection: 'row',
+  closeButton: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    zIndex: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.9)',
     alignItems: 'center',
-    gap: 12,
-    borderRadius: 24,
-    padding: 18,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  noticeTitle: {
-    ...textStyles.titleSmall,
+  headerImageContainer: {
+    height: 180,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  headerGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  headerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  headline: {
+    ...textStyles.titleLarge,
+    fontSize: 24,
+    textAlign: 'center',
+    marginTop: 24,
+    marginBottom: 20,
+    paddingHorizontal: 24,
     color: colors.textPrimary,
   },
-  noticeDescription: {
+  tableContainer: {
+    marginHorizontal: 16,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  tableFeatureCol: {
+    flex: 2,
+  },
+  tableFreeCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  tablePremiumCol: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    marginVertical: -12,
+    paddingVertical: 12,
+  },
+  tableHeaderText: {
+    ...textStyles.caption,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  tablePremiumHeaderText: {
+    ...textStyles.caption,
+    fontWeight: '700',
+    color: '#22C55E',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+  },
+  tableFeatureText: {
+    ...textStyles.body,
+    fontWeight: '500',
+    color: colors.textPrimary,
+    fontSize: 14,
+  },
+  tableSubtitle: {
     ...textStyles.caption,
     color: colors.textSecondary,
+    fontSize: 11,
     marginTop: 2,
   },
-  retryButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.accent,
+  tableFreeValue: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    fontSize: 14,
   },
-  retryLabel: {
-    ...textStyles.caption,
-    color: colors.accent,
+  tablePremiumValue: {
+    ...textStyles.body,
     fontWeight: '600',
+    color: '#22C55E',
+    fontSize: 14,
   },
-  primaryButton: {
-    borderRadius: 26,
+  planCardsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginTop: 24,
+    gap: 12,
+  },
+  planCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  planCardSelected: {
+    borderColor: '#22C55E',
+    backgroundColor: 'rgba(34, 197, 94, 0.05)',
+  },
+  popularBadge: {
+    position: 'absolute',
+    top: -12,
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  popularBadgeText: {
+    ...textStyles.caption,
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 11,
+  },
+  planTitle: {
+    ...textStyles.body,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginTop: 8,
+    fontSize: 14,
+  },
+  planPrice: {
+    ...textStyles.titleLarge,
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginTop: 4,
+  },
+  planSubtitle: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginTop: -4,
+  },
+  planPerMonth: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  trialInfo: {
+    ...textStyles.body,
+    textAlign: 'center',
+    color: colors.textSecondary,
+    marginTop: 20,
+    paddingHorizontal: 24,
+  },
+  ctaButton: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 28,
     overflow: 'hidden',
-    shadowColor: colors.accent,
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.35,
-    shadowRadius: 28,
-    elevation: 12,
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  primaryButtonGradient: {
+  ctaGradient: {
     paddingVertical: 18,
     alignItems: 'center',
   },
-  primaryButtonLabel: {
+  ctaText: {
     ...textStyles.body,
-    color: '#fff',
+    color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 16,
-  },
-  secondaryButton: {
-    marginTop: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: colors.accent,
-  },
-  secondaryButtonLabel: {
-    ...textStyles.body,
-    color: colors.accent,
-    fontWeight: '600',
-  },
-  ghostButton: {
-    marginTop: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  ghostButtonLabel: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    textDecorationLine: 'underline',
   },
   buttonDisabled: {
     opacity: 0.5,
   },
-  comparisonCard: {
-    marginTop: 8,
-    borderRadius: 28,
-    padding: 24,
-    backgroundColor: colors.surfaceStrong,
-    borderWidth: 1,
-    borderColor: colors.glassStroke,
-    gap: 16,
-  },
-  comparisonHeader: {
+  footerLinks: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  comparisonHeading: {
-    ...textStyles.titleMedium,
-    color: colors.textPrimary,
-  },
-  planLegend: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  planChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  planChipFree: {
-    borderColor: 'rgba(31,36,44,0.15)',
-    backgroundColor: 'rgba(255,255,255,0.8)',
-  },
-  planChipPremium: {
-    borderColor: 'rgba(249,115,22,0.4)',
-    backgroundColor: 'rgba(249,115,22,0.12)',
-  },
-  planChipLabel: {
-    ...textStyles.caption,
-    fontWeight: '600',
-  },
-  planChipLabelFree: {
-    color: colors.textSecondary,
-  },
-  planChipLabelPremium: {
-    color: '#B45309',
-  },
-  comparisonRow: {
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(17,19,24,0.06)',
-    gap: 14,
-  },
-  comparisonLabelCell: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  comparisonIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(17,19,24,0.04)',
-    alignItems: 'center',
     justifyContent: 'center',
+    gap: 24,
+    marginTop: 24,
+    paddingHorizontal: 24,
   },
-  comparisonLabel: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  planColumns: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  planCell: {
-    flex: 1,
-    borderRadius: 18,
-    padding: 14,
-    gap: 8,
-    borderWidth: 1,
-  },
-  planCellFree: {
-    borderColor: 'rgba(31,36,44,0.08)',
-    backgroundColor: 'rgba(255,255,255,0.9)',
-  },
-  planCellPremium: {
-    borderColor: 'rgba(249,115,22,0.25)',
-    backgroundColor: 'rgba(249,115,22,0.08)',
-  },
-  planCellText: {
-    ...textStyles.caption,
-    color: colors.textPrimary,
-    lineHeight: 20,
-  },
-  comparisonNote: {
+  footerLink: {
     ...textStyles.caption,
     color: colors.textSecondary,
-    lineHeight: 18,
+    textDecorationLine: 'underline',
+  },
+  errorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 92, 92, 0.1)',
+  },
+  errorText: {
+    ...textStyles.caption,
+    color: colors.error,
+    flex: 1,
+  },
+  retryLink: {
+    ...textStyles.caption,
+    color: colors.accent,
+    fontWeight: '600',
   },
 });

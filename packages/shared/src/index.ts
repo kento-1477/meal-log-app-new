@@ -154,6 +154,7 @@ export type IapEnvironment = z.infer<typeof IapEnvironmentSchema>;
 
 export const IAP_CREDIT_PRODUCT_ID = 'com.meallog.credits.100';
 export const IAP_PREMIUM_PRODUCT_ID = 'com.meallog.premium.annual';
+export const IAP_PREMIUM_MONTHLY_PRODUCT_ID = 'com.meallog.premium.monthly';
 
 export interface IapProductDefinition {
   productId: string;
@@ -164,6 +165,7 @@ export interface IapProductDefinition {
 export const IAP_PRODUCTS: readonly IapProductDefinition[] = [
   { productId: IAP_CREDIT_PRODUCT_ID, credits: 100 },
   { productId: IAP_PREMIUM_PRODUCT_ID, premiumDays: 365 },
+  { productId: IAP_PREMIUM_MONTHLY_PRODUCT_ID, premiumDays: 30 },
 ];
 
 export type IapProduct = (typeof IAP_PRODUCTS)[number];
@@ -249,6 +251,21 @@ export const LoginRequestSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
 });
+
+export const AppleAuthRequestSchema = z.object({
+  identityToken: z.string().min(10),
+  authorizationCode: z.string().min(4).optional(),
+  email: z.string().email().optional(),
+  fullName: z.string().optional(),
+});
+
+export type AppleAuthRequest = z.infer<typeof AppleAuthRequestSchema>;
+
+export const AppleLinkRequestSchema = AppleAuthRequestSchema.extend({
+  userAgent: z.string().optional(),
+});
+
+export type AppleLinkRequest = z.infer<typeof AppleLinkRequestSchema>;
 
 export const MealLogSummarySchema = z.object({
   id: z.string(),

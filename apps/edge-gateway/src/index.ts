@@ -74,7 +74,9 @@ export default {
 function buildTargetUrl(incoming: URL, targetOrigin: string, prefix: string): URL {
   const base = new URL(targetOrigin);
   const pattern = new RegExp(`^${prefix}`);
-  const rewrittenPath = incoming.pathname.replace(pattern, '');
+  const rewrittenPath = pattern.test(incoming.pathname)
+    ? incoming.pathname
+    : joinPaths(prefix, incoming.pathname);
   base.pathname = joinPaths(base.pathname, rewrittenPath);
   base.search = incoming.search;
   return base;

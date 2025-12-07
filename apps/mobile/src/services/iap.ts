@@ -3,6 +3,7 @@ import * as InAppPurchases from 'expo-in-app-purchases';
 import {
   IAP_CREDIT_PRODUCT_ID,
   IAP_PREMIUM_PRODUCT_ID,
+  IAP_PREMIUM_MONTHLY_PRODUCT_ID,
   type IapPurchaseRequest,
   type IapPurchaseResponse,
 } from '@meal-log/shared';
@@ -18,6 +19,7 @@ export function __setSubmitIapPurchaseImplementation(fn?: SubmitPurchaseFn) {
 
 export const CREDIT_PRODUCT_ID = IAP_CREDIT_PRODUCT_ID;
 export const PREMIUM_PRODUCT_ID = IAP_PREMIUM_PRODUCT_ID;
+export const PREMIUM_MONTHLY_PRODUCT_ID = IAP_PREMIUM_MONTHLY_PRODUCT_ID;
 export const IAP_UNSUPPORTED_ERROR = 'iap.unsupportedPlatform';
 
 export interface IapProductDetails {
@@ -62,8 +64,11 @@ export async function fetchIapProducts(productIds: string[]): Promise<IapProduct
   });
 }
 
-export async function purchasePremiumPlan(): Promise<PurchaseResult> {
-  return purchaseProduct(PREMIUM_PRODUCT_ID);
+export type PremiumPlanType = 'yearly' | 'monthly';
+
+export async function purchasePremiumPlan(plan: PremiumPlanType = 'yearly'): Promise<PurchaseResult> {
+  const productId = plan === 'monthly' ? PREMIUM_MONTHLY_PRODUCT_ID : PREMIUM_PRODUCT_ID;
+  return purchaseProduct(productId);
 }
 
 export async function purchaseCreditPack(): Promise<PurchaseResult> {

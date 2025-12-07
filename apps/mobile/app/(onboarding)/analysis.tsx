@@ -27,6 +27,7 @@ export default function OnboardingAnalysisScreen() {
   const setOnboardingStatus = useSessionStore((state) => state.setOnboarding);
   const locale = useSessionStore((state) => state.locale);
   const setPremiumStatus = usePremiumStore((state) => state.setStatus);
+  const sessionUser = useSessionStore((state) => state.user);
 
   useOnboardingStep('analysis');
 
@@ -111,7 +112,8 @@ export default function OnboardingAnalysisScreen() {
   }, [mutation.isSuccess]);
 
   const handleContinue = () => {
-    router.replace('/(tabs)/dashboard');
+    const linked = sessionUser?.appleLinked ?? false;
+    router.replace(linked ? '/(tabs)/chat' : '/(onboarding)/apple-connect');
   };
 
   const renderContent = () => {
@@ -203,9 +205,7 @@ export default function OnboardingAnalysisScreen() {
               </View>
             </View>
           ) : null}
-          <Text style={styles.link} onPress={handleContinue}>
-            {t('onboarding.analysis.goHome')}
-          </Text>
+          {/* button removed; handled by primary CTA */}
         </View>
       </View>
     );
@@ -217,7 +217,7 @@ export default function OnboardingAnalysisScreen() {
       title={t('onboarding.analysis.title')}
       subtitle={t('onboarding.analysis.subtitle')}
       onNext={mutation.isSuccess ? handleContinue : undefined}
-      nextLabel={mutation.isSuccess ? t('onboarding.analysis.goHome') : undefined}
+      nextLabel={mutation.isSuccess ? '食事を記録する' : undefined}
       nextDisabled={!mutation.isSuccess}
       onBack={undefined}
     >

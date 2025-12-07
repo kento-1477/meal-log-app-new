@@ -18,7 +18,8 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.meallog.app",
+      "bundleIdentifier": "com.kento3372.meallogapp",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSExceptionDomains": {
@@ -89,7 +90,8 @@
           "savePhotosPermission": "食事の写真を保存するためにフォトライブラリへアクセスします。",
           "cameraPermission": "料理を撮影して記録に追加するためにカメラを利用します。"
         }
-      ]
+      ],
+      "expo-apple-authentication"
     ],
     "extra": {
       "apiBaseUrl": "https://ushkrapyubwrrjfuzpla.functions.supabase.co",

@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Meal Log",
+    "slug": "meal-log-app",
+    "platforms": ["ios", "android"],
+    "orientation": "portrait",
+    "extra": {
+      "eas": {
+        "projectId": "4bdc2bdf-00de-4667-87fb-3f70a2c3effa"
+      },
+      "router": {
+        "root": "apps/mobile/app"
+      }
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "root": "apps/mobile/app"
+        }
+      ],
+      "./apps/mobile/plugins/withRNScreensPod.js"
+    ],
+    "ios": {
+      "bundleIdentifier": "com.kento3372.meallogapp",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}

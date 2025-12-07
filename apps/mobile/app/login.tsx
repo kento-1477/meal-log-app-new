@@ -18,11 +18,12 @@ import { textStyles } from '@/theme/typography';
 import { GlassCard } from '@/components/GlassCard';
 import { AuroraBackground } from '@/components/AuroraBackground';
 import { BrandHeader } from '@/components/BrandHeader';
-import { login } from '@/services/api';
+import { login, signInWithApple } from '@/services/api';
 import { useSessionStore } from '@/store/session';
 import { useTranslation } from '@/i18n';
 import { Feather } from '@expo/vector-icons';
-import { SUPPORT_EMAIL } from '@/config/legal';
+import { SUPPORT_EMAIL, PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '@/config/legal';
+import * as AppleAuthentication from 'expo-apple-authentication';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -38,6 +39,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
 
   const handleForgotPassword = async () => {
     const url = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Password reset request')}`;
@@ -50,6 +52,17 @@ export default function LoginScreen() {
     } catch (error) {
       Alert.alert(t('login.forgotPasswordErrorTitle'), t('login.forgotPasswordErrorMessage'));
       console.warn('Failed to open mail client', error);
+    }
+  };
+
+  const handleOpenUrl = async (url: string) => {
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      }
+    } catch (err) {
+      console.warn('Failed to open url', url, err);
     }
   };
 
@@ -77,6 +90,60 @@ export default function LoginScreen() {
       setOnboarding(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAppleLogin = async () => {
+    if (Platform.OS !== 'ios') {
+      return;
+    }
+    try {
+      setAppleLoading(true);
+      setStatus('loading');
+      setError(null);
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        ],
+      });
+      if (!credential.identityToken) {
+        throw new Error('missing_identity_token');
+      }
+
+      const response = await signInWithApple({
+        identityToken: credential.identityToken,
+        authorizationCode: credential.authorizationCode ?? undefined,
+        email: credential.email ?? undefined,
+        fullName: credential.fullName
+          ? `${credential.fullName.givenName ?? ''} ${credential.fullName.familyName ?? ''}`.trim()
+          : undefined,
+      });
+
+      setUser(response?.user ?? null);
+      setUsage(response?.usage ?? null);
+      setOnboarding(response?.onboarding ?? null);
+      setStatus('authenticated');
+      router.dismissAll();
+      const needsOnboarding = !(response?.onboarding?.completed ?? false);
+      router.replace(needsOnboarding ? '/(onboarding)/welcome' : '/(tabs)/chat');
+    } catch (err: any) {
+      if (err?.code === 'ERR_REQUEST_CANCELED' || err?.code === 'ERR_CANCELED') {
+        setStatus('idle');
+        return;
+      }
+      const conflict = (err as { code?: string })?.code === 'auth.apple_conflict';
+      if (conflict) {
+        setError(t('login.appleConflict'));
+      } else if (err instanceof Error && err.message) {
+        setError(err.message);
+      } else {
+        setError(t('login.appleError'));
+      }
+      setStatus('error');
+      setOnboarding(null);
+    } finally {
+      setAppleLoading(false);
     }
   };
 
@@ -128,6 +195,29 @@ export default function LoginScreen() {
               <PrimaryButton label={t('login.submit')} onPress={handleLogin} loading={loading} />
             </View>
           </GlassCard>
+          {Platform.OS === 'ios' ? (
+            <View style={styles.appleArea}>
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                cornerRadius={12}
+                style={styles.appleButton}
+                onPress={handleAppleLogin}
+                disabled={loading || appleLoading}
+              />
+              <Text style={styles.appleLegal}>
+                {t('login.appleLegal.prefix')}
+                <Text style={styles.appleLink} onPress={() => handleOpenUrl(PRIVACY_POLICY_URL)}>
+                  {t('common.privacyPolicy')}
+                </Text>
+                {t('login.appleLegal.connector')}
+                <Text style={styles.appleLink} onPress={() => handleOpenUrl(TERMS_OF_SERVICE_URL)}>
+                  {t('common.termsOfService')}
+                </Text>
+                {t('login.appleLegal.suffix')}
+              </Text>
+            </View>
+          ) : null}
           <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/register')}>
             <Text style={styles.secondaryButtonLabel}>{t('login.register')}</Text>
           </TouchableOpacity>
@@ -155,6 +245,23 @@ const styles = StyleSheet.create({
   },
   primaryAction: {
     marginTop: 24,
+  },
+  appleArea: {
+    marginTop: 20,
+    gap: 10,
+  },
+  appleButton: {
+    width: '100%',
+    height: 44,
+  },
+  appleLegal: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  appleLink: {
+    color: colors.accent,
+    fontWeight: '600',
   },
   formGroup: {
     marginBottom: 18,

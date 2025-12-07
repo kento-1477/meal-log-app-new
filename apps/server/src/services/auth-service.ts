@@ -1,5 +1,6 @@
 import argon2 from 'argon2';
 import { StatusCodes } from 'http-status-codes';
+import { randomUUID } from 'crypto';
 import { prisma } from '../db/prisma.js';
 import { logger } from '../logger.js';
 
@@ -58,15 +59,86 @@ export async function findUserById(id: number) {
   return serializeUser(user);
 }
 
+export async function upsertAppleUser(params: { sub: string; email: string | null }) {
+  const existingBySub = await prisma.user.findUnique({ where: { appleSub: params.sub } });
+  if (existingBySub) {
+    return serializeUser(existingBySub);
+  }
+
+  if (!params.email) {
+    throw Object.assign(new Error('Appleからメールアドレスを取得できませんでした。最初のログインではメール共有を許可してください。'), {
+      statusCode: StatusCodes.BAD_REQUEST,
+      expose: true,
+    });
+  }
+
+  const existingByEmail = await prisma.user.findUnique({ where: { email: params.email } });
+  if (existingByEmail) {
+    if (existingByEmail.appleSub && existingByEmail.appleSub !== params.sub) {
+      throw Object.assign(new Error('このメールアドレスは別のAppleアカウントに紐づいています'), {
+        statusCode: 409,
+        expose: true,
+      });
+    }
+    const updated = await prisma.user.update({
+      where: { id: existingByEmail.id },
+      data: {
+        appleSub: params.sub,
+        appleEmail: params.email,
+        appleLinkedAt: new Date(),
+      },
+    });
+    return serializeUser(updated);
+  }
+
+  const placeholderPassword = await argon2.hash(randomUUID());
+  const created = await prisma.user.create({
+    data: {
+      email: params.email,
+      passwordHash: placeholderPassword,
+      appleSub: params.sub,
+      appleEmail: params.email,
+      appleLinkedAt: new Date(),
+    },
+  });
+
+  return serializeUser(created);
+}
+
+export async function linkAppleAccount(userId: number, params: { sub: string; email?: string }) {
+  const existingBySub = await prisma.user.findUnique({ where: { appleSub: params.sub } });
+  if (existingBySub && existingBySub.id !== userId) {
+    throw Object.assign(new Error('このAppleアカウントは別のユーザーに紐づいています'), {
+      statusCode: 409,
+      expose: true,
+    });
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      appleSub: params.sub,
+      appleEmail: params.email ?? undefined,
+      appleLinkedAt: new Date(),
+    },
+  });
+
+  return serializeUser(updated);
+}
+
 function serializeUser(user: {
   id: number;
   email: string;
   username: string | null;
   aiCredits: number;
+  appleSub?: string | null;
+  appleEmail?: string | null;
 }) {
   return {
     id: user.id,
     email: user.email,
     aiCredits: user.aiCredits,
+    appleLinked: Boolean(user.appleSub),
+    appleEmail: user.appleEmail ?? null,
   };
 }
