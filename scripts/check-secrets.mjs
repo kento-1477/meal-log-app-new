@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, lstatSync } from 'node:fs';
 
 const patterns = [
   {
@@ -33,7 +33,7 @@ const violations = [];
 
 for (const raw of files) {
   const file = raw.replace(/^"(.+)"$/, '$1');
-  if (!existsSync(file)) {
+  if (!existsSync(file) || lstatSync(file).isDirectory()) {
     continue;
   }
   const content = readFileSync(file, 'utf-8');
