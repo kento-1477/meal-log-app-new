@@ -1,4 +1,3 @@
-import type { ComponentProps } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,7 +31,6 @@ import {
 } from '@/analytics/events';
 import { PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '@/config/legal';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const PaywallHeaderImage = require('../assets/images/paywall-header.png');
 
 type PlanType = 'yearly' | 'monthly';
