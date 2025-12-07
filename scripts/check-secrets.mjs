@@ -33,21 +33,30 @@ const violations = [];
 
 for (const raw of files) {
   const file = raw.replace(/^"(.+)"$/, '$1');
-  if (!existsSync(file) || lstatSync(file).isDirectory()) {
-    continue;
-  }
-  const content = readFileSync(file, 'utf-8');
-  for (const pattern of patterns) {
-    pattern.regex.lastIndex = 0;
-    let match;
-    while ((match = pattern.regex.exec(content)) !== null) {
-      const candidate = match[1] ?? match[0];
-      const isBad = pattern.isViolation ? pattern.isViolation(candidate, file) : true;
-      if (isBad) {
-        violations.push({ file, rule: pattern.name });
-        break;
+  try {
+    if (!existsSync(file)) {
+      continue;
+    }
+    const stat = lstatSync(file);
+    if (stat.isDirectory() || stat.isSymbolicLink()) {
+      continue;
+    }
+    const content = readFileSync(file, 'utf-8');
+    for (const pattern of patterns) {
+      pattern.regex.lastIndex = 0;
+      let match;
+      while ((match = pattern.regex.exec(content)) !== null) {
+        const candidate = match[1] ?? match[0];
+        const isBad = pattern.isViolation ? pattern.isViolation(candidate, file) : true;
+        if (isBad) {
+          violations.push({ file, rule: pattern.name });
+          break;
+        }
       }
     }
+  } catch {
+    // Skip files that cannot be read (binary, special files, etc.)
+    continue;
   }
 }
 
