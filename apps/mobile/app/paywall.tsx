@@ -33,7 +33,7 @@ import {
 import { PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '@/config/legal';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const PaywallHeaderImage = require('@/assets/images/paywall-header.png');
+const PaywallHeaderImage = require('../assets/images/paywall-header.png');
 
 type PlanType = 'yearly' | 'monthly';
 
@@ -47,25 +47,18 @@ interface ComparisonRow {
 
 const COMPARISON_DATA: ComparisonRow[] = [
   {
-    feature: 'paywall.table.imageAnalysis',
+    feature: 'paywall.table.aiAnalysis',
     subtitle: 'paywall.table.perDay',
-    free: '1回',
-    premium: '50回',
+    free: '3回',
+    premium: '20回',
   },
   {
-    feature: 'paywall.table.chatRecord',
-    subtitle: 'paywall.table.perDay',
-    free: '10回',
-    premium: '無制限',
+    feature: 'paywall.table.historyRetention',
+    free: '30日',
+    premium: '90日',
   },
   {
-    feature: 'paywall.table.editAi',
-    free: '—',
-    premium: '✓',
-    premiumIcon: true,
-  },
-  {
-    feature: 'paywall.table.report',
+    feature: 'paywall.table.monthlyCalorieDeficit',
     free: '—',
     premium: '✓',
     premiumIcon: true,
