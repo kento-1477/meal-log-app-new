@@ -27,6 +27,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meal_log_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/meal_log_test
       SESSION_SECRET: test-session-secret
       PORT: 4000
       NODE_ENV: test
