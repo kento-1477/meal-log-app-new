@@ -103,13 +103,9 @@ export function buildCalorieTrend({
 function resolveRangeBounds(now: DateTime, mode: CalorieTrendMode) {
   const base = now;
   switch (mode) {
-    case 'daily': {
-      const daysFromSunday = base.weekday % 7;
-      const startInclusive = base.minus({ days: daysFromSunday }).startOf('day');
-      const endExclusive = startInclusive.plus({ days: 7 });
-      return { startInclusive, endExclusive };
-    }
+    case 'daily':
     case 'weekly': {
+      // 今日から6日前〜今日（7日間）
       const endExclusive = base.plus({ days: 1 }).startOf('day');
       const startInclusive = endExclusive.minus({ days: 7 });
       return { startInclusive, endExclusive };

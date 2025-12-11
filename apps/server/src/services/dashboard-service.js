@@ -128,14 +128,16 @@ function resolveSingleDayRange(period, timezone) {
 
 function resolveWeekRange(period, timezone) {
   const now = DateTime.now().setZone(timezone);
-  const startOfThisWeek = now.startOf('week');
-  const fromDate = period === 'thisWeek' ? startOfThisWeek : startOfThisWeek.minus({ weeks: 1 });
-  const toDate = fromDate.plus({ weeks: 1 });
-  return {
-    fromDate,
-    toDate,
-    period,
-  };
+  if (period === 'thisWeek') {
+    // 今日から6日前〜今日（7日間）
+    const fromDate = now.minus({ days: 6 }).startOf('day');
+    const toDate = now.plus({ days: 1 }).startOf('day');
+    return { fromDate, toDate, period };
+  }
+  // lastWeek: その前の7日間
+  const fromDate = now.minus({ days: 13 }).startOf('day');
+  const toDate = now.minus({ days: 6 }).startOf('day');
+  return { fromDate, toDate, period };
 }
 
 function buildCacheKey(userId, period) {

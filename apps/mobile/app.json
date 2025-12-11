@@ -1,10 +1,13 @@
 {
   "expo": {
-    "name": "Meal Log",
+    "name": "ミーチャ",
     "slug": "meal-log-app",
     "scheme": "meallog",
     "version": "0.1.0",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -18,7 +21,8 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.kento3372.meallogapp",
+      "bundleIdentifier": "com.meallog.app",
+      "buildNumber": "11",
       "usesAppleSignIn": true,
       "infoPlist": {
         "NSAppTransportSecurity": {

@@ -5,6 +5,7 @@ import {
   Animated,
   Easing,
   Image,
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -342,110 +343,101 @@ export default function DashboardScreen() {
             </View>
           </View>
 
-        {!isAuthenticated ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{t('dashboard.requiresLogin')}</Text>
-            <Text style={styles.errorHint}>{t('dashboard.loginHint')}</Text>
-          </View>
-        ) : isLoading && !data ? (
-          <ActivityIndicator size="large" color={colors.accent} />
-        ) : error && !data ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{t('dashboard.loadError')}</Text>
-            <Text style={styles.errorHint}>{t('dashboard.reloadHint')}</Text>
-          </View>
-        ) : data ? (
-          <View style={styles.dashboardBody}>
-            {isStaleFromCache && (
-              <Text style={styles.cacheBanner}>{t('dashboard.cacheNotice')}</Text>
-            )}
+          {!isAuthenticated ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{t('dashboard.requiresLogin')}</Text>
+              <Text style={styles.errorHint}>{t('dashboard.loginHint')}</Text>
+            </View>
+          ) : isLoading && !data ? (
+            <ActivityIndicator size="large" color={colors.accent} />
+          ) : error && !data ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{t('dashboard.loadError')}</Text>
+              <Text style={styles.errorHint}>{t('dashboard.reloadHint')}</Text>
+            </View>
+          ) : data ? (
+            <View style={styles.dashboardBody}>
+              {isStaleFromCache && (
+                <Text style={styles.cacheBanner}>{t('dashboard.cacheNotice')}</Text>
+              )}
 
-            {ringData ? (
-              <>
-                {(['primary', 'macro'] as const).map((section) => {
-                  if (section === 'primary') {
+              {ringData ? (
+                <>
+                  {(['primary', 'macro'] as const).map((section) => {
+                    if (section === 'primary') {
+                      return (
+                        <View style={styles.metricRow} key="primary">
+                          <View style={[styles.metricCardShell, styles.metricCardTall]}>
+                            <CalorieRing data={ringData.total} t={t} />
+                          </View>
+                          <View style={[styles.metricCardShell, styles.metricCardTall]}>
+                            {isPremium ? (
+                              <MonthlyDeficitCard summary={data.summary} targets={data.targets} t={t} locale={locale} />
+                            ) : (
+                              <MonthlyDeficitLockedCard t={t} onUpgrade={() => router.push('/paywall')} />
+                            )}
+                          </View>
+                        </View>
+                      );
+                    }
                     return (
-                      <View style={styles.metricRow} key="primary">
-                        <View style={[styles.metricCardShell, styles.metricCardTall]}>
-                          <CalorieRing data={ringData.total} t={t} />
-                        </View>
-                        <View style={[styles.metricCardShell, styles.metricCardTall]}>
-                          {isPremium ? (
-                            <MonthlyDeficitCard summary={data.summary} targets={data.targets} t={t} locale={locale} />
-                          ) : (
-                            <View style={[styles.metricCardContent, styles.lockedCard]}>
-                              <View style={styles.premiumLockHeader}>
-                                <Feather name="lock" size={16} color={colors.textSecondary} />
-                                <Text style={styles.lockedTitle}>{t('dashboard.premiumLocked.monthlyTitle')}</Text>
-                              </View>
-                              <Text style={styles.lockedSubtitle}>{t('dashboard.premiumLocked.monthlyDescription')}</Text>
-                              <TouchableOpacity style={styles.lockedButton} onPress={() => router.push('/paywall')}>
-                                <Text style={styles.lockedButtonLabel}>{t('dashboard.premiumLocked.cta')}</Text>
-                              </TouchableOpacity>
-                            </View>
-                          )}
-                        </View>
+                      <View style={styles.macroRow} key="macro">
+                        {ringData.macros.map((macro) => (
+                          <View style={styles.macroCardShell} key={`${macro.label}-${macro.colorToken}`}>
+                            <MacroRing data={macro} t={t} />
+                          </View>
+                        ))}
                       </View>
                     );
-                  }
-                  return (
-                    <View style={styles.macroRow} key="macro">
-                      {ringData.macros.map((macro) => (
-                        <View style={styles.macroCardShell} key={`${macro.label}-${macro.colorToken}`}>
-                          <MacroRing data={macro} t={t} />
-                        </View>
-                      ))}
-                    </View>
-                  );
-                })}
-              </>
-            ) : null}
+                  })}
+                </>
+              ) : null}
 
-            {data.comparison && isPremium ? <PeriodComparisonCard comparison={data.comparison} /> : null}
+              {data.comparison && isPremium ? <PeriodComparisonCard comparison={data.comparison} /> : null}
 
-            <View style={styles.section}>
-              <View style={styles.card}>
-                {chartMode === 'monthly' && monthlySummary ? (
-                  <MonthlyCalorieChart
-                    days={monthlySummary.bars}
-                    startDate={monthlySummary.startDate}
-                    endDate={monthlySummary.endDate}
-                    averageCalories={monthlySummary.averageCalories}
-                  />
+              <View style={styles.section}>
+                <View style={styles.card}>
+                  {chartMode === 'monthly' && monthlySummary ? (
+                    <MonthlyCalorieChart
+                      days={monthlySummary.bars}
+                      startDate={monthlySummary.startDate}
+                      endDate={monthlySummary.endDate}
+                      averageCalories={monthlySummary.averageCalories}
+                    />
+                  ) : (
+                    <CalorieBarChart
+                      points={calorieTrend.points}
+                      target={calorieTrend.target}
+                      mode={chartMode}
+                      config={CALORIE_CHART_CONFIG}
+                      isLoading={calorieTrend.isLoading}
+                      isFetching={calorieTrend.isFetching}
+                      emptyLabel={chartEmptyLabel}
+                      stats={calorieTrend.stats}
+                    />
+                  )}
+                </View>
+                <MealPeriodBreakdown entries={data.calories.mealPeriodBreakdown} />
+                {showEmpty && <EmptyStateCard message={emptyMessage} />}
+              </View>
+
+              <View style={styles.section}>
+                {logsQuery.isLoading ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
                 ) : (
-                  <CalorieBarChart
-                    points={calorieTrend.points}
-                    target={calorieTrend.target}
-                    mode={chartMode}
-                    config={CALORIE_CHART_CONFIG}
-                    isLoading={calorieTrend.isLoading}
-                    isFetching={calorieTrend.isFetching}
-                    emptyLabel={chartEmptyLabel}
-                    stats={calorieTrend.stats}
+                  <RecentLogsList
+                    logs={logs}
+                    range={logsRange}
+                    onRangeChange={setLogsRange}
+                    onToggleFavorite={handleToggleFavorite}
+                    togglingId={favoriteToggleId}
                   />
                 )}
               </View>
-              <MealPeriodBreakdown entries={data.calories.mealPeriodBreakdown} />
-              {showEmpty && <EmptyStateCard message={emptyMessage} />}
             </View>
-
-            <View style={styles.section}>
-              {logsQuery.isLoading ? (
-                <ActivityIndicator size="small" color={colors.accent} />
-              ) : (
-                <RecentLogsList
-                  logs={logs}
-                  range={logsRange}
-                  onRangeChange={setLogsRange}
-                  onToggleFavorite={handleToggleFavorite}
-                  togglingId={favoriteToggleId}
-                />
-              )}
-            </View>
-          </View>
-        ) : (
-          <EmptyStateCard message={emptyMessage} />
-        )}
+          ) : (
+            <EmptyStateCard message={emptyMessage} />
+          )}
         </ScrollView>
       </SafeAreaView>
     </AuroraBackground>
@@ -498,7 +490,7 @@ function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardP
     if (entry.total <= 0) {
       return sum;
     }
-      const dailyDeficit = Math.max(targetDaily - entry.total, 0);
+    const dailyDeficit = Math.max(targetDaily - entry.total, 0);
     return sum + dailyDeficit;
   }, 0);
 
@@ -531,6 +523,360 @@ function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardP
     </View>
   );
 }
+
+interface MonthlyDeficitLockedCardProps {
+  t: Translate;
+  onUpgrade: () => void;
+}
+
+function MonthlyDeficitLockedCard({ t, onUpgrade }: MonthlyDeficitLockedCardProps) {
+  const [helpVisible, setHelpVisible] = useState(false);
+
+  // 炎アニメーション（Pulse: スケール & 不透明度）
+  const fireScale = useRef(new Animated.Value(1)).current;
+  const fireOpacity = useRef(new Animated.Value(0.9)).current;
+
+  // ぼかし数値の揺らめきアニメーション
+  const blurSway = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // 炎のPulseアニメーション
+    const fireAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(fireScale, {
+            toValue: 1.15,
+            duration: 1200,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(fireOpacity, {
+            toValue: 1,
+            duration: 1200,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.parallel([
+          Animated.timing(fireScale, {
+            toValue: 1,
+            duration: 1200,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(fireOpacity, {
+            toValue: 0.85,
+            duration: 1200,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ]),
+      ])
+    );
+    fireAnimation.start();
+
+    // ぼかし数値のSwayアニメーション
+    const swayAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(blurSway, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(blurSway, {
+          toValue: -1,
+          duration: 2000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    swayAnimation.start();
+
+    return () => {
+      fireAnimation.stop();
+      swayAnimation.stop();
+    };
+  }, [fireScale, fireOpacity, blurSway]);
+
+  const swayTranslateX = blurSway.interpolate({
+    inputRange: [-1, 1],
+    outputRange: [-1.5, 1.5],
+  });
+
+  return (
+    <View style={burningStyles.container}>
+      {/* 背景グラデーション */}
+      <LinearGradient
+        colors={['#FFF8F0', '#FFE8D6', '#FFDCC8']}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={burningStyles.gradientBg}
+      />
+
+      {/* ヘッダー: PREMIUMバッジ + ヘルプアイコン */}
+      <View style={burningStyles.header}>
+        <View style={burningStyles.premiumBadge}>
+          <Text style={burningStyles.premiumBadgeText}>PREMIUM</Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => setHelpVisible(true)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityLabel="月間脂肪燃焼量の説明"
+          accessibilityRole="button"
+        >
+          <Feather name="help-circle" size={20} color="rgba(0,0,0,0.25)" />
+        </TouchableOpacity>
+      </View>
+
+      {/* タイトル */}
+      <Text style={burningStyles.title}>月間脂肪燃焼量</Text>
+
+      {/* 炎アイコン（アニメーション付き） */}
+      <View style={burningStyles.fireContainer}>
+        <Animated.Text
+          style={[
+            burningStyles.fireEmoji,
+            {
+              transform: [{ scale: fireScale }],
+              opacity: fireOpacity,
+            },
+          ]}
+        >
+          🔥
+        </Animated.Text>
+      </View>
+
+      {/* 成果カード */}
+      <View style={burningStyles.resultCard}>
+        <Text style={burningStyles.resultLabel}>あなたの努力は</Text>
+        <View style={burningStyles.resultMainRow}>
+          <Text style={burningStyles.resultPrefix}>脂肪</Text>
+          <Animated.View
+            style={{
+              transform: [{ translateX: swayTranslateX }],
+            }}
+          >
+            <Text style={burningStyles.blurredValue}>◯◯</Text>
+          </Animated.View>
+          <Text style={burningStyles.resultUnit}>kg</Text>
+          <Text style={burningStyles.resultHighlight}> 分の減少</Text>
+          <Text style={burningStyles.resultSuffix}> に相当</Text>
+        </View>
+      </View>
+
+      {/* CTAボタン */}
+      <TouchableOpacity
+        style={burningStyles.ctaButton}
+        onPress={onUpgrade}
+        activeOpacity={0.8}
+      >
+        <Text style={burningStyles.ctaEmoji}>🔥</Text>
+        <Text style={burningStyles.ctaLabel}>燃焼結果を確認する</Text>
+      </TouchableOpacity>
+
+      {/* 説明モーダル */}
+      <Modal
+        visible={helpVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setHelpVisible(false)}
+      >
+        <TouchableOpacity
+          style={burningStyles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setHelpVisible(false)}
+        >
+          <View style={burningStyles.modalCard}>
+            <Text style={burningStyles.modalTitle}>🔥 月間脂肪燃焼量とは？</Text>
+            <Text style={burningStyles.modalBody}>
+              毎日の目標カロリーと実際の摂取カロリーの差を、1ヶ月分積み上げた値です。
+            </Text>
+            <Text style={burningStyles.modalBody}>
+              脂肪1kgは約7,200kcalに相当するため、カロリー差分をkg換算で表示しています。
+            </Text>
+            <Text style={burningStyles.modalBody}>
+              <Text style={{ color: '#34C759', fontWeight: '600' }}>マイナス</Text>
+              が大きいほど、目標より少なく食べられていることを意味します。
+            </Text>
+            <TouchableOpacity
+              style={burningStyles.modalCloseBtn}
+              onPress={() => setHelpVisible(false)}
+            >
+              <Text style={burningStyles.modalCloseBtnText}>閉じる</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </View>
+  );
+}
+
+// Burning Reward専用スタイル（プロ品質・他セクションと統一）
+const burningStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  gradientBg: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 12,
+  },
+  premiumBadge: {
+    backgroundColor: '#FF7043',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  premiumBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
+  title: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2C2C2E',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  fireContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 44,
+    marginTop: 4,
+  },
+  fireEmoji: {
+    fontSize: 36,
+    textShadowColor: 'rgba(255,120,60,0.3)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 8,
+  },
+  resultCard: {
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 10,
+    marginHorizontal: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  resultLabel: {
+    fontSize: 10,
+    color: '#8E8E93',
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  resultMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+  },
+  resultPrefix: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2C2C2E',
+  },
+  blurredValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FF6B35',
+    opacity: 0.5,
+    marginHorizontal: 2,
+  },
+  resultUnit: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2C2C2E',
+  },
+  resultHighlight: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FF6B35',
+  },
+  resultSuffix: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#2C2C2E',
+  },
+  ctaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    marginHorizontal: 8,
+    marginTop: 8,
+    marginBottom: 12,
+    paddingVertical: 10,
+    gap: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  ctaEmoji: {
+    fontSize: 12,
+  },
+  ctaLabel: {
+    color: '#E85D04',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  // モーダル
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    maxWidth: 300,
+    width: '100%',
+    gap: 10,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    textAlign: 'center',
+  },
+  modalBody: {
+    fontSize: 14,
+    color: '#3C3C43',
+    lineHeight: 20,
+  },
+  modalCloseBtn: {
+    backgroundColor: '#FF7043',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  modalCloseBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+});
 
 interface MonthlyProgressMeterProps {
   progress: number;
@@ -826,6 +1172,21 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textSecondary,
   },
+  lockedDeficitRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing.xs,
+    marginVertical: spacing.xs,
+  },
+  lockedDeficitValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  lockedDeficitDays: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
   lockedButton: {
     alignSelf: 'flex-start',
     backgroundColor: colors.textSecondary,
@@ -1020,5 +1381,75 @@ const styles = StyleSheet.create({
   errorHint: {
     ...textStyles.caption,
     color: colors.textSecondary,
+  },
+  lockedTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  lockedMaskedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.xs,
+  },
+  lockedMaskedValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    letterSpacing: 1,
+  },
+  lockedCtaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  lockedCtaLabel: {
+    ...textStyles.body,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  modalCard: {
+    backgroundColor: colors.surfaceStrong,
+    borderRadius: 20,
+    padding: spacing.lg,
+    maxWidth: 340,
+    width: '100%',
+    gap: spacing.md,
+  },
+  modalTitle: {
+    ...textStyles.titleMedium,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  modalBody: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    lineHeight: 22,
+  },
+  modalButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 999,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    alignSelf: 'center',
+    marginTop: spacing.sm,
+  },
+  modalButtonLabel: {
+    ...textStyles.body,
+    color: '#fff',
+    fontWeight: '600',
   },
 });

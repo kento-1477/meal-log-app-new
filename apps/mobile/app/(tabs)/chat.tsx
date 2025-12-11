@@ -781,227 +781,222 @@ export default function ChatScreen() {
             ) : null}
           </View>
           {error ? <ErrorBanner message={error} /> : null}
-        <FlatList
-          style={styles.flex}
-          ref={listRef}
-          data={filteredTimeline}
-          keyExtractor={(item) => item.id}
-          contentInsetAdjustmentBehavior="never"
-          renderItem={({ item }) =>
-            item.type === 'message' ? (
-              <ChatBubble
-                message={
-                  item.payload.card && item.payload.role === 'assistant'
-                    ? { ...item.payload, text: t('chat.recordComplete') }
-                    : item.payload
-                }
-              />
+          <FlatList
+            style={styles.flex}
+            ref={listRef}
+            data={filteredTimeline}
+            keyExtractor={(item) => item.id}
+            contentInsetAdjustmentBehavior="never"
+            renderItem={({ item }) =>
+              item.type === 'message' ? (
+                <ChatBubble
+                  message={
+                    item.payload.card && item.payload.role === 'assistant'
+                      ? { ...item.payload, text: t('chat.recordComplete') }
+                      : item.payload
+                  }
+                />
+              ) : (
+                <NutritionCard
+                  payload={item.payload}
+                  onShare={() => handleShareCard(item.payload, item.id)}
+                  sharing={sharingId === item.id}
+                  onAddFavorite={item.payload.favoriteCandidate ? (draft) => handleAddFavoriteFromCard(item.id, draft) : undefined}
+                  addingFavorite={addingFavoriteId === item.id}
+                  onEdit={item.payload.logId ? () => handleEditLog(item.payload.logId) : undefined}
+                />
+              )
+            }
+            contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(bottomSectionHeight, 120) }]}
+            ListFooterComponent={renderEnhancedFooter}
+            onContentSizeChange={scrollToEnd}
+            showsVerticalScrollIndicator={false}
+          />
+          <View
+            style={styles.bottomSection}
+            onLayout={(event) => setBottomSectionHeight(event.nativeEvent.layout.height)}
+          >
+            {isLimitReached ? (
+              <LinearGradient
+                colors={[colors.accentSoft, colors.cardAuroraMid]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[styles.limitCard, { paddingBottom: Math.max(18, inset.bottom + 4) }]}
+              >
+                <Text style={styles.limitCardTitle}>{t('chat.limitReached.title')}</Text>
+                <Text style={styles.limitCardDescription} numberOfLines={2} ellipsizeMode="tail">
+                  {t('usage.limitHint')}
+                </Text>
+                <PrimaryButton label={t('usage.limitModal.purchase')} onPress={handleOpenPaywall} />
+              </LinearGradient>
             ) : (
-              <NutritionCard
-                payload={item.payload}
-                onShare={() => handleShareCard(item.payload, item.id)}
-                sharing={sharingId === item.id}
-                onAddFavorite={item.payload.favoriteCandidate ? (draft) => handleAddFavoriteFromCard(item.id, draft) : undefined}
-                addingFavorite={addingFavoriteId === item.id}
-                onEdit={item.payload.logId ? () => handleEditLog(item.payload.logId) : undefined}
-              />
-            )
-          }
-          contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(bottomSectionHeight, 120) }]}
-          ListFooterComponent={renderEnhancedFooter}
-          onContentSizeChange={scrollToEnd}
-          showsVerticalScrollIndicator={false}
-        />
-        <View
-          style={styles.bottomSection}
-          onLayout={(event) => setBottomSectionHeight(event.nativeEvent.layout.height)}
-        >
-          {isLimitReached ? (
-            <LinearGradient
-              colors={[colors.accentSoft, colors.cardAuroraMid]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={[styles.limitCard, { paddingBottom: Math.max(18, inset.bottom + 4) }]}
-            >
-              <Text style={styles.limitCardTitle}>{t('chat.limitReached.title')}</Text>
-              <Text style={styles.limitCardDescription} numberOfLines={2} ellipsizeMode="tail">
-                {t('usage.limitHint')}
-              </Text>
-              <PrimaryButton label={t('usage.limitModal.purchase')} onPress={handleOpenPaywall} />
-            </LinearGradient>
-          ) : (
-            <>
-              {composingImageUri ? (
-                <View style={[styles.previewContainer, keyboardVisible && styles.previewHidden]}>
-                  <Image source={{ uri: composingImageUri }} style={styles.preview} />
-                  <TouchableOpacity onPress={() => setComposingImage(null)} style={styles.removeImage}>
-                    <Text style={{ color: '#fff' }}>✕</Text>
-                  </TouchableOpacity>
+              <>
+                {composingImageUri ? (
+                  <View style={[styles.previewContainer, keyboardVisible && styles.previewHidden]}>
+                    <Image source={{ uri: composingImageUri }} style={styles.preview} />
+                    <TouchableOpacity onPress={() => setComposingImage(null)} style={styles.removeImage}>
+                      <Text style={{ color: '#fff' }}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                <View style={styles.quickActionsRow}>
+                  {quickActions.map((action) => (
+                    <TouchableOpacity key={action.key} style={styles.quickAction} onPress={action.onPress}>
+                      <Feather name={action.icon} size={14} color={colors.textPrimary} />
+                      <Text style={styles.quickActionLabel}>{action.label}</Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
-              ) : null}
-              <View style={styles.quickActionsRow}>
-                {quickActions.map((action) => (
-                  <TouchableOpacity key={action.key} style={styles.quickAction} onPress={action.onPress}>
-                    <Feather name={action.icon} size={14} color={colors.textPrimary} />
-                    <Text style={styles.quickActionLabel}>{action.label}</Text>
+                <View
+                  style={[styles.composerArea, styles.composerDocked, { paddingBottom: Math.max(12, inset.bottom) }]}
+                >
+                  <View style={styles.inputRow}>
+                    <TextInput
+                      style={[styles.textInput, styles.textInputMultiline]}
+                      placeholder={t('chat.placeholder')}
+                      value={input}
+                      onChangeText={setInput}
+                      multiline
+                      numberOfLines={3}
+                      blurOnSubmit={false}
+                      returnKeyType="default"
+                      textAlignVertical="top"
+                    />
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (!sendButtonDisabled) {
+                          void handleSend();
+                        }
+                      }}
+                      disabled={sendButtonDisabled}
+                      style={[styles.sendButton, sendButtonDisabled && styles.sendButtonDisabled]}
+                    >
+                      {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>{sendLabel}</Text>}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+        <Modal
+          visible={favoritesVisible}
+          animationType="slide"
+          onRequestClose={() => setFavoritesVisible(false)}
+        >
+          <SafeAreaView
+            style={[
+              styles.favoritesModalContainer,
+              { paddingTop: inset.top + 12, paddingBottom: Math.max(inset.bottom, 16) },
+            ]}
+            edges={['left', 'right']}
+          >
+            <View style={styles.favoritesHeader}>
+              <TouchableOpacity
+                onPress={() => setFavoritesVisible(false)}
+                style={styles.favoritesBackButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="戻る"
+              >
+                <Feather name="chevron-left" size={20} color={colors.textPrimary} />
+                <Text style={styles.favoritesBackLabel}>戻る</Text>
+              </TouchableOpacity>
+              <Text style={styles.favoritesTitle} numberOfLines={1}>
+                {t('recentLogs.heading')}
+              </Text>
+              <View style={styles.favoritesHeaderSpacer} />
+            </View>
+            {favoritesQuery.isLoading ? (
+              <View style={styles.favoritesLoading}>
+                <ActivityIndicator color={colors.accent} />
+              </View>
+            ) : favoritesList.length ? (
+              <ScrollView
+                contentContainerStyle={[
+                  styles.favoritesList,
+                  { paddingBottom: Math.max(inset.bottom, 16) + 24 },
+                ]}
+                showsVerticalScrollIndicator={false}
+              >
+                {favoritesList.map((favorite) => (
+                  <TouchableOpacity
+                    key={favorite.id}
+                    style={styles.favoritesItem}
+                    onPress={() => handleFavoriteSelect(favorite)}
+                  >
+                    <Text style={styles.favoritesItemName}>{favorite.name}</Text>
+                    <Text style={styles.favoritesItemMeta}>
+                      {Math.round(favorite.totals.kcal)} kcal ／ P {formatMacro(favorite.totals.protein_g)}g ／ F {formatMacro(favorite.totals.fat_g)}g ／
+                      C {formatMacro(favorite.totals.carbs_g)}g
+                    </Text>
                   </TouchableOpacity>
                 ))}
+              </ScrollView>
+            ) : (
+              <View style={styles.favoritesEmpty}>
+                <Text style={styles.favoritesEmptyText}>お気に入りがまだ登録されていません。</Text>
               </View>
-              <View
-                style={[styles.composerArea, styles.composerDocked, { paddingBottom: Math.max(12, inset.bottom) }]}
-              >
-                <View style={styles.inputRow}>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder={t('chat.placeholder')}
-                    value={input}
-                    onChangeText={setInput}
-                    multiline={false}
-                    numberOfLines={1}
-                    blurOnSubmit={false}
-                    returnKeyType={canSend ? 'send' : 'done'}
-                    enablesReturnKeyAutomatically
-                    onSubmitEditing={() => {
-                      if (!sendButtonDisabled) {
-                        void handleSend();
-                      }
-                    }}
-                  />
-                  <TouchableOpacity
-                    onPress={() => {
-                      if (!sendButtonDisabled) {
-                        void handleSend();
-                      }
-                    }}
-                    disabled={sendButtonDisabled}
-                    style={[styles.sendButton, sendButtonDisabled && styles.sendButtonDisabled]}
-                  >
-                    {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>{sendLabel}</Text>}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </>
-          )}
-        </View>
-      </KeyboardAvoidingView>
-      <Modal
-        visible={favoritesVisible}
-        animationType="slide"
-        onRequestClose={() => setFavoritesVisible(false)}
-      >
-        <SafeAreaView
-          style={[
-            styles.favoritesModalContainer,
-            { paddingTop: inset.top + 12, paddingBottom: Math.max(inset.bottom, 16) },
-          ]}
-          edges={['left', 'right']}
+            )}
+          </SafeAreaView>
+        </Modal>
+        <Modal
+          visible={limitModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setLimitModalVisible(false)}
         >
-          <View style={styles.favoritesHeader}>
-            <TouchableOpacity
-              onPress={() => setFavoritesVisible(false)}
-              style={styles.favoritesBackButton}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityRole="button"
-              accessibilityLabel="戻る"
-            >
-              <Feather name="chevron-left" size={20} color={colors.textPrimary} />
-              <Text style={styles.favoritesBackLabel}>戻る</Text>
-            </TouchableOpacity>
-            <Text style={styles.favoritesTitle} numberOfLines={1}>
-              {t('recentLogs.heading')}
-            </Text>
-            <View style={styles.favoritesHeaderSpacer} />
-          </View>
-          {favoritesQuery.isLoading ? (
-            <View style={styles.favoritesLoading}>
-              <ActivityIndicator color={colors.accent} />
-            </View>
-          ) : favoritesList.length ? (
-            <ScrollView
-              contentContainerStyle={[
-                styles.favoritesList,
-                { paddingBottom: Math.max(inset.bottom, 16) + 24 },
-              ]}
-              showsVerticalScrollIndicator={false}
-            >
-              {favoritesList.map((favorite) => (
+          <View style={styles.usageModalBackdrop}>
+            <View style={styles.usageModalCard}>
+              <Text style={styles.usageModalTitle}>{t('usage.limitModal.title')}</Text>
+              <Text style={styles.usageModalMessage}>
+                {t('usage.limitModal.message', { limit: usage?.limit ?? 0 })}
+              </Text>
+              <View style={styles.usageModalActions}>
                 <TouchableOpacity
-                  key={favorite.id}
-                  style={styles.favoritesItem}
-                  onPress={() => handleFavoriteSelect(favorite)}
+                  style={styles.usageModalPrimary}
+                  onPress={() => {
+                    setLimitModalVisible(false);
+                    handleOpenPaywall();
+                  }}
                 >
-                  <Text style={styles.favoritesItemName}>{favorite.name}</Text>
-                  <Text style={styles.favoritesItemMeta}>
-                    {Math.round(favorite.totals.kcal)} kcal ／ P {formatMacro(favorite.totals.protein_g)}g ／ F {formatMacro(favorite.totals.fat_g)}g ／
-                    C {formatMacro(favorite.totals.carbs_g)}g
-                  </Text>
+                  <Text style={styles.usageModalPrimaryLabel}>{t('usage.limitModal.purchase')}</Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
-          ) : (
-            <View style={styles.favoritesEmpty}>
-              <Text style={styles.favoritesEmptyText}>お気に入りがまだ登録されていません。</Text>
-            </View>
-          )}
-        </SafeAreaView>
-      </Modal>
-      <Modal
-        visible={limitModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setLimitModalVisible(false)}
-      >
-        <View style={styles.usageModalBackdrop}>
-          <View style={styles.usageModalCard}>
-            <Text style={styles.usageModalTitle}>{t('usage.limitModal.title')}</Text>
-            <Text style={styles.usageModalMessage}>
-              {t('usage.limitModal.message', { limit: usage?.limit ?? 0 })}
-            </Text>
-            <View style={styles.usageModalActions}>
-              <TouchableOpacity
-                style={styles.usageModalPrimary}
-                onPress={() => {
-                  setLimitModalVisible(false);
-                  handleOpenPaywall();
-                }}
-              >
-                <Text style={styles.usageModalPrimaryLabel}>{t('usage.limitModal.purchase')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setLimitModalVisible(false)}>
-                <Text style={styles.usageModalSecondary}>{t('usage.limitModal.close')}</Text>
-              </TouchableOpacity>
+                <TouchableOpacity onPress={() => setLimitModalVisible(false)}>
+                  <Text style={styles.usageModalSecondary}>{t('usage.limitModal.close')}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
-      <Modal
-        visible={streakModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setStreakModalVisible(false)}
-      >
-        <View style={styles.usageModalBackdrop}>
-          <View style={styles.usageModalCard}>
-            <Text style={styles.usageModalTitle}>{t('usage.streakModal.title')}</Text>
-            <Text style={styles.usageModalMessage}>{t('usage.streakModal.message')}</Text>
-            <View style={styles.usageModalActions}>
-              <TouchableOpacity
-                style={styles.usageModalPrimary}
-                onPress={() => {
-                  setStreakModalVisible(false);
-                  handleOpenPaywall();
-                }}
-              >
-                <Text style={styles.usageModalPrimaryLabel}>{t('usage.streakModal.upgrade')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setStreakModalVisible(false)}>
-                <Text style={styles.usageModalSecondary}>{t('usage.streakModal.close')}</Text>
-              </TouchableOpacity>
+        </Modal>
+        <Modal
+          visible={streakModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setStreakModalVisible(false)}
+        >
+          <View style={styles.usageModalBackdrop}>
+            <View style={styles.usageModalCard}>
+              <Text style={styles.usageModalTitle}>{t('usage.streakModal.title')}</Text>
+              <Text style={styles.usageModalMessage}>{t('usage.streakModal.message')}</Text>
+              <View style={styles.usageModalActions}>
+                <TouchableOpacity
+                  style={styles.usageModalPrimary}
+                  onPress={() => {
+                    setStreakModalVisible(false);
+                    handleOpenPaywall();
+                  }}
+                >
+                  <Text style={styles.usageModalPrimaryLabel}>{t('usage.streakModal.upgrade')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setStreakModalVisible(false)}>
+                  <Text style={styles.usageModalSecondary}>{t('usage.streakModal.close')}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+        </Modal>
+      </SafeAreaView>
     </AuroraBackground>
   );
 }
@@ -1221,6 +1216,13 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     fontSize: 16,
     textAlignVertical: 'center',
+  },
+  textInputMultiline: {
+    height: 80,
+    minHeight: 50,
+    maxHeight: 120,
+    paddingVertical: 12,
+    textAlignVertical: 'top',
   },
   sendButton: {
     height: 48,

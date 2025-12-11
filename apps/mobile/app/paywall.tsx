@@ -20,6 +20,7 @@ import {
   PREMIUM_MONTHLY_PRODUCT_ID,
   purchasePremiumPlan,
   restorePurchases,
+  debugIAP,
 } from '@/services/iap';
 import {
   trackPaywallViewed,
@@ -186,8 +187,14 @@ export default function PaywallScreen() {
       Alert.alert(t('paywall.status.alreadyPremium'));
       return;
     }
+    // 商品が取得されていない場合はエラー
+    const selectedProduct = selectedPlan === 'yearly' ? yearlyProduct : monthlyProduct;
+    if (!selectedProduct) {
+      Alert.alert(t('paywall.error.generic'), 'Must query item from store before calling purchase');
+      return;
+    }
     purchaseMutation.mutate(selectedPlan);
-  }, [isPremium, purchaseMutation, selectedPlan, t]);
+  }, [isPremium, purchaseMutation, selectedPlan, yearlyProduct, monthlyProduct, t]);
 
   const handleRestore = useCallback(() => {
     restoreMutation.mutate();
@@ -250,6 +257,15 @@ export default function PaywallScreen() {
       trackPaywallViewed();
     }
   }, [sessionStatus, isPremium]);
+
+  // DEBUG: Disabled to avoid connection conflict with fetchIapProducts
+  // fetchIapProducts now has detailed logging, so this is not needed
+  // useEffect(() => {
+  //   if (Platform.OS === 'ios' && sessionStatus === 'authenticated') {
+  //     console.log('[Paywall] Calling debugIAP...');
+  //     debugIAP();
+  //   }
+  // }, [sessionStatus]);
 
   return (
     <View style={styles.screen}>
@@ -345,9 +361,9 @@ export default function PaywallScreen() {
 
           {/* CTA Button */}
           <TouchableOpacity
-            style={[styles.ctaButton, (platformUnsupported || isPremium || premiumLoading) && styles.buttonDisabled]}
+            style={[styles.ctaButton, (platformUnsupported || isPremium || premiumLoading || (!yearlyProduct && !monthlyProduct)) && styles.buttonDisabled]}
             onPress={handlePurchase}
-            disabled={platformUnsupported || isPremium || premiumLoading || purchaseMutation.isPending}
+            disabled={platformUnsupported || isPremium || premiumLoading || purchaseMutation.isPending || (!yearlyProduct && !monthlyProduct)}
             activeOpacity={0.9}
           >
             <LinearGradient

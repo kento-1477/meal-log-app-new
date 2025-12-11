@@ -50,17 +50,35 @@ export interface RestorePurchasesResult {
 
 export async function fetchIapProducts(productIds: string[]): Promise<IapProductDetails[]> {
   ensureIosSupport();
+  console.log('[IAP] fetchIapProducts called with:', productIds);
   return withIapConnection(async () => {
-    const products = await InAppPurchases.getProductsAsync(productIds);
-    return products.map((product) => ({
-      productId: product.productId,
-      title: product.title,
-      description: product.description,
-      price: product.price,
-      priceAmount: product.priceAmount ?? 0,
-      currencyCode: product.currencyCode ?? 'JPY',
-      localizedPrice: product.localizedPrice,
-    }));
+    console.log('[IAP] Connected to store, fetching products...');
+    try {
+      const response = await InAppPurchases.getProductsAsync(productIds);
+      console.log('[IAP] getProductsAsync response:', JSON.stringify(response, null, 2));
+
+      // expo-in-app-purchases returns { responseCode, results } object
+      const products = response?.results ?? response ?? [];
+
+      if (!Array.isArray(products)) {
+        console.error('[IAP] Products is not an array:', typeof products, products);
+        return [];
+      }
+
+      console.log('[IAP] Products received:', products.length, products.map((p: any) => p.productId));
+      return products.map((product: any) => ({
+        productId: product.productId,
+        title: product.title,
+        description: product.description,
+        price: product.price,
+        priceAmount: product.priceAmount ?? 0,
+        currencyCode: product.currencyCode ?? 'JPY',
+        localizedPrice: product.localizedPrice,
+      }));
+    } catch (error) {
+      console.error('[IAP] Error fetching products:', error);
+      throw error;
+    }
   });
 }
 
@@ -315,4 +333,66 @@ function encodeToBase64(value: string) {
     return bufferCtor.from(value, 'utf8').toString('base64');
   }
   throw new Error('Base64 encoding is not supported in this environment');
+}
+
+/**
+ * Debug function to check IAP product availability
+ * Call this from paywall screen to see detailed logs
+ */
+export async function debugIAP() {
+  const productIds = [
+    PREMIUM_PRODUCT_ID,       // com.meallog.premium.annual
+    PREMIUM_MONTHLY_PRODUCT_ID, // com.meallog.premium.monthly
+  ];
+
+  console.log('========================================');
+  console.log('[IAP DEBUG] Starting IAP debug check...');
+  console.log('[IAP DEBUG] Product IDs to query:', productIds);
+  console.log('========================================');
+
+  try {
+    if (Platform.OS !== 'ios') {
+      console.log('[IAP DEBUG] ERROR: Not iOS platform');
+      return;
+    }
+
+    console.log('[IAP DEBUG] Connecting to App Store...');
+    const connectResult = await InAppPurchases.connectAsync();
+    console.log('[IAP DEBUG] Connect result =', connectResult);
+
+    console.log('[IAP DEBUG] Fetching products...');
+    const products = await InAppPurchases.getProductsAsync(productIds);
+
+    console.log('========================================');
+    console.log('[IAP DEBUG] Products count =', products.length);
+    console.log('========================================');
+
+    if (products.length === 0) {
+      console.log('[IAP DEBUG] ⚠️ NO PRODUCTS RETURNED!');
+      console.log('[IAP DEBUG] Possible causes:');
+      console.log('[IAP DEBUG] 1. Products not in "Ready to Submit" status in App Store Connect');
+      console.log('[IAP DEBUG] 2. Bundle ID mismatch');
+      console.log('[IAP DEBUG] 3. Paid Applications Agreement not signed');
+      console.log('[IAP DEBUG] 4. Sandbox environment issue');
+    } else {
+      products.forEach((p, idx) => {
+        console.log(`[IAP DEBUG] --- Product ${idx + 1} ---`);
+        console.log('[IAP DEBUG] productId =', p.productId);
+        console.log('[IAP DEBUG] title =', p.title);
+        console.log('[IAP DEBUG] description =', p.description);
+        console.log('[IAP DEBUG] price =', p.price);
+        console.log('[IAP DEBUG] priceAmount =', p.priceAmount);
+        console.log('[IAP DEBUG] priceString =', p.priceString);
+        console.log('[IAP DEBUG] currencyCode =', p.currencyCode);
+        console.log('[IAP DEBUG] localizedPrice =', p.localizedPrice);
+      });
+    }
+
+    await InAppPurchases.disconnectAsync();
+    console.log('[IAP DEBUG] Disconnected from App Store');
+    console.log('========================================');
+  } catch (e) {
+    console.log('[IAP DEBUG] ❌ ERROR:', e);
+    console.log('========================================');
+  }
 }
