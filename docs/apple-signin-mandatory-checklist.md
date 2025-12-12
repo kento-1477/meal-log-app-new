@@ -34,10 +34,10 @@
 
 ## フェーズ4: メール/パスワード認証の撤去（モバイル）
 
-- [ ] `login`画面をAppleのみへ（フォーム/新規登録導線削除）
-- [ ] `register`画面/ルートを削除
-- [ ] 設定の「パスワード変更」導線を削除
-- [ ] 未使用のAPIクライアント関数（`login/registerUser/linkAppleAccount`）を整理
+- [x] `login`画面をAppleのみへ（フォーム/新規登録導線削除）
+- [x] `register`画面/ルートを削除
+- [x] 設定の「パスワード変更」導線を削除
+- [x] 未使用のAPIクライアント関数（`login/registerUser/linkAppleAccount`）を整理
 
 ## フェーズ5: バックエンド（Supabase Edge Functions）整理
 
