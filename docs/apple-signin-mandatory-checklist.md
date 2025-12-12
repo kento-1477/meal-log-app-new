@@ -41,8 +41,8 @@
 
 ## フェーズ5: バックエンド（Supabase Edge Functions）整理
 
-- [ ] `/api/register`・`/api/login`・`/api/link/apple`を廃止（Appleログイン/セッション/ログアウトのみ）
-- [ ] `auth.apple_conflict`などのメッセージをApple-only前提へ修正
+- [x] `/api/register`・`/api/login`・`/api/link/apple`を廃止（Appleログイン/セッション/ログアウトのみ）
+- [x] `auth.apple_conflict`などのメッセージをApple-only前提へ修正
 
 ## フェーズ6: 法務リンク整備（必要最小）
 
