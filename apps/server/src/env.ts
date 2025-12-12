@@ -10,6 +10,7 @@ const BaseEnvSchema = z.object({
   PORT: z.coerce.number().default(4000),
   SESSION_SECRET: z.string().min(10),
   DATABASE_URL: z.string(),
+  APPLE_SERVICE_ID: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_FORCE_IPV4: z
     .string()
