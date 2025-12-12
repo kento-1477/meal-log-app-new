@@ -107,10 +107,12 @@ export default function LoginScreen() {
           AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
         ],
       });
+      console.log('[Apple Sign In] Got credential, hasToken:', !!credential.identityToken);
       if (!credential.identityToken) {
         throw new Error('missing_identity_token');
       }
 
+      console.log('[Apple Sign In] Sending to server, token length:', credential.identityToken.length);
       const response = await signInWithApple({
         identityToken: credential.identityToken,
         authorizationCode: credential.authorizationCode ?? undefined,
@@ -119,6 +121,7 @@ export default function LoginScreen() {
           ? `${credential.fullName.givenName ?? ''} ${credential.fullName.familyName ?? ''}`.trim()
           : undefined,
       });
+      console.log('[Apple Sign In] Server response received');
 
       setUser(response?.user ?? null);
       setUsage(response?.usage ?? null);
@@ -128,6 +131,7 @@ export default function LoginScreen() {
       const needsOnboarding = !(response?.onboarding?.completed ?? false);
       router.replace(needsOnboarding ? '/(onboarding)/welcome' : '/(tabs)/chat');
     } catch (err: any) {
+      console.log('[Apple Sign In] Error caught:', err?.code, err?.message, err);
       if (err?.code === 'ERR_REQUEST_CANCELED' || err?.code === 'ERR_CANCELED') {
         setStatus('idle');
         return;

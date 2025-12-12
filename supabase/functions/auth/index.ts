@@ -275,6 +275,12 @@ const handleAppleLogin = async (c: Hono.Context) => {
   try {
     console.log('apple login called', c.req.url);
     const body = await c.req.json();
+    console.log('apple login body received', {
+      hasIdentityToken: !!body.identityToken,
+      tokenLength: body.identityToken?.length,
+      tokenPreview: body.identityToken?.substring(0, 100),
+      tokenDots: body.identityToken?.split('.').length,
+    });
     const input = AppleAuthRequestSchema.parse(body);
     const verified = await verifyAppleIdentityToken(input.identityToken);
     const email = input.email ?? verified.email ?? null;
