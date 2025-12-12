@@ -374,7 +374,7 @@ export default function DashboardScreen() {
                             {isPremium ? (
                               <MonthlyDeficitCard summary={data.summary} targets={data.targets} t={t} locale={locale} />
                             ) : (
-                              <MonthlyDeficitLockedCard t={t} onUpgrade={() => router.push('/paywall')} />
+                              <MonthlyDeficitLockedCard onUpgrade={() => router.push('/paywall')} />
                             )}
                           </View>
                         </View>
@@ -525,11 +525,10 @@ function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardP
 }
 
 interface MonthlyDeficitLockedCardProps {
-  t: Translate;
   onUpgrade: () => void;
 }
 
-function MonthlyDeficitLockedCard({ t, onUpgrade }: MonthlyDeficitLockedCardProps) {
+function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) {
   const [helpVisible, setHelpVisible] = useState(false);
 
   // 炎アニメーション（Pulse: スケール & 不透明度）
