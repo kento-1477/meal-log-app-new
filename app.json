@@ -2,6 +2,7 @@
   "expo": {
     "name": "Meal Log",
     "slug": "meal-log-app",
+    "scheme": "meallog",
     "platforms": ["ios", "android"],
     "orientation": "portrait",
     "extra": {
@@ -19,10 +20,12 @@
           "root": "apps/mobile/app"
         }
       ],
-      "./apps/mobile/plugins/withRNScreensPod.js"
+      "./apps/mobile/plugins/withRNScreensPod.js",
+      "expo-apple-authentication"
     ],
     "ios": {
       "bundleIdentifier": "com.kento3372.meallogapp",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
