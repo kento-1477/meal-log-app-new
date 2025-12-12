@@ -46,8 +46,8 @@
 
 ## フェーズ6: 法務リンク整備（必要最小）
 
-- [ ] `TERMS_OF_SERVICE_URL`を`privacy-policy`と分離
-- [ ] `docs/terms-of-service.md`を追加（GitHub Pagesで表示できる形）
+- [x] `TERMS_OF_SERVICE_URL`を`privacy-policy`と分離
+- [x] `docs/terms-of-service.md`を追加（GitHub Pagesで表示できる形）
 
 ## フェーズ7: 検証
 
