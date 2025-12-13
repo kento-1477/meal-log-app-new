@@ -54,4 +54,5 @@
 - [x] `npm -w apps/mobile test`が通る
 - [x] `app.json`に`scheme`を設定（expo-linkingのクラッシュ回避）
 - [x] iOSでSign in with Appleを有効化（`ios.usesAppleSignIn` + `expo-apple-authentication`）
+- [ ] iOSビルドが通る（hoisted `react-native` の参照解消）
 - [ ] 主要導線の手動確認（オンボーディング→Apple→保存→チャット）
