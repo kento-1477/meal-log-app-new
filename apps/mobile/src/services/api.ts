@@ -49,10 +49,7 @@ const responseCache = new Map<string, unknown>();
 function resolveFunctionPrefix(path: string): string {
   // Supabase Edge Functions are exposed under /{function-name}/...
   if (
-    path.startsWith('/api/login') ||
     path.startsWith('/api/login/apple') ||
-    path.startsWith('/api/link/apple') ||
-    path.startsWith('/api/register') ||
     path.startsWith('/api/session') ||
     path.startsWith('/api/logout')
   ) {
@@ -251,30 +248,9 @@ export interface AuthResponse {
   onboarding: OnboardingStatus;
 }
 
-export async function registerUser(input: { email: string; password: string }) {
-  return apiFetch<AuthResponse>('/api/register', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  });
-}
-
-export async function login(input: { email: string; password: string }) {
-  return apiFetch<AuthResponse>('/api/login', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  });
-}
-
 export async function signInWithApple(input: { identityToken: string; authorizationCode?: string; email?: string; fullName?: string }) {
   console.log('[API] signInWithApple called, API_BASE_URL:', API_BASE_URL);
   return apiFetch<AuthResponse>('/api/login/apple', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  });
-}
-
-export async function linkAppleAccount(input: { identityToken: string; authorizationCode?: string; email?: string; fullName?: string }) {
-  return apiFetch<AuthResponse>('/api/link/apple', {
     method: 'POST',
     body: JSON.stringify(input),
   });

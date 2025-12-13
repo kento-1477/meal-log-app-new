@@ -1,5 +1,5 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Alert, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useTranslation } from '@/i18n';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
@@ -9,7 +9,6 @@ import { useChatStore } from '@/store/chat';
 import { logout, deleteAccount } from '@/services/api';
 import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { SUPPORT_EMAIL } from '@/config/legal';
 
 export default function AccountScreen() {
   const { t } = useTranslation();
@@ -46,11 +45,6 @@ export default function AccountScreen() {
     },
   });
 
-  const handlePasswordSupport = () => {
-    const url = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Password reset request')}`;
-    void Linking.openURL(url);
-  };
-
   const confirmDeleteAccount = () => {
     Alert.alert(t('settings.account.deleteTitle'), t('settings.account.deleteMessage'), [
       { text: t('common.cancel'), style: 'cancel' },
@@ -78,9 +72,6 @@ export default function AccountScreen() {
             disabled={logoutMutation.isPending}
           >
             <Text style={styles.primaryButtonLabel}>{t('settings.account.logout')}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.outlineButton} onPress={handlePasswordSupport}>
-            <Text style={styles.outlineButtonLabel}>{t('settings.account.changePassword')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.destructiveButton, deleteAccountMutation.isPending && styles.destructiveButtonDisabled]}
@@ -143,18 +134,6 @@ const styles = StyleSheet.create({
   primaryButtonLabel: {
     ...textStyles.body,
     color: '#fff',
-    fontWeight: '600',
-  },
-  outlineButton: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-  },
-  outlineButtonLabel: {
-    ...textStyles.body,
-    color: colors.accent,
     fontWeight: '600',
   },
   destructiveButton: {

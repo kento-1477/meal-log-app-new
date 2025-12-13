@@ -19,12 +19,13 @@ Apple-inspired mobile experience for logging meals via chatbot, powered by an Ex
 
 ## Environment variables
 
-Copy `.env.example` to `.env.local` and adjust:
+Copy `.env.example` to `apps/server/.env.local` and adjust:
 
 ```
 PORT=4000
 SESSION_SECRET=<your-session-secret>
 DATABASE_URL=<your-database-url>
+APPLE_SERVICE_ID=com.meallog.app
 GEMINI_API_KEY=<your-gemini-api-key>
 AI_ATTEMPT_TIMEOUT_MS=25000
 AI_TOTAL_TIMEOUT_MS=35000
@@ -47,7 +48,7 @@ SEED_DEMO_USER=false
 DEMO_USER_PASSWORD=
 ```
 
-> Generate `SESSION_SECRET` with a strong random value (for example `openssl rand -hex 32`) and keep secrets in `.env.local`.
+> Generate `SESSION_SECRET` with a strong random value (for example `openssl rand -hex 32`) and keep secrets in `apps/server/.env.local`.
 > Without `GEMINI_API_KEY` the server falls back to a deterministic mock response so flows stay testable. When `AI_TRANSLATION_STRATEGY=ai` and no key is configured, translations gracefully fall back to English.
 > `EXPO_PUBLIC_API_BASE_URL` should point at the Cloudflare Worker (`https://mealchat-gateway.kento147777.workers.dev`) so the app always talks to HTTPS even when the Render origin changes.
 >
@@ -63,7 +64,7 @@ DEMO_USER_PASSWORD=
 
 ### Optional: ローカルでプランを強制する
 
-開発時に全ユーザーを一時的に `STANDARD` プランとして扱いたい場合は、サーバー側の `.env.local` に次の環境変数を追加してください。
+開発時に全ユーザーを一時的に `STANDARD` プランとして扱いたい場合は、サーバー側の `apps/server/.env.local` に次の環境変数を追加してください。
 
 ```
 USER_PLAN_OVERRIDE=STANDARD

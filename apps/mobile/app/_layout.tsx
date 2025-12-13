@@ -27,7 +27,6 @@ export default function RootLayout() {
             <Stack.Screen name="(onboarding)" />
             <Stack.Screen name="invite" options={{ presentation: 'transparentModal', headerShown: false }} />
             <Stack.Screen name="login" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="register" options={{ headerShown: true, title: '新規登録', presentation: 'modal' }} />
             <Stack.Screen name="log/[id]" options={{ headerShown: true, title: '食事ログの編集' }} />
             <Stack.Screen name="settings/account" options={{ headerShown: true, title: 'アカウント管理' }} />
             <Stack.Screen name="settings/nutrition" options={{ headerShown: true, title: '栄養目標' }} />
