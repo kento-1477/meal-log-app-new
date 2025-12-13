@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const mobileRoot = path.resolve(import.meta.dirname, '..');
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const mobileRoot = path.resolve(scriptDir, '..');
 const repoRoot = path.resolve(mobileRoot, '..', '..');
 
 const hoistedReactNativePath = path.join(repoRoot, 'node_modules', 'react-native');
@@ -31,4 +33,3 @@ if (!pathExists(hoistedReactNativePath)) {
 fs.mkdirSync(localNodeModulesPath, { recursive: true });
 fs.symlinkSync(hoistedReactNativePath, localReactNativePath, 'dir');
 console.log(`[ensure-hoisted-react-native] Linked ${localReactNativePath} -> ${hoistedReactNativePath}`);
-
