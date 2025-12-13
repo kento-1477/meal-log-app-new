@@ -6,6 +6,7 @@
   "scripts": {
     "start": "EXPO_ROUTER_APP_ROOT=app EXPO_ROUTER_ABS_APP_ROOT=$PWD/app EXPO_USE_STATIC=1 expo start",
     "android": "EXPO_ROUTER_APP_ROOT=app expo run:android",
+    "preios": "node ./scripts/ensure-hoisted-react-native.mjs",
     "ios": "EXPO_ROUTER_APP_ROOT=app expo run:ios",
     "lint": "eslint ./src --ext .ts,.tsx",
     "test": "node --require ./tests/register-react-stub.cjs --loader ./tests/ts-loader.mjs --test tests/*.test.ts"
