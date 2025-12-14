@@ -143,22 +143,23 @@ const styles = StyleSheet.create({
   },
   center: {
     flex: 1,
+    width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 18,
   },
   avatarCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 112,
+    height: 112,
+    borderRadius: 56,
     backgroundColor: '#f2f4f7',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   avatar: {
-    width: 120,
-    height: 120,
+    width: 80,
+    height: 80,
   },
   title: {
     ...textStyles.titleMedium,
@@ -172,6 +173,7 @@ const styles = StyleSheet.create({
   },
   appleButton: {
     width: '100%',
+    maxWidth: 340,
     height: 44,
   },
   legal: {
@@ -194,4 +196,3 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
-
