@@ -16,10 +16,19 @@ const app = createApp();
 
 const APP_STORE_SHARED_SECRET = getEnv('APP_STORE_SHARED_SECRET', { optional: true });
 const OFFLINE_VERIFICATION = boolEnv('IAP_OFFLINE_VERIFICATION', false);
+const APP_STORE_VERIFY_TIMEOUT_MS = Number(Deno.env.get('APP_STORE_VERIFY_TIMEOUT_MS') ?? 15_000);
 
 app.get('/health', (c) => c.json({ ok: true, service: 'iap' }));
 
-app.post('/api/iap/purchase', requireAuth, async (c) => {
+app.use('*', async (c, next) => {
+  console.log('[iap] request', { method: c.req.method, url: c.req.url });
+  await next();
+});
+
+const PURCHASE_PATHS = ['/api/iap/purchase', '/iap/api/iap/purchase'] as const;
+
+PURCHASE_PATHS.forEach((path) =>
+  app.post(path, requireAuth, async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
   const parsed = IapPurchaseRequestSchema.safeParse(body);
@@ -100,7 +109,8 @@ app.post('/api/iap/purchase', requireAuth, async (c) => {
   const usage = summarizeUsageStatus(await evaluateAiUsage(user.id));
   const premiumStatus = await buildPremiumStatusPayload(user.id);
   return c.json({ ok: true, creditsGranted, usage, premiumStatus });
-});
+}),
+);
 
 export default app;
 
@@ -277,7 +287,11 @@ async function verifyAppStoreReceipt(input: IapPurchaseRequest) {
   let lastError: Error | null = null;
   for (const endpoint of endpoints) {
     try {
-      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+      const response = await fetchWithTimeout(
+        endpoint,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body },
+        APP_STORE_VERIFY_TIMEOUT_MS,
+      );
       if (!response.ok) {
         lastError = new Error(`App Store verifyReceipt HTTP ${response.status}`);
         continue;
@@ -329,6 +343,19 @@ async function verifyAppStoreReceipt(input: IapPurchaseRequest) {
 
   console.error('iap: app store verification failed', lastError);
   throw new HttpError('App Store レシートの検証に失敗しました', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  if (!timeoutMs || timeoutMs <= 0) {
+    return fetch(url, init);
+  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function verifyTestReceipt(input: IapPurchaseRequest) {
