@@ -3,6 +3,7 @@ import { Image, Linking, Platform, SafeAreaView, StyleSheet, Text, View } from '
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
 import { useTranslation } from '@/i18n';
@@ -91,26 +92,49 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 24) }]}>
+      <View style={styles.background} pointerEvents="none">
+        <LinearGradient
+          colors={[colors.cardAuroraStart, colors.cardAuroraMid, colors.cardAuroraEnd]}
+          start={{ x: 0.15, y: 0.1 }}
+          end={{ x: 0.85, y: 0.95 }}
+          style={styles.auroraGradient}
+        />
+        <View style={[styles.auroraBlob, styles.auroraBlobA]} />
+        <View style={[styles.auroraBlob, styles.auroraBlobB]} />
+        <View style={[styles.auroraBlob, styles.auroraBlobC]} />
+      </View>
+
       <View style={styles.page}>
         <View style={styles.center}>
-          <View style={styles.avatarCircle}>
-            <Image source={logo} style={styles.avatar} resizeMode="contain" />
+          <View style={styles.card}>
+            <View style={styles.logoWrap}>
+              <LinearGradient
+                colors={['rgba(245,178,37,0.18)', 'rgba(116,210,194,0.12)', 'transparent']}
+                start={{ x: 0.2, y: 0.1 }}
+                end={{ x: 0.8, y: 0.9 }}
+                style={styles.logoHalo}
+              />
+              <Image source={logo} style={styles.logo} resizeMode="contain" />
+            </View>
+
+            <Text style={styles.title}>{t('login.title')}</Text>
+            <Text style={styles.subtitle}>{t('login.subtitle')}</Text>
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+
+            {Platform.OS === 'ios' ? (
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                cornerRadius={14}
+                style={styles.appleButton}
+                onPress={handleAppleLogin}
+                disabled={loading}
+              />
+            ) : (
+              <Text style={styles.unsupportedText}>現在このアプリはiOSのみ対応しています。</Text>
+            )}
           </View>
-          <Text style={styles.title}>{t('login.title')}</Text>
-          <Text style={styles.subtitle}>{t('login.subtitle')}</Text>
-          {error ? <Text style={styles.error}>⚠️ {error}</Text> : null}
-          {Platform.OS === 'ios' ? (
-            <AppleAuthentication.AppleAuthenticationButton
-              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-              cornerRadius={12}
-              style={styles.appleButton}
-              onPress={handleAppleLogin}
-              disabled={loading}
-            />
-          ) : (
-            <Text style={styles.unsupportedText}>現在このアプリはiOSのみ対応しています。</Text>
-          )}
         </View>
 
         <Text style={styles.legal}>
@@ -132,48 +156,119 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.background,
+  },
+  background: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.background,
+  },
+  auroraGradient: {
+    position: 'absolute',
+    left: -80,
+    right: -80,
+    top: -120,
+    height: '62%',
+    opacity: 0.9,
+  },
+  auroraBlob: {
+    position: 'absolute',
+    borderRadius: 999,
+    opacity: 0.9,
+  },
+  auroraBlobA: {
+    width: 360,
+    height: 360,
+    top: -160,
+    left: -140,
+    backgroundColor: colors.cardAuroraStart,
+  },
+  auroraBlobB: {
+    width: 420,
+    height: 420,
+    top: -220,
+    right: -180,
+    opacity: 0.85,
+    backgroundColor: colors.cardAuroraMid,
+  },
+  auroraBlobC: {
+    width: 420,
+    height: 420,
+    top: 160,
+    left: -200,
+    opacity: 0.7,
+    backgroundColor: colors.cardAuroraEnd,
   },
   page: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
-    backgroundColor: '#fff',
   },
   center: {
     flex: 1,
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 18,
+    paddingTop: 10,
+    paddingBottom: 16,
   },
-  avatarCircle: {
-    width: 112,
-    height: 112,
-    borderRadius: 56,
+  card: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 28,
+    paddingVertical: 26,
+    paddingHorizontal: 22,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.62)',
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.16,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 18 },
+    elevation: 9,
+  },
+  logoWrap: {
+    marginTop: 6,
+    alignSelf: 'center',
+    width: 124,
+    height: 124,
+    borderRadius: 999,
     backgroundColor: '#f2f4f7',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  avatar: {
-    width: 80,
-    height: 80,
+  logoHalo: {
+    position: 'absolute',
+    width: 176,
+    height: 176,
+    borderRadius: 999,
+    transform: [{ translateY: 12 }],
+  },
+  logo: {
+    width: 84,
+    height: 84,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
   },
   title: {
     ...textStyles.titleMedium,
     textAlign: 'center',
     color: colors.textPrimary,
+    marginTop: 12,
   },
   subtitle: {
-    ...textStyles.body,
+    fontSize: 14,
+    lineHeight: 22,
     textAlign: 'center',
     color: colors.textSecondary,
+    marginTop: 10,
+    marginBottom: 18,
   },
   appleButton: {
-    width: '100%',
-    maxWidth: 340,
+    alignSelf: 'stretch',
     height: 44,
   },
   legal: {
@@ -186,7 +281,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   error: {
-    ...textStyles.caption,
+    marginBottom: 10,
+    fontSize: 12,
+    lineHeight: 18,
     color: colors.error,
     textAlign: 'center',
   },
