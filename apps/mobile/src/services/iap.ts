@@ -29,7 +29,6 @@ export interface IapProductDetails {
   price: string;
   priceAmount: number;
   currencyCode: string;
-  localizedPrice?: string;
 }
 
 export interface PurchaseResult {
@@ -71,9 +70,9 @@ export async function fetchIapProducts(productIds: string[]): Promise<IapProduct
         title: product.title,
         description: product.description,
         price: product.price,
-        priceAmount: product.priceAmount ?? 0,
-        currencyCode: product.currencyCode ?? 'JPY',
-        localizedPrice: product.localizedPrice,
+        priceAmount:
+          typeof product.priceAmountMicros === 'number' ? product.priceAmountMicros / 1_000_000 : 0,
+        currencyCode: product.priceCurrencyCode ?? 'JPY',
       }));
     } catch (error) {
       console.error('[IAP] Error fetching products:', error);
@@ -361,13 +360,15 @@ export async function debugIAP() {
     console.log('[IAP DEBUG] Connect result =', connectResult);
 
     console.log('[IAP DEBUG] Fetching products...');
-    const products = await InAppPurchases.getProductsAsync(productIds);
+    const response = await InAppPurchases.getProductsAsync(productIds);
+    const products = (response as any)?.results ?? response ?? [];
 
     console.log('========================================');
-    console.log('[IAP DEBUG] Products count =', products.length);
+    console.log('[IAP DEBUG] responseCode =', (response as any)?.responseCode);
+    console.log('[IAP DEBUG] Products count =', Array.isArray(products) ? products.length : 0);
     console.log('========================================');
 
-    if (products.length === 0) {
+    if (!Array.isArray(products) || products.length === 0) {
       console.log('[IAP DEBUG] ⚠️ NO PRODUCTS RETURNED!');
       console.log('[IAP DEBUG] Possible causes:');
       console.log('[IAP DEBUG] 1. Products not in "Ready to Submit" status in App Store Connect');
@@ -381,10 +382,9 @@ export async function debugIAP() {
         console.log('[IAP DEBUG] title =', p.title);
         console.log('[IAP DEBUG] description =', p.description);
         console.log('[IAP DEBUG] price =', p.price);
-        console.log('[IAP DEBUG] priceAmount =', p.priceAmount);
-        console.log('[IAP DEBUG] priceString =', p.priceString);
-        console.log('[IAP DEBUG] currencyCode =', p.currencyCode);
-        console.log('[IAP DEBUG] localizedPrice =', p.localizedPrice);
+        console.log('[IAP DEBUG] priceAmountMicros =', p.priceAmountMicros);
+        console.log('[IAP DEBUG] priceCurrencyCode =', p.priceCurrencyCode);
+        console.log('[IAP DEBUG] subscriptionPeriod =', p.subscriptionPeriod);
       });
     }
 
