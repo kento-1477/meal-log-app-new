@@ -248,10 +248,6 @@ const styles = StyleSheet.create({
   logo: {
     width: 84,
     height: 84,
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
   },
   title: {
     ...textStyles.titleMedium,
