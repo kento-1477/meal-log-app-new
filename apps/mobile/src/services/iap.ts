@@ -211,7 +211,6 @@ async function purchaseProduct(productId: string): Promise<PurchaseResult> {
   return withIapConnection(async () => {
     await InAppPurchases.getProductsAsync([productId]);
 
-    let subscription: { remove: () => void } | null = null;
     let settled = false;
 
     try {
@@ -224,7 +223,61 @@ async function purchaseProduct(productId: string): Promise<PurchaseResult> {
           reject(Object.assign(new Error('Purchase timed out'), { code: 'iap.timeout' } as PurchaseError));
         }, 90_000);
 
-        subscription = InAppPurchases.setPurchaseListener(async ({ responseCode, results, errorCode }) => {
+        let historyFallbackId: ReturnType<typeof setTimeout> | null = null;
+
+        const settleSuccess = (apiResponse: IapPurchaseResponse) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeoutId);
+          if (historyFallbackId) {
+            clearTimeout(historyFallbackId);
+          }
+          resolve(apiResponse);
+        };
+
+        const settleError = (error: unknown) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeoutId);
+          if (historyFallbackId) {
+            clearTimeout(historyFallbackId);
+          }
+          reject(error);
+        };
+
+        const processPurchase = async (purchase: InAppPurchases.InAppPurchase) => {
+          const request = buildRequestPayload(purchase, productId);
+          const apiResponse = await submitPurchase(request);
+          await InAppPurchases.finishTransactionAsync(purchase, true);
+          settleSuccess(apiResponse);
+        };
+
+        const processPurchaseHistory = async () => {
+          const history = await InAppPurchases.getPurchaseHistoryAsync();
+          const responseCode = (history as any)?.responseCode;
+          const purchases = (history as any)?.results ?? history ?? [];
+
+          if (responseCode != null && responseCode !== InAppPurchases.IAPResponseCode.OK) {
+            throw Object.assign(new Error('Purchase history returned error'), { code: 'iap.historyError' } as PurchaseError);
+          }
+
+          if (!Array.isArray(purchases) || purchases.length === 0) {
+            throw Object.assign(new Error('Purchase history is empty'), { code: 'iap.historyEmpty' } as PurchaseError);
+          }
+
+          const matching = purchases.filter((purchase: any) => purchase?.productId === productId);
+          const candidate =
+            matching.sort((a: any, b: any) => Number(b?.purchaseTime ?? 0) - Number(a?.purchaseTime ?? 0))[0] ??
+            purchases[0];
+
+          await processPurchase(candidate);
+        };
+
+        InAppPurchases.setPurchaseListener(async ({ responseCode, results, errorCode }) => {
           if (settled) {
             return;
           }
@@ -238,51 +291,41 @@ async function purchaseProduct(productId: string): Promise<PurchaseResult> {
                 results.find((purchase) => !purchase.acknowledged) ??
                 results[0];
 
-              const request = buildRequestPayload(candidate, productId);
-              const apiResponse = await submitPurchase(request);
-              await InAppPurchases.finishTransactionAsync(candidate, true);
-              settled = true;
-              clearTimeout(timeoutId);
-              resolve(apiResponse);
+              await processPurchase(candidate);
               return;
             }
 
             if (responseCode === InAppPurchases.IAPResponseCode.USER_CANCELED) {
-              settled = true;
-              clearTimeout(timeoutId);
-              reject(Object.assign(new Error('Purchase cancelled'), { code: 'iap.cancelled' } as PurchaseError));
+              settleError(Object.assign(new Error('Purchase cancelled'), { code: 'iap.cancelled' } as PurchaseError));
               return;
             }
 
-            settled = true;
-            clearTimeout(timeoutId);
-            reject(
+            settleError(
               Object.assign(new Error(`Purchase failed with code ${responseCode}`), {
                 code: errorCode ?? 'iap.error',
               } as PurchaseError),
             );
           } catch (error) {
-            settled = true;
-            clearTimeout(timeoutId);
-            reject(error);
+            settleError(error);
           }
         });
 
-        InAppPurchases.purchaseItemAsync(productId).catch((error) => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          clearTimeout(timeoutId);
-          reject(error);
-        });
+        InAppPurchases.purchaseItemAsync(productId)
+          .then(() => {
+            // Some StoreKit flows (e.g. already subscribed) may resolve the purchase promise without
+            // emitting a purchase-updated event. Fallback to purchase history to reconcile.
+            historyFallbackId = setTimeout(() => {
+              if (settled) {
+                return;
+              }
+              processPurchaseHistory().catch(settleError);
+            }, 1_500);
+          })
+          .catch(settleError);
       });
 
       return { productId, response };
     } finally {
-      if (subscription) {
-        subscription.remove();
-      }
     }
   });
 }
@@ -314,13 +357,18 @@ function buildRequestPayload(purchase: InAppPurchases.InAppPurchase, fallbackPro
       quantity: 1,
     });
 
-  return {
+  const payload: IapPurchaseRequest = {
     platform: 'APP_STORE',
     productId,
     transactionId,
     receiptData,
-    environment: __DEV__ ? 'sandbox' : undefined,
   };
+
+  if (__DEV__) {
+    payload.environment = 'sandbox';
+  }
+
+  return payload;
 }
 
 function encodeTestReceipt(payload: { transactionId: string; productId: string; quantity: number }) {
