@@ -44,6 +44,13 @@ PURCHASE_PATHS.forEach((path) =>
     });
   }
 
+  console.log('iap purchase payload', {
+    userId: user.id,
+    productId: request.productId,
+    transactionId: request.transactionId,
+    environment: request.environment ?? null,
+  });
+
   const existing = await findReceiptByTransaction(request.transactionId);
   if (existing) {
     if (existing.userId !== user.id) {
@@ -52,12 +59,39 @@ PURCHASE_PATHS.forEach((path) =>
         expose: true,
       });
     }
+
+    await ensurePremiumGrantFromReceipt(existing);
+
     const usage = summarizeUsageStatus(await evaluateAiUsage(user.id));
     const premiumStatus = await buildPremiumStatusPayload(user.id);
     return c.json({ ok: true, creditsGranted: 0, usage, premiumStatus });
   }
 
   const verification = await verifyAppStoreReceipt(request);
+
+  if (verification.transactionId !== request.transactionId) {
+    console.log('iap transactionId mismatch', {
+      requestTransactionId: request.transactionId,
+      verifiedTransactionId: verification.transactionId,
+    });
+  }
+
+  const verifiedExisting = await findReceiptByTransaction(verification.transactionId);
+  if (verifiedExisting) {
+    if (verifiedExisting.userId !== user.id) {
+      throw new HttpError('別のユーザーで既に処理済みの購入です', {
+        status: HTTP_STATUS.CONFLICT,
+        expose: true,
+      });
+    }
+
+    await ensurePremiumGrantFromReceipt(verifiedExisting);
+
+    const usage = summarizeUsageStatus(await evaluateAiUsage(user.id));
+    const premiumStatus = await buildPremiumStatusPayload(user.id);
+    return c.json({ ok: true, creditsGranted: 0, usage, premiumStatus });
+  }
+
   const resolvedProductId = verification.productId ?? request.productId;
   const creditsPerUnit = resolveCreditsForProduct(resolvedProductId);
   const premiumDaysPerUnit = resolvePremiumDaysForProduct(resolvedProductId);
@@ -77,9 +111,9 @@ PURCHASE_PATHS.forEach((path) =>
     throw new HttpError('付与内容が計算できませんでした', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
   }
 
-  const now = new Date();
-  const nowIso = now.toISOString();
-  const endDate = DateTime.fromJSDate(now).plus({ days: premiumDaysGranted }).toJSDate();
+  const purchasedAt = verification.purchaseDate ?? new Date();
+  const purchasedAtIso = purchasedAt.toISOString();
+  const endDate = DateTime.fromJSDate(purchasedAt).plus({ days: premiumDaysGranted }).toJSDate();
 
   const iapReceiptId = await insertReceipt({
     userId: user.id,
@@ -88,7 +122,7 @@ PURCHASE_PATHS.forEach((path) =>
     environment: verification.environment,
     quantity,
     creditsGranted,
-    purchasedAt: verification.purchaseDate,
+    purchasedAt,
     raw: verification.raw,
   });
 
@@ -100,7 +134,7 @@ PURCHASE_PATHS.forEach((path) =>
     await insertPremiumGrant({
       userId: user.id,
       days: premiumDaysGranted,
-      startDate: nowIso,
+      startDate: purchasedAtIso,
       endDate: endDate.toISOString(),
       iapReceiptId,
     });
@@ -117,7 +151,7 @@ export default app;
 async function findReceiptByTransaction(transactionId: string) {
   const { data, error } = await supabaseAdmin
     .from('IapReceipt')
-    .select('id, userId')
+    .select('id, userId, productId, purchasedAt')
     .eq('transactionId', transactionId)
     .maybeSingle();
 
@@ -126,6 +160,49 @@ async function findReceiptByTransaction(transactionId: string) {
     throw new HttpError('購入情報の確認に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
   }
   return data;
+}
+
+async function ensurePremiumGrantFromReceipt(receipt: {
+  id: number;
+  userId: number;
+  productId: string;
+  purchasedAt: string;
+}) {
+  const premiumDays = resolvePremiumDaysForProduct(receipt.productId);
+  if (premiumDays == null || premiumDays <= 0) {
+    return;
+  }
+
+  const { data: existingGrant, error: grantError } = await supabaseAdmin
+    .from('PremiumGrant')
+    .select('id')
+    .eq('userId', receipt.userId)
+    .eq('iapReceiptId', receipt.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (grantError) {
+    console.error('iap: find premium grant failed', grantError);
+    throw new HttpError('プレミアム付与の確認に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  if (existingGrant) {
+    return;
+  }
+
+  const startDate = receipt.purchasedAt;
+  const endDate = DateTime.fromISO(startDate).plus({ days: premiumDays }).toISO();
+  if (!endDate) {
+    throw new HttpError('プレミアム期限の計算に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  await insertPremiumGrant({
+    userId: receipt.userId,
+    days: premiumDays,
+    startDate,
+    endDate,
+    iapReceiptId: receipt.id,
+  });
 }
 
 async function insertReceipt(params: {
