@@ -216,6 +216,14 @@ async function purchaseProduct(productId: string): Promise<PurchaseResult> {
 
     try {
       const response = await new Promise<IapPurchaseResponse>((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          reject(Object.assign(new Error('Purchase timed out'), { code: 'iap.timeout' } as PurchaseError));
+        }, 90_000);
+
         subscription = InAppPurchases.setPurchaseListener(async ({ responseCode, results, errorCode }) => {
           if (settled) {
             return;
@@ -223,27 +231,31 @@ async function purchaseProduct(productId: string): Promise<PurchaseResult> {
 
           try {
             if (responseCode === InAppPurchases.IAPResponseCode.OK && results?.length) {
-              for (const purchase of results) {
-                if (purchase.acknowledged) {
-                  continue;
-                }
-                const request = buildRequestPayload(purchase, productId);
-                const apiResponse = await submitPurchase(request);
-                await InAppPurchases.finishTransactionAsync(purchase, true);
-                settled = true;
-                resolve(apiResponse);
-                return;
-              }
+              const matchingProduct = results.filter((purchase) => purchase.productId === productId);
+              const candidate =
+                matchingProduct.find((purchase) => !purchase.acknowledged) ??
+                matchingProduct[0] ??
+                results.find((purchase) => !purchase.acknowledged) ??
+                results[0];
+
+              const request = buildRequestPayload(candidate, productId);
+              const apiResponse = await submitPurchase(request);
+              await InAppPurchases.finishTransactionAsync(candidate, true);
+              settled = true;
+              clearTimeout(timeoutId);
+              resolve(apiResponse);
               return;
             }
 
             if (responseCode === InAppPurchases.IAPResponseCode.USER_CANCELED) {
               settled = true;
+              clearTimeout(timeoutId);
               reject(Object.assign(new Error('Purchase cancelled'), { code: 'iap.cancelled' } as PurchaseError));
               return;
             }
 
             settled = true;
+            clearTimeout(timeoutId);
             reject(
               Object.assign(new Error(`Purchase failed with code ${responseCode}`), {
                 code: errorCode ?? 'iap.error',
@@ -251,6 +263,7 @@ async function purchaseProduct(productId: string): Promise<PurchaseResult> {
             );
           } catch (error) {
             settled = true;
+            clearTimeout(timeoutId);
             reject(error);
           }
         });
@@ -260,6 +273,7 @@ async function purchaseProduct(productId: string): Promise<PurchaseResult> {
             return;
           }
           settled = true;
+          clearTimeout(timeoutId);
           reject(error);
         });
       });
@@ -291,14 +305,13 @@ async function withIapConnection<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 function buildRequestPayload(purchase: InAppPurchases.InAppPurchase, fallbackProductId: string): IapPurchaseRequest {
-  const transactionId = purchase.transactionId ?? purchase.originalTransactionIdentifier ?? `${Date.now()}`;
-  const quantity = typeof purchase.quantity === 'number' && purchase.quantity > 0 ? purchase.quantity : 1;
+  const transactionId = purchase.orderId || purchase.originalOrderId || `${Date.now()}`;
   const productId = purchase.productId ?? fallbackProductId;
   const receiptData = purchase.transactionReceipt ??
     encodeTestReceipt({
       transactionId,
       productId,
-      quantity,
+      quantity: 1,
     });
 
   return {
@@ -306,8 +319,7 @@ function buildRequestPayload(purchase: InAppPurchases.InAppPurchase, fallbackPro
     productId,
     transactionId,
     receiptData,
-    quantity,
-    environment: __DEV__ ? 'sandbox' : 'production',
+    environment: __DEV__ ? 'sandbox' : undefined,
   };
 }
 
