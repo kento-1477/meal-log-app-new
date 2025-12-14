@@ -20,7 +20,6 @@ import {
   PREMIUM_MONTHLY_PRODUCT_ID,
   purchasePremiumPlan,
   restorePurchases,
-  debugIAP,
 } from '@/services/iap';
 import {
   trackPaywallViewed,

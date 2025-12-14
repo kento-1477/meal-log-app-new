@@ -11,9 +11,10 @@ import { ZodError, ZodIssue } from 'zod';
 import { prisma } from '../db/prisma.js';
 import { authRateLimiter } from '../middleware/rate-limits.js';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { env } from '../env.js';
 
 export const authRouter = Router();
-const appleAudience = (process.env.APPLE_SERVICE_ID ?? '')
+const appleAudience = (env.APPLE_SERVICE_ID ?? '')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
@@ -21,7 +22,9 @@ const appleJwks = createRemoteJWKSet(new URL('https://appleid.apple.com/auth/key
 
 async function verifyAppleIdentityToken(identityToken: string) {
   if (appleAudience.length === 0) {
-    const error = new Error('Appleサインインの設定が不足しています') as Error & { statusCode?: number; expose?: boolean };
+    const error = new Error(
+      'Appleサインインの設定が不足しています（APPLE_SERVICE_ID を環境変数に設定してください）',
+    ) as Error & { statusCode?: number; expose?: boolean };
     error.statusCode = StatusCodes.INTERNAL_SERVER_ERROR;
     throw error;
   }

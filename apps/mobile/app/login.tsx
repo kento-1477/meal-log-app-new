@@ -1,29 +1,17 @@
-import React, { useState } from 'react';
-import {
-  Alert,
-  KeyboardAvoidingView,
-  Linking,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useState } from 'react';
+import { Image, Linking, Platform, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { PrimaryButton } from '@/components/PrimaryButton';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
-import { GlassCard } from '@/components/GlassCard';
-import { AuroraBackground } from '@/components/AuroraBackground';
-import { BrandHeader } from '@/components/BrandHeader';
-import { login, signInWithApple } from '@/services/api';
-import { useSessionStore } from '@/store/session';
 import { useTranslation } from '@/i18n';
-import { Feather } from '@expo/vector-icons';
-import { SUPPORT_EMAIL, PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '@/config/legal';
-import * as AppleAuthentication from 'expo-apple-authentication';
+import { signInWithApple } from '@/services/api';
+import { useSessionStore } from '@/store/session';
+import { PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '@/config/legal';
+
+const logo = require('../assets/brand/logo.png');
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -34,26 +22,8 @@ export default function LoginScreen() {
   const setOnboarding = useSessionStore((state) => state.setOnboarding);
   const { t } = useTranslation();
 
-  const [email, setEmail] = useState('demo@example.com');
-  const [password, setPassword] = useState('password123');
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [appleLoading, setAppleLoading] = useState(false);
-
-  const handleForgotPassword = async () => {
-    const url = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Password reset request')}`;
-    try {
-      const canOpen = await Linking.canOpenURL(url);
-      if (!canOpen) {
-        throw new Error('cannot open mailto');
-      }
-      await Linking.openURL(url);
-    } catch (error) {
-      Alert.alert(t('login.forgotPasswordErrorTitle'), t('login.forgotPasswordErrorMessage'));
-      console.warn('Failed to open mail client', error);
-    }
-  };
 
   const handleOpenUrl = async (url: string) => {
     try {
@@ -66,39 +36,12 @@ export default function LoginScreen() {
     }
   };
 
-  const handleLogin = async () => {
-    try {
-      setLoading(true);
-      setStatus('loading');
-      setError(null);
-      const response = await login({ email, password });
-      setUser(response?.user ?? null);
-      setUsage(response?.usage ?? null);
-      setOnboarding(response?.onboarding ?? null);
-      setStatus('authenticated');
-      router.dismissAll();
-      const needsOnboarding = !(response?.onboarding?.completed ?? false);
-      router.replace(needsOnboarding ? '/(onboarding)/welcome' : '/(tabs)/chat');
-    } catch (err) {
-      const apiError = err as { message?: string; status?: number };
-      if (apiError.status === 401) {
-        setError(t('login.error.invalidCredentials'));
-      } else {
-        setError(apiError.message ?? t('login.error.generic'));
-      }
-      setStatus('error');
-      setOnboarding(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleAppleLogin = async () => {
     if (Platform.OS !== 'ios') {
       return;
     }
     try {
-      setAppleLoading(true);
+      setLoading(true);
       setStatus('loading');
       setError(null);
       const credential = await AppleAuthentication.signInAsync({
@@ -107,12 +50,10 @@ export default function LoginScreen() {
           AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
         ],
       });
-      console.log('[Apple Sign In] Got credential, hasToken:', !!credential.identityToken);
       if (!credential.identityToken) {
         throw new Error('missing_identity_token');
       }
 
-      console.log('[Apple Sign In] Sending to server, token length:', credential.identityToken.length);
       const response = await signInWithApple({
         identityToken: credential.identityToken,
         authorizationCode: credential.authorizationCode ?? undefined,
@@ -121,7 +62,6 @@ export default function LoginScreen() {
           ? `${credential.fullName.givenName ?? ''} ${credential.fullName.familyName ?? ''}`.trim()
           : undefined,
       });
-      console.log('[Apple Sign In] Server response received');
 
       setUser(response?.user ?? null);
       setUsage(response?.usage ?? null);
@@ -131,7 +71,6 @@ export default function LoginScreen() {
       const needsOnboarding = !(response?.onboarding?.completed ?? false);
       router.replace(needsOnboarding ? '/(onboarding)/welcome' : '/(tabs)/chat');
     } catch (err: any) {
-      console.log('[Apple Sign In] Error caught:', err?.code, err?.message, err);
       if (err?.code === 'ERR_REQUEST_CANCELED' || err?.code === 'ERR_CANCELED') {
         setStatus('idle');
         return;
@@ -147,176 +86,206 @@ export default function LoginScreen() {
       setStatus('error');
       setOnboarding(null);
     } finally {
-      setAppleLoading(false);
+      setLoading(false);
     }
   };
 
   return (
-    <AuroraBackground style={styles.container}>
-      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right', 'bottom']}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={[styles.inner, { paddingBottom: 32 + insets.bottom }]}
-        >
-          <BrandHeader title={t('login.title')} subtitle={t('login.subtitle')} align="center" />
-          <GlassCard style={styles.formCard}>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>{t('login.emailLabel')}</Text>
-              <TextInput
-                value={email}
-                onChangeText={setEmail}
-                inputMode="email"
-                autoCapitalize="none"
-                style={styles.input}
-                placeholder={t('login.emailPlaceholder')}
+    <SafeAreaView style={[styles.safe, { paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 24) }]}>
+      <View style={styles.background} pointerEvents="none">
+        <LinearGradient
+          colors={[colors.cardAuroraStart, colors.cardAuroraMid, colors.cardAuroraEnd]}
+          start={{ x: 0.15, y: 0.1 }}
+          end={{ x: 0.85, y: 0.95 }}
+          style={styles.auroraGradient}
+        />
+        <View style={[styles.auroraBlob, styles.auroraBlobA]} />
+        <View style={[styles.auroraBlob, styles.auroraBlobB]} />
+        <View style={[styles.auroraBlob, styles.auroraBlobC]} />
+      </View>
+
+      <View style={styles.page}>
+        <View style={styles.center}>
+          <View style={styles.card}>
+            <View style={styles.logoWrap}>
+              <LinearGradient
+                colors={['rgba(245,178,37,0.18)', 'rgba(116,210,194,0.12)', 'transparent']}
+                start={{ x: 0.2, y: 0.1 }}
+                end={{ x: 0.8, y: 0.9 }}
+                style={styles.logoHalo}
               />
+              <Image source={logo} style={styles.logo} resizeMode="contain" />
             </View>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>{t('login.passwordLabel')}</Text>
-              <View style={styles.passwordRow}>
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  style={[styles.input, styles.passwordInput]}
-                  placeholder={t('login.passwordPlaceholder')}
-                />
-                <TouchableOpacity
-                  style={styles.visibilityToggle}
-                  onPress={() => setShowPassword((prev) => !prev)}
-                  accessibilityRole="button"
-                  accessibilityLabel={showPassword ? t('login.hidePassword') : t('login.showPassword')}
-                >
-                  <Feather name={showPassword ? 'eye-off' : 'eye'} size={18} color={colors.textSecondary} />
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotPasswordLink}>
-                <Text style={styles.forgotPasswordText}>{t('login.forgotPassword')}</Text>
-              </TouchableOpacity>
-            </View>
-            {error ? <Text style={styles.error}>⚠️ {error}</Text> : null}
-            <View style={styles.primaryAction}>
-              <PrimaryButton label={t('login.submit')} onPress={handleLogin} loading={loading} />
-            </View>
-          </GlassCard>
-          {Platform.OS === 'ios' ? (
-            <View style={styles.appleArea}>
+
+            <Text style={styles.title}>{t('login.title')}</Text>
+            <Text style={styles.subtitle}>{t('login.subtitle')}</Text>
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+
+            {Platform.OS === 'ios' ? (
               <AppleAuthentication.AppleAuthenticationButton
                 buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
                 buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-                cornerRadius={12}
+                cornerRadius={14}
                 style={styles.appleButton}
                 onPress={handleAppleLogin}
-                disabled={loading || appleLoading}
+                disabled={loading}
               />
-              <Text style={styles.appleLegal}>
-                {t('login.appleLegal.prefix')}
-                <Text style={styles.appleLink} onPress={() => handleOpenUrl(PRIVACY_POLICY_URL)}>
-                  {t('common.privacyPolicy')}
-                </Text>
-                {t('login.appleLegal.connector')}
-                <Text style={styles.appleLink} onPress={() => handleOpenUrl(TERMS_OF_SERVICE_URL)}>
-                  {t('common.termsOfService')}
-                </Text>
-                {t('login.appleLegal.suffix')}
-              </Text>
-            </View>
-          ) : null}
-          <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/register')}>
-            <Text style={styles.secondaryButtonLabel}>{t('login.register')}</Text>
-          </TouchableOpacity>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </AuroraBackground>
+            ) : (
+              <Text style={styles.unsupportedText}>現在このアプリはiOSのみ対応しています。</Text>
+            )}
+          </View>
+        </View>
+
+        <Text style={styles.legal}>
+          {t('login.appleLegal.prefix')}
+          <Text style={styles.link} onPress={() => handleOpenUrl(PRIVACY_POLICY_URL)}>
+            {t('common.privacyPolicy')}
+          </Text>
+          {t('login.appleLegal.connector')}
+          <Text style={styles.link} onPress={() => handleOpenUrl(TERMS_OF_SERVICE_URL)}>
+            {t('common.termsOfService')}
+          </Text>
+          {t('login.appleLegal.suffix')}
+        </Text>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   safe: {
     flex: 1,
+    backgroundColor: colors.background,
   },
-  inner: {
+  background: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.background,
+  },
+  auroraGradient: {
+    position: 'absolute',
+    left: -80,
+    right: -80,
+    top: -120,
+    height: '62%',
+    opacity: 0.9,
+  },
+  auroraBlob: {
+    position: 'absolute',
+    borderRadius: 999,
+    opacity: 0.9,
+  },
+  auroraBlobA: {
+    width: 360,
+    height: 360,
+    top: -160,
+    left: -140,
+    backgroundColor: colors.cardAuroraStart,
+  },
+  auroraBlobB: {
+    width: 420,
+    height: 420,
+    top: -220,
+    right: -180,
+    opacity: 0.85,
+    backgroundColor: colors.cardAuroraMid,
+  },
+  auroraBlobC: {
+    width: 420,
+    height: 420,
+    top: 160,
+    left: -200,
+    opacity: 0.7,
+    backgroundColor: colors.cardAuroraEnd,
+  },
+  page: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingBottom: 32,
+    alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 24,
   },
-  formCard: {
-    paddingVertical: 28,
+  center: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 10,
+    paddingBottom: 16,
   },
-  primaryAction: {
-    marginTop: 24,
+  card: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 28,
+    paddingVertical: 26,
+    paddingHorizontal: 22,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.62)',
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.16,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 18 },
+    elevation: 9,
   },
-  appleArea: {
-    marginTop: 20,
-    gap: 10,
+  logoWrap: {
+    marginTop: 6,
+    alignSelf: 'center',
+    width: 124,
+    height: 124,
+    borderRadius: 999,
+    backgroundColor: '#f2f4f7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  logoHalo: {
+    position: 'absolute',
+    width: 176,
+    height: 176,
+    borderRadius: 999,
+    transform: [{ translateY: 12 }],
+  },
+  logo: {
+    width: 84,
+    height: 84,
+  },
+  title: {
+    ...textStyles.titleMedium,
+    textAlign: 'center',
+    color: colors.textPrimary,
+    marginTop: 12,
+  },
+  subtitle: {
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'center',
+    color: colors.textSecondary,
+    marginTop: 10,
+    marginBottom: 18,
   },
   appleButton: {
-    width: '100%',
+    alignSelf: 'stretch',
     height: 44,
   },
-  appleLegal: {
+  legal: {
     ...textStyles.caption,
     color: colors.textSecondary,
     textAlign: 'center',
   },
-  appleLink: {
-    color: colors.accent,
-    fontWeight: '600',
-  },
-  formGroup: {
-    marginBottom: 18,
-  },
-  label: {
-    ...textStyles.caption,
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    fontSize: 16,
-  },
-  passwordRow: {
-    position: 'relative',
-  },
-  passwordInput: {
-    paddingRight: 44,
-  },
-  visibilityToggle: {
-    position: 'absolute',
-    right: 12,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-  },
-  forgotPasswordLink: {
-    alignSelf: 'flex-end',
-    marginTop: 8,
-  },
-  forgotPasswordText: {
-    ...textStyles.caption,
+  link: {
     color: colors.accent,
     fontWeight: '600',
   },
   error: {
+    marginBottom: 10,
+    fontSize: 12,
+    lineHeight: 18,
     color: colors.error,
-    marginTop: 12,
+    textAlign: 'center',
   },
-  secondaryButton: {
-    marginTop: 24,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  secondaryButtonLabel: {
+  unsupportedText: {
     ...textStyles.body,
-    color: colors.accent,
-    fontWeight: '600',
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
 });

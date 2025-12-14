@@ -24,4 +24,5 @@ tmp_write_test
 
 # Expo specific
 web-build
+/ios
 *.tar.gz

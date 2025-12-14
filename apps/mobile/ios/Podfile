@@ -2,6 +2,7 @@ require File.join(File.dirname(`node --print "require.resolve('expo/package.json
 require File.join(File.dirname(`node --print "require.resolve('react-native/package.json')"`), "scripts/react_native_pods")
 
 require 'json'
+require 'fileutils'
 podfile_properties = JSON.parse(File.read(File.join(__dir__, 'Podfile.properties.json'))) rescue {}
 
 def ccache_enabled?(podfile_properties)
@@ -22,7 +23,18 @@ prepare_react_native_project!
 
 target 'app' do
   use_expo_modules!
-  pod 'RNScreens', :path => '/Users/a81808/Desktop/meal-log-app-new/apps/mobile/node_modules/react-native-screens'
+  app_root = File.expand_path('..', __dir__)
+
+  # npm workspaces may hoist `react-native` to the monorepo root, but some CocoaPods
+  # script phases assume it exists at `<app_root>/node_modules/react-native`.
+  local_react_native = File.join(app_root, 'node_modules', 'react-native')
+  hoisted_react_native = File.expand_path('../../node_modules/react-native', app_root)
+  if !File.exist?(local_react_native) && File.exist?(hoisted_react_native)
+    FileUtils.mkdir_p(File.dirname(local_react_native))
+    FileUtils.ln_s(hoisted_react_native, local_react_native)
+  end
+
+  pod 'RNScreens', :path => File.join(app_root, 'node_modules', 'react-native-screens')
 
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
     config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];
