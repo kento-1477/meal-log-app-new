@@ -139,9 +139,6 @@ export default function ChatScreen() {
     attachCardToMessage,
     composingImageUri,
     setComposingImage,
-    pendingIngests,
-    addPendingIngest,
-    removePendingIngest,
   } = useChatStore();
   const usage = useSessionStore((state) => state.usage);
   const setUsage = useSessionStore((state) => state.setUsage);
@@ -187,6 +184,30 @@ export default function ChatScreen() {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
 
+  const pendingIngests = useMemo(() => {
+    const derived = messages
+      .filter(
+        (message) =>
+          message.role === 'assistant' &&
+          message.status === 'processing' &&
+          typeof message.ingest?.requestKey === 'string' &&
+          typeof message.ingest?.userMessageId === 'string',
+      )
+      .map((message) => ({
+        requestKey: message.ingest!.requestKey,
+        userMessageId: message.ingest!.userMessageId,
+        assistantMessageId: message.id,
+        createdAt: message.createdAt,
+      }));
+
+    // De-dup by requestKey (keep the most recent).
+    const byKey = new Map<string, (typeof derived)[number]>();
+    for (const entry of derived) {
+      byKey.set(entry.requestKey, entry);
+    }
+    return [...byKey.values()].sort((a, b) => a.createdAt - b.createdAt);
+  }, [messages]);
+
   const ingestRefreshInFlight = useRef(false);
   const refreshPendingIngests = useCallback(async () => {
     if (ingestRefreshInFlight.current) {
@@ -195,11 +216,20 @@ export default function ChatScreen() {
     if (!pendingIngests.length) {
       return;
     }
+    if (__DEV__) {
+      console.log('[chat] refreshPendingIngests', {
+        count: pendingIngests.length,
+        keys: pendingIngests.map((entry) => entry.requestKey).slice(0, 5),
+      });
+    }
     ingestRefreshInFlight.current = true;
     try {
       for (const ingest of pendingIngests) {
         try {
           const status = await getIngestStatus(ingest.requestKey);
+          if (__DEV__) {
+            console.log('[chat] ingest status', { requestKey: ingest.requestKey, status: status.status });
+          }
           if (status.ok && status.status === 'done') {
             updateMessageStatus(ingest.userMessageId, 'delivered');
             updateMessageStatus(ingest.assistantMessageId, 'delivered');
@@ -212,17 +242,18 @@ export default function ChatScreen() {
             queryClient.invalidateQueries({ queryKey: ['mealLogs'] });
             queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
             queryClient.invalidateQueries({ queryKey: ['streak'] });
-            removePendingIngest(ingest.requestKey);
             scrollToEnd();
           }
         } catch (error) {
+          if (__DEV__) {
+            console.warn('[chat] ingest status fetch failed', { requestKey: ingest.requestKey, error });
+          }
           const apiError = error as ApiError;
           const tooOld = Date.now() - ingest.createdAt > 1000 * 60 * 2;
           if (apiError.status === 404 && tooOld) {
             updateMessageStatus(ingest.userMessageId, 'error');
             updateMessageStatus(ingest.assistantMessageId, 'error');
             setMessageText(ingest.assistantMessageId, t('chat.networkErrorBubble'));
-            removePendingIngest(ingest.requestKey);
           }
         }
       }
@@ -232,7 +263,6 @@ export default function ChatScreen() {
   }, [
     pendingIngests,
     queryClient,
-    removePendingIngest,
     renderMealLogResult,
     scrollToEnd,
     setMessageText,
@@ -538,16 +568,18 @@ export default function ChatScreen() {
 
     const userMessage = addUserMessage(displayMessage);
     const processingText = t('chat.processing');
-    const assistantPlaceholder = addAssistantMessage(processingText, { status: 'processing' });
     const requestKey = options.request ? null : `ingest_${Date.now()}_${nanoid(10)}`;
-    if (requestKey) {
-      addPendingIngest({
+    if (__DEV__) {
+      console.log('[chat] submitMeal start', {
         requestKey,
-        userMessageId: userMessage.id,
-        assistantMessageId: assistantPlaceholder.id,
-        createdAt: Date.now(),
+        hasImage,
+        messageLen: (trimmedMessage || rawMessage).length,
       });
     }
+    const assistantPlaceholder = addAssistantMessage(processingText, {
+      status: 'processing',
+      ingest: requestKey ? { requestKey, userMessageId: userMessage.id } : undefined,
+    });
     const hintDelay = hasImage ? NETWORK_HINT_DELAY_IMAGE_MS : NETWORK_HINT_DELAY_TEXT_MS;
     networkHintTimerRef.current = setTimeout(() => {
       setMessageText(assistantPlaceholder.id, `${processingText}\n${t('chat.networkSlowWarning')}`);
@@ -568,9 +600,6 @@ export default function ChatScreen() {
 
       updateMessageStatus(assistantPlaceholder.id, 'delivered');
       renderMealLogResult(response, assistantPlaceholder.id);
-      if (requestKey) {
-        removePendingIngest(requestKey);
-      }
       if (response.usage) {
         setUsage(response.usage);
       }
@@ -582,10 +611,10 @@ export default function ChatScreen() {
       return response;
     } catch (_error) {
       const apiError = _error as ApiError;
+      if (__DEV__) {
+        console.warn('[chat] submitMeal failed', { requestKey, apiError });
+      }
       if (apiError.code === 'AI_USAGE_LIMIT') {
-        if (requestKey) {
-          removePendingIngest(requestKey);
-        }
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');
         const payload = apiError.data as AiUsageSummary | undefined;
@@ -595,9 +624,6 @@ export default function ChatScreen() {
         setError('本日の利用回数が上限に達しました。');
         setMessageText(assistantPlaceholder.id, t('chat.usageLimitBubble'));
       } else if (apiError.status === 401) {
-        if (requestKey) {
-          removePendingIngest(requestKey);
-        }
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');
         setUser(null);
@@ -611,9 +637,6 @@ export default function ChatScreen() {
         setMessageText(assistantPlaceholder.id, t('chat.processing'));
         setError(t('chat.networkErrorBanner'));
       } else {
-        if (requestKey) {
-          removePendingIngest(requestKey);
-        }
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');
         setError('エラーが発生しました。もう一度お試しください。');
