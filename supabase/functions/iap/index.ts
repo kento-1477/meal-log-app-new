@@ -325,7 +325,6 @@ async function insertReceipt(params: {
       purchasedAt: params.purchasedAt.toISOString(),
       payload: params.raw,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     })
     .select('id')
     .single();
