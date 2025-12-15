@@ -22,19 +22,30 @@ const IAP_DEBUG = boolEnv('IAP_DEBUG', false);
 app.get('/health', (c) => c.json({ ok: true, service: 'iap' }));
 
 app.use('*', async (c, next) => {
-  console.log('[iap] request', { method: c.req.method, url: c.req.url });
-  await next();
+  const requestId =
+    typeof crypto?.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  c.set('requestId', requestId);
+
+  const startedAt = Date.now();
+  console.log('[iap] request', { requestId, method: c.req.method, url: c.req.url });
+  try {
+    await next();
+  } finally {
+    console.log('[iap] request finished', { requestId, ms: Date.now() - startedAt });
+  }
 });
 
 const PURCHASE_PATHS = ['/api/iap/purchase', '/iap/api/iap/purchase'] as const;
 
 PURCHASE_PATHS.forEach((path) =>
   app.post(path, requireAuth, async (c) => {
-  const requestId =
-    typeof crypto?.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const requestId = String(c.get('requestId') ?? 'unknown');
   const user = c.get('user');
+
+  console.log('[iap] purchase handler start', { requestId, path: c.req.path, userId: user.id });
 
   let body: unknown = {};
   try {
@@ -76,7 +87,13 @@ PURCHASE_PATHS.forEach((path) =>
     receiptDataLength: request.receiptData?.length ?? 0,
   });
 
+  const existingStartedAt = Date.now();
   const existing = await findReceiptByTransaction(request.transactionId);
+  console.log('[iap] findReceiptByTransaction done', {
+    requestId,
+    ms: Date.now() - existingStartedAt,
+    found: Boolean(existing),
+  });
   if (existing) {
     if (existing.userId !== user.id) {
       throw new HttpError('別のユーザーで既に処理済みの購入です', {
@@ -85,14 +102,18 @@ PURCHASE_PATHS.forEach((path) =>
       });
     }
 
+    const repairStartedAt = Date.now();
     await ensurePremiumGrantFromReceipt(existing);
+    console.log('[iap] ensurePremiumGrantFromReceipt done', { requestId, ms: Date.now() - repairStartedAt });
 
     const usage = summarizeUsageStatus(await evaluateAiUsage(user.id));
     const premiumStatus = await buildPremiumStatusPayload(user.id);
     return c.json({ ok: true, creditsGranted: 0, usage, premiumStatus });
   }
 
+  const verifyStartedAt = Date.now();
   const verification = await verifyAppStoreReceipt(request, requestId);
+  console.log('[iap] verifyAppStoreReceipt done', { requestId, ms: Date.now() - verifyStartedAt });
 
   if (IAP_DEBUG) {
     console.log('[iap] verification summary', {
@@ -115,7 +136,13 @@ PURCHASE_PATHS.forEach((path) =>
     });
   }
 
+  const verifiedExistingStartedAt = Date.now();
   const verifiedExisting = await findReceiptByTransaction(verification.transactionId);
+  console.log('[iap] findReceiptByTransaction (verified) done', {
+    requestId,
+    ms: Date.now() - verifiedExistingStartedAt,
+    found: Boolean(verifiedExisting),
+  });
   if (verifiedExisting) {
     if (verifiedExisting.userId !== user.id) {
       throw new HttpError('別のユーザーで既に処理済みの購入です', {
@@ -124,7 +151,9 @@ PURCHASE_PATHS.forEach((path) =>
       });
     }
 
+    const repairStartedAt = Date.now();
     await ensurePremiumGrantFromReceipt(verifiedExisting);
+    console.log('[iap] ensurePremiumGrantFromReceipt (verified) done', { requestId, ms: Date.now() - repairStartedAt });
 
     const usage = summarizeUsageStatus(await evaluateAiUsage(user.id));
     const premiumStatus = await buildPremiumStatusPayload(user.id);
@@ -154,6 +183,7 @@ PURCHASE_PATHS.forEach((path) =>
   const purchasedAtIso = purchasedAt.toISOString();
   const endDate = DateTime.fromJSDate(purchasedAt).plus({ days: premiumDaysGranted }).toJSDate();
 
+  const insertReceiptStartedAt = Date.now();
   const iapReceiptId = await insertReceipt({
     userId: user.id,
     productId: resolvedProductId,
@@ -164,12 +194,16 @@ PURCHASE_PATHS.forEach((path) =>
     purchasedAt,
     raw: verification.raw,
   });
+  console.log('[iap] insertReceipt done', { requestId, ms: Date.now() - insertReceiptStartedAt, iapReceiptId });
 
   if (creditsGranted > 0) {
+    const creditStartedAt = Date.now();
     await incrementCredits(user.id, creditsGranted);
+    console.log('[iap] incrementCredits done', { requestId, ms: Date.now() - creditStartedAt, creditsGranted });
   }
 
   if (premiumDaysGranted > 0) {
+    const grantStartedAt = Date.now();
     await insertPremiumGrant({
       userId: user.id,
       days: premiumDaysGranted,
@@ -177,13 +211,27 @@ PURCHASE_PATHS.forEach((path) =>
       endDate: endDate.toISOString(),
       iapReceiptId,
     });
+    console.log('[iap] insertPremiumGrant done', { requestId, ms: Date.now() - grantStartedAt, premiumDaysGranted });
   }
 
+  const usageStartedAt = Date.now();
   const usage = summarizeUsageStatus(await evaluateAiUsage(user.id));
+  console.log('[iap] evaluateAiUsage done', { requestId, ms: Date.now() - usageStartedAt });
+
+  const premiumStatusStartedAt = Date.now();
   const premiumStatus = await buildPremiumStatusPayload(user.id);
+  console.log('[iap] buildPremiumStatusPayload done', { requestId, ms: Date.now() - premiumStatusStartedAt });
+
+  console.log('[iap] purchase handler success', { requestId, userId: user.id, creditsGranted, premiumDaysGranted });
   return c.json({ ok: true, creditsGranted, usage, premiumStatus });
 }),
 );
+
+app.notFound((c) => {
+  const requestId = String(c.get('requestId') ?? 'unknown');
+  console.warn('[iap] not found', { requestId, method: c.req.method, path: c.req.path, url: c.req.url });
+  return c.json({ error: 'Not Found' }, 404);
+});
 
 export default app;
 
