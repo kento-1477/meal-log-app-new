@@ -4,7 +4,7 @@ import {
   type GeminiNutritionResponse,
   type HedgeAttemptReport,
   type Locale,
-} from '@shared/index.d.ts';
+} from '@shared/index.js';
 import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
 import { requireAuth } from '../_shared/auth.ts';
 import { evaluateAiUsage, recordAiUsage, buildUsageLimitError } from '../_shared/ai.ts';
