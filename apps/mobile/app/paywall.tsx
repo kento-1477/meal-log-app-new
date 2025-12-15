@@ -221,7 +221,7 @@ export default function PaywallScreen() {
   const yearlyPriceInfo = useMemo(() => {
     if (productLoading) return { price: t('paywall.price.loading'), perMonth: '' };
     if (!yearlyProduct) return { price: t('paywall.price.unavailable'), perMonth: '' };
-    const price = yearlyProduct.localizedPrice ?? `¥${yearlyProduct.priceAmount}`;
+    const price = yearlyProduct.price || `¥${Math.round(yearlyProduct.priceAmount)}`;
     const perMonth = yearlyProduct.priceAmount > 0 ? `¥${Math.round(yearlyProduct.priceAmount / 12)}` : '';
     return { price, perMonth };
   }, [yearlyProduct, productLoading, t]);
@@ -229,11 +229,11 @@ export default function PaywallScreen() {
   const monthlyPriceInfo = useMemo(() => {
     if (productLoading) return { price: t('paywall.price.loading') };
     if (!monthlyProduct) return { price: t('paywall.price.unavailable') };
-    return { price: monthlyProduct.localizedPrice ?? `¥${monthlyProduct.priceAmount}` };
+    return { price: monthlyProduct.price || `¥${Math.round(monthlyProduct.priceAmount)}` };
   }, [monthlyProduct, productLoading, t]);
 
   const dailyPrice = useMemo(() => {
-    if (!yearlyProduct) return '16';
+    if (!yearlyProduct || yearlyProduct.priceAmount <= 0) return '16';
     return Math.round(yearlyProduct.priceAmount / 365).toString();
   }, [yearlyProduct]);
 

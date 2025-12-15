@@ -26,7 +26,10 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-app.post('/api/iap/purchase', requireAuth, async (c) => {
+const PURCHASE_PATHS = ['/api/iap/purchase', '/iap/api/iap/purchase'] as const;
+
+PURCHASE_PATHS.forEach((path) =>
+  app.post(path, requireAuth, async (c) => {
   const requestId =
     typeof crypto?.randomUUID === 'function'
       ? crypto.randomUUID()
@@ -179,7 +182,8 @@ app.post('/api/iap/purchase', requireAuth, async (c) => {
   const usage = summarizeUsageStatus(await evaluateAiUsage(user.id));
   const premiumStatus = await buildPremiumStatusPayload(user.id);
   return c.json({ ok: true, creditsGranted, usage, premiumStatus });
-});
+}),
+);
 
 export default app;
 
@@ -240,7 +244,6 @@ async function ensurePremiumGrantFromReceipt(receipt: {
       endDate,
     });
   }
-
   await insertPremiumGrant({
     userId: receipt.userId,
     days: premiumDays,
