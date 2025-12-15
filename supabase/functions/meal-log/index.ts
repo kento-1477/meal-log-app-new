@@ -422,6 +422,51 @@ app.post('/api/log', requireAuth, handleCreateLog);
 // Legacy path used by mobile client; keep as alias to avoid 404.
 app.post('/log', requireAuth, handleCreateLog);
 
+// Idempotency recovery: allow clients to fetch an in-flight /log result by Idempotency-Key.
+app.get('/api/ingest/:requestKey', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const requestKey = c.req.param('requestKey');
+  if (!requestKey) {
+    throw new HttpError('requestKey is required', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
+  }
+
+  const requestedLocale = normalizeLocale(resolveRequestLocale(c.req.raw, { queryField: 'locale' }));
+
+  const { data: ingest, error: ingestError } = await supabaseAdmin
+    .from('IngestRequest')
+    .select('id, logId, createdAt')
+    .eq('userId', user.id)
+    .eq('requestKey', requestKey)
+    .maybeSingle();
+
+  if (ingestError) {
+    console.error('ingest status: fetch failed', ingestError);
+    throw new HttpError('解析状況を取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  if (!ingest) {
+    throw new HttpError('解析リクエストが見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
+  }
+
+  if (!ingest.logId) {
+    return c.json({
+      ok: true,
+      status: 'processing',
+      requestKey,
+      createdAt: ingest.createdAt ? new Date(ingest.createdAt).toISOString() : null,
+    });
+  }
+
+  const result = await buildIdempotentMealLogResult({
+    userId: user.id,
+    logId: ingest.logId,
+    requestKey,
+    requestedLocale,
+  });
+
+  return c.json({ ok: true, status: 'done', requestKey, result });
+});
+
 app.post('/api/log/choose-slot', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
   const body = SlotSelectionRequestSchema.parse(await c.req.json());
@@ -1515,35 +1560,12 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
   }
 
   if (ingestExisting?.logId) {
-    const log = await fetchMealLogDetail({ userId: params.userId, logId: ingestExisting.logId, locale: requestedLocale });
-    return {
-      ok: true,
-      success: true,
-      idempotent: true,
-      idempotency_key: requestKey,
-      logId: log.id,
-      requestLocale: requestedLocale,
-      locale: log.locale ?? requestedLocale,
-      translations: buildTranslationMap(log.ai_raw),
-      fallbackApplied: log.fallback_applied ?? false,
-      dish: log.food_item,
-      confidence: log.ai_raw?.confidence ?? 0.6,
-      totals: log.ai_raw?.totals ?? {
-        kcal: log.calories,
-        protein_g: log.protein_g,
-        fat_g: log.fat_g,
-        carbs_g: log.carbs_g,
-      },
-      items: log.ai_raw?.items ?? [],
-      breakdown: {
-        items: log.ai_raw?.items ?? [],
-        warnings: log.ai_raw?.warnings ?? [],
-      },
-      meta: {
-        idempotent: true,
-      },
-      favoriteCandidate: buildFavoriteDraftFallback(log),
-    };
+    return await buildIdempotentMealLogResult({
+      userId: params.userId,
+      logId: ingestExisting.logId,
+      requestKey,
+      requestedLocale,
+    });
   }
 
   const usageStatus = await evaluateAiUsage(params.userId);
@@ -1731,6 +1753,49 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
     meta,
     usage: usageSummary,
     favoriteCandidate,
+  };
+}
+
+async function buildIdempotentMealLogResult(params: {
+  userId: number;
+  logId: string;
+  requestKey: string;
+  requestedLocale: Locale;
+}): Promise<ProcessMealLogResult> {
+  const log = await fetchMealLogDetail({ userId: params.userId, logId: params.logId, locale: params.requestedLocale });
+  const usageStatus = await evaluateAiUsage(params.userId);
+  const usageSummary = summarizeUsageStatus(usageStatus);
+
+  const totalsFallback = {
+    kcal: log.calories,
+    protein_g: log.protein_g,
+    fat_g: log.fat_g,
+    carbs_g: log.carbs_g,
+  };
+
+  return {
+    ok: true,
+    success: true,
+    idempotent: true,
+    idempotency_key: params.requestKey,
+    logId: log.id,
+    requestLocale: log.requested_locale ?? params.requestedLocale,
+    locale: log.locale ?? params.requestedLocale,
+    translations: buildTranslationMap(log.ai_raw),
+    fallbackApplied: log.fallback_applied ?? false,
+    dish: log.food_item,
+    confidence: log.ai_raw?.confidence ?? 0.6,
+    totals: log.ai_raw?.totals ?? totalsFallback,
+    items: log.ai_raw?.items ?? [],
+    breakdown: {
+      items: log.ai_raw?.items ?? [],
+      warnings: log.ai_raw?.warnings ?? [],
+    },
+    meta: {
+      idempotent: true,
+    },
+    usage: usageSummary,
+    favoriteCandidate: buildFavoriteDraftFallback(log),
   };
 }
 

@@ -3,6 +3,7 @@ import {
   ActionSheetIOS,
   ActivityIndicator,
   Alert,
+  AppState,
   FlatList,
   Image,
   Keyboard,
@@ -18,6 +19,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { nanoid } from 'nanoid/non-secure';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -40,6 +42,7 @@ import {
   createLogFromFavorite,
   getFavorites,
   getMealLogShare,
+  getIngestStatus,
   getStreak,
   getSession,
   postMealLog,
@@ -136,6 +139,9 @@ export default function ChatScreen() {
     attachCardToMessage,
     composingImageUri,
     setComposingImage,
+    pendingIngests,
+    addPendingIngest,
+    removePendingIngest,
   } = useChatStore();
   const usage = useSessionStore((state) => state.usage);
   const setUsage = useSessionStore((state) => state.setUsage);
@@ -145,6 +151,33 @@ export default function ChatScreen() {
   const usagePlan = usage?.plan;
   const usageRemaining = usage?.remaining;
 
+  const renderMealLogResult = useCallback(
+    (response: MealLogResponse, placeholderId: string) => {
+      const meta = (response.meta ?? {}) as { mealPeriod?: string | null; timezone?: string | null };
+      const rawMealPeriod = meta.mealPeriod ?? response.meal_period ?? null;
+      const mealPeriod = typeof rawMealPeriod === 'string' ? rawMealPeriod.toLowerCase() : null;
+      const timezone = meta.timezone ?? null;
+
+      attachCardToMessage(placeholderId, {
+        logId: response.logId,
+        dish: response.dish,
+        confidence: response.confidence,
+        totals: response.totals,
+        items: response.items,
+        warnings: response.breakdown.warnings,
+        locale: response.locale,
+        requestedLocale: response.requestLocale,
+        fallbackApplied: response.fallbackApplied,
+        translations: response.translations,
+        favoriteCandidate: response.favoriteCandidate,
+        mealPeriod,
+        timezone,
+      });
+      setMessageText(placeholderId, buildAssistantSummary(response));
+    },
+    [attachCardToMessage, setMessageText],
+  );
+
   const [mediaPermission, requestMediaPermission] = ImagePicker.useMediaLibraryPermissions();
 
   const prevMessagesRef = useRef<ChatMessage[] | null>(null);
@@ -153,6 +186,79 @@ export default function ChatScreen() {
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
+
+  const ingestRefreshInFlight = useRef(false);
+  const refreshPendingIngests = useCallback(async () => {
+    if (ingestRefreshInFlight.current) {
+      return;
+    }
+    if (!pendingIngests.length) {
+      return;
+    }
+    ingestRefreshInFlight.current = true;
+    try {
+      for (const ingest of pendingIngests) {
+        try {
+          const status = await getIngestStatus(ingest.requestKey);
+          if (status.ok && status.status === 'done') {
+            updateMessageStatus(ingest.userMessageId, 'delivered');
+            updateMessageStatus(ingest.assistantMessageId, 'delivered');
+            renderMealLogResult(status.result, ingest.assistantMessageId);
+            if (status.result.usage) {
+              setUsage(status.result.usage);
+            }
+            setError(null);
+            queryClient.invalidateQueries({ queryKey: ['recentLogs'] });
+            queryClient.invalidateQueries({ queryKey: ['mealLogs'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
+            queryClient.invalidateQueries({ queryKey: ['streak'] });
+            removePendingIngest(ingest.requestKey);
+            scrollToEnd();
+          }
+        } catch (error) {
+          const apiError = error as ApiError;
+          const tooOld = Date.now() - ingest.createdAt > 1000 * 60 * 2;
+          if (apiError.status === 404 && tooOld) {
+            updateMessageStatus(ingest.userMessageId, 'error');
+            updateMessageStatus(ingest.assistantMessageId, 'error');
+            setMessageText(ingest.assistantMessageId, t('chat.networkErrorBubble'));
+            removePendingIngest(ingest.requestKey);
+          }
+        }
+      }
+    } finally {
+      ingestRefreshInFlight.current = false;
+    }
+  }, [
+    pendingIngests,
+    queryClient,
+    removePendingIngest,
+    renderMealLogResult,
+    scrollToEnd,
+    setMessageText,
+    setUsage,
+    setError,
+    t,
+    updateMessageStatus,
+  ]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void refreshPendingIngests();
+      }
+    });
+    return () => sub.remove();
+  }, [refreshPendingIngests]);
+
+  useEffect(() => {
+    void refreshPendingIngests();
+    if (!pendingIngests.length) {
+      return;
+    }
+    const poll = setInterval(() => void refreshPendingIngests(), 5000);
+    return () => clearInterval(poll);
+  }, [pendingIngests.length, refreshPendingIngests]);
 
 
   const favoritesQuery = useQuery({
@@ -433,6 +539,15 @@ export default function ChatScreen() {
     const userMessage = addUserMessage(displayMessage);
     const processingText = t('chat.processing');
     const assistantPlaceholder = addAssistantMessage(processingText, { status: 'processing' });
+    const requestKey = options.request ? null : `ingest_${Date.now()}_${nanoid(10)}`;
+    if (requestKey) {
+      addPendingIngest({
+        requestKey,
+        userMessageId: userMessage.id,
+        assistantMessageId: assistantPlaceholder.id,
+        createdAt: Date.now(),
+      });
+    }
     const hintDelay = hasImage ? NETWORK_HINT_DELAY_IMAGE_MS : NETWORK_HINT_DELAY_TEXT_MS;
     networkHintTimerRef.current = setTimeout(() => {
       setMessageText(assistantPlaceholder.id, `${processingText}\n${t('chat.networkSlowWarning')}`);
@@ -446,12 +561,16 @@ export default function ChatScreen() {
           postMealLog({
             message: trimmedMessage || rawMessage,
             imageUri: options.imageUri ?? undefined,
+            idempotencyKey: requestKey ?? undefined,
           }));
       const response = await requestFn();
       updateMessageStatus(userMessage.id, 'delivered');
 
       updateMessageStatus(assistantPlaceholder.id, 'delivered');
       renderMealLogResult(response, assistantPlaceholder.id);
+      if (requestKey) {
+        removePendingIngest(requestKey);
+      }
       if (response.usage) {
         setUsage(response.usage);
       }
@@ -464,6 +583,9 @@ export default function ChatScreen() {
     } catch (_error) {
       const apiError = _error as ApiError;
       if (apiError.code === 'AI_USAGE_LIMIT') {
+        if (requestKey) {
+          removePendingIngest(requestKey);
+        }
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');
         const payload = apiError.data as AiUsageSummary | undefined;
@@ -473,6 +595,9 @@ export default function ChatScreen() {
         setError('本日の利用回数が上限に達しました。');
         setMessageText(assistantPlaceholder.id, t('chat.usageLimitBubble'));
       } else if (apiError.status === 401) {
+        if (requestKey) {
+          removePendingIngest(requestKey);
+        }
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');
         setUser(null);
@@ -481,11 +606,14 @@ export default function ChatScreen() {
         setError('セッションの有効期限が切れました。再度ログインしてください。');
         setMessageText(assistantPlaceholder.id, t('chat.sessionExpiredBubble'));
       } else if (isLikelyNetworkError(apiError)) {
-        updateMessageStatus(userMessage.id, 'error');
-        updateMessageStatus(assistantPlaceholder.id, 'error');
-        setMessageText(assistantPlaceholder.id, t('chat.networkErrorBubble'));
+        updateMessageStatus(userMessage.id, 'delivered');
+        updateMessageStatus(assistantPlaceholder.id, 'processing');
+        setMessageText(assistantPlaceholder.id, t('chat.processing'));
         setError(t('chat.networkErrorBanner'));
       } else {
+        if (requestKey) {
+          removePendingIngest(requestKey);
+        }
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');
         setError('エラーが発生しました。もう一度お試しください。');
@@ -497,30 +625,6 @@ export default function ChatScreen() {
       setSending(false);
       scrollToEnd();
     }
-  };
-
-  const renderMealLogResult = (response: MealLogResponse, placeholderId: string) => {
-    const meta = (response.meta ?? {}) as { mealPeriod?: string | null; timezone?: string | null };
-    const rawMealPeriod = meta.mealPeriod ?? response.meal_period ?? null;
-    const mealPeriod = typeof rawMealPeriod === 'string' ? rawMealPeriod.toLowerCase() : null;
-    const timezone = meta.timezone ?? null;
-
-    attachCardToMessage(placeholderId, {
-      logId: response.logId,
-      dish: response.dish,
-      confidence: response.confidence,
-      totals: response.totals,
-      items: response.items,
-      warnings: response.breakdown.warnings,
-      locale: response.locale,
-      requestedLocale: response.requestLocale,
-      fallbackApplied: response.fallbackApplied,
-      translations: response.translations,
-      favoriteCandidate: response.favoriteCandidate,
-      mealPeriod,
-      timezone,
-    });
-    setMessageText(placeholderId, buildAssistantSummary(response));
   };
 
   const handleAddFavoriteFromCard = async (cardId: string, draft: FavoriteMealDraft) => {

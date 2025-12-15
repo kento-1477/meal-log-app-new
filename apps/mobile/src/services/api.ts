@@ -333,7 +333,16 @@ export interface MealLogResponse {
   favoriteCandidate: FavoriteMealDraft;
 }
 
-export async function postMealLog(params: { message: string; imageUri?: string | null }) {
+export type IngestStatusResponse =
+  | { ok: true; status: 'processing'; requestKey: string; createdAt: string | null }
+  | { ok: true; status: 'done'; requestKey: string; result: MealLogResponse };
+
+export async function getIngestStatus(requestKey: string) {
+  const encoded = encodeURIComponent(requestKey);
+  return apiFetch<IngestStatusResponse>(`/api/ingest/${encoded}`, { method: 'GET' });
+}
+
+export async function postMealLog(params: { message: string; imageUri?: string | null; idempotencyKey?: string }) {
   const form = new FormData();
   if (params.message) {
     form.append('message', params.message);
@@ -354,7 +363,7 @@ export async function postMealLog(params: { message: string; imageUri?: string |
   return apiFetch<MealLogResponse>('/log', {
     method: 'POST',
     body: form,
-    headers: { 'Idempotency-Key': `${Date.now()}-${Math.random()}` },
+    headers: { 'Idempotency-Key': params.idempotencyKey ?? `${Date.now()}-${Math.random()}` },
   });
 }
 
