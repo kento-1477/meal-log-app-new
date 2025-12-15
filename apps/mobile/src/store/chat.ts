@@ -4,26 +4,19 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ChatMessage, NutritionCardPayload } from '@/types/chat';
 
-export type PendingIngest = {
-  requestKey: string;
-  userMessageId: string;
-  assistantMessageId: string;
-  createdAt: number;
-};
-
 export interface ChatState {
   messages: ChatMessage[];
   composingImageUri?: string | null;
-  pendingIngests: PendingIngest[];
   addUserMessage: (text: string) => ChatMessage;
-  addAssistantMessage: (text: string, options?: { card?: NutritionCardPayload; status?: ChatMessage['status'] }) => ChatMessage;
+  addAssistantMessage: (
+    text: string,
+    options?: { card?: NutritionCardPayload; status?: ChatMessage['status']; ingest?: ChatMessage['ingest'] },
+  ) => ChatMessage;
   setMessageText: (id: string, text: string) => void;
   updateMessageStatus: (id: string, status: ChatMessage['status']) => void;
   attachCardToMessage: (id: string, card: NutritionCardPayload) => void;
   updateCardForLog: (logId: string, updates: Partial<NutritionCardPayload>) => void;
   setComposingImage: (uri: string | null) => void;
-  addPendingIngest: (ingest: PendingIngest) => void;
-  removePendingIngest: (requestKey: string) => void;
   reset: () => void;
 }
 
@@ -43,7 +36,6 @@ export const useChatStore = create<ChatState>()(
     (set, get) => ({
       messages: buildInitialMessages(),
       composingImageUri: null,
-      pendingIngests: [],
       addUserMessage: (text) => {
         const message: ChatMessage = {
           id: nanoid(),
@@ -63,6 +55,7 @@ export const useChatStore = create<ChatState>()(
           createdAt: Date.now(),
           status: options?.status,
           card: options?.card,
+          ingest: options?.ingest,
         };
         set({ messages: [...get().messages, message] });
         return message;
@@ -110,19 +103,51 @@ export const useChatStore = create<ChatState>()(
         });
       },
       setComposingImage: (uri) => set({ composingImageUri: uri }),
-      addPendingIngest: (ingest) => set({ pendingIngests: [...get().pendingIngests, ingest] }),
-      removePendingIngest: (requestKey) =>
-        set({ pendingIngests: get().pendingIngests.filter((ingest) => ingest.requestKey !== requestKey) }),
-      reset: () => set({ messages: buildInitialMessages(), composingImageUri: null, pendingIngests: [] }),
+      reset: () => set({ messages: buildInitialMessages(), composingImageUri: null }),
     }),
     {
       name: 'meal-log.chat',
       storage: createJSONStorage(() => AsyncStorage),
-      version: 1,
+      version: 2,
+      migrate: (persisted, version) => {
+        if (!persisted || typeof persisted !== 'object') {
+          return persisted as unknown as ChatState;
+        }
+
+        // v1 stored pending ingests separately; attach them to the assistant placeholder message.
+        if (version < 2) {
+          const state = persisted as any;
+          const messages = Array.isArray(state.messages) ? (state.messages as ChatMessage[]) : [];
+          const pending = Array.isArray(state.pendingIngests) ? state.pendingIngests : [];
+          if (pending.length && messages.length) {
+            const ingestByAssistantId = new Map<string, { requestKey: string; userMessageId: string }>();
+            for (const entry of pending) {
+              if (!entry) continue;
+              if (typeof entry.assistantMessageId !== 'string') continue;
+              if (typeof entry.requestKey !== 'string') continue;
+              if (typeof entry.userMessageId !== 'string') continue;
+              ingestByAssistantId.set(entry.assistantMessageId, {
+                requestKey: entry.requestKey,
+                userMessageId: entry.userMessageId,
+              });
+            }
+            const migratedMessages = messages.map((message) => {
+              if (!message || typeof message !== 'object') return message;
+              const ingest = ingestByAssistantId.get((message as ChatMessage).id);
+              if (!ingest) return message;
+              return { ...(message as ChatMessage), ingest: (message as ChatMessage).ingest ?? ingest };
+            });
+            state.messages = migratedMessages;
+          }
+          delete state.pendingIngests;
+          return state as ChatState;
+        }
+
+        return persisted as unknown as ChatState;
+      },
       partialize: (state) => ({
         messages: state.messages.slice(-200),
         composingImageUri: state.composingImageUri,
-        pendingIngests: state.pendingIngests,
       }),
     },
   ),

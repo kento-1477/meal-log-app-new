@@ -9,6 +9,10 @@ export interface ChatMessage {
   createdAt: number;
   card?: NutritionCardPayload;
   status?: 'sending' | 'delivered' | 'error' | 'processing';
+  ingest?: {
+    requestKey: string;
+    userMessageId: string;
+  };
 }
 
 export interface NutritionCardPayload {

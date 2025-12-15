@@ -339,6 +339,9 @@ export type IngestStatusResponse =
 
 export async function getIngestStatus(requestKey: string) {
   const encoded = encodeURIComponent(requestKey);
+  if (__DEV__) {
+    console.log('[API] getIngestStatus', { requestKey });
+  }
   return apiFetch<IngestStatusResponse>(`/api/ingest/${encoded}`, { method: 'GET' });
 }
 

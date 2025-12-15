@@ -430,6 +430,8 @@ app.get('/api/ingest/:requestKey', requireAuth, async (c) => {
     throw new HttpError('requestKey is required', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
   }
 
+  console.log('[meal-log] ingest status', { userId: user.id, requestKey: requestKey.slice(0, 24) });
+
   const requestedLocale = normalizeLocale(resolveRequestLocale(c.req.raw, { queryField: 'locale' }));
 
   const { data: ingest, error: ingestError } = await supabaseAdmin
@@ -448,7 +450,50 @@ app.get('/api/ingest/:requestKey', requireAuth, async (c) => {
     throw new HttpError('解析リクエストが見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
   }
 
-  if (!ingest.logId) {
+  // Legacy recovery: older builds nulled logId when `zeroFloored` fired.
+  // In that case, try to resolve the single log created right after this ingest.
+  let resolvedLogId: string | null = ingest.logId ?? null;
+  if (!resolvedLogId) {
+    const ingestCreatedAtMs = ingest.createdAt ? Date.parse(String(ingest.createdAt)) : Number.NaN;
+    if (Number.isFinite(ingestCreatedAtMs)) {
+      const windowStartIso = new Date(ingestCreatedAtMs - 1000).toISOString();
+      const windowEndIso = new Date(ingestCreatedAtMs + 1000 * 60 * 10).toISOString(); // 10 min
+      const { data: candidates, error: candidateError } = await supabaseAdmin
+        .from('MealLog')
+        .select('id, createdAt')
+        .eq('userId', user.id)
+        .gte('createdAt', windowStartIso)
+        .lte('createdAt', windowEndIso)
+        .order('createdAt', { ascending: true })
+        .limit(2);
+
+      if (candidateError) {
+        console.error('ingest status: candidate lookup failed', { requestKey, userId: user.id, candidateError });
+      } else if ((candidates ?? []).length === 1 && candidates?.[0]?.id) {
+        resolvedLogId = String(candidates[0].id);
+        const { error: backfillError } = await supabaseAdmin
+          .from('IngestRequest')
+          .update({ logId: resolvedLogId })
+          .eq('id', ingest.id);
+        if (backfillError) {
+          console.error('ingest status: backfill failed', { requestKey, userId: user.id, backfillError });
+        }
+      } else if ((candidates ?? []).length > 1) {
+        console.warn('ingest status: ambiguous candidates', {
+          requestKey,
+          userId: user.id,
+          count: candidates?.length ?? 0,
+        });
+      }
+    }
+  }
+
+  if (!resolvedLogId) {
+    console.log('[meal-log] ingest status processing', {
+      userId: user.id,
+      requestKey: requestKey.slice(0, 24),
+      createdAt: ingest.createdAt ? new Date(ingest.createdAt).toISOString() : null,
+    });
     return c.json({
       ok: true,
       status: 'processing',
@@ -459,7 +504,7 @@ app.get('/api/ingest/:requestKey', requireAuth, async (c) => {
 
   const result = await buildIdempotentMealLogResult({
     userId: user.id,
-    logId: ingest.logId,
+    logId: resolvedLogId,
     requestKey,
     requestedLocale,
   });
@@ -1612,6 +1657,13 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
 
   const zeroFloored = Object.values(enrichedResponse.totals).some((value) => value === 0);
   const mealPeriod = inferMealPeriod(timezone);
+  if (zeroFloored) {
+    console.warn('processMealLog: zeroFloored detected', {
+      userId: params.userId,
+      requestKey: requestKey.slice(0, 24),
+      totals: enrichedResponse.totals,
+    });
+  }
 
   const seededTranslations: Record<Locale, GeminiNutritionResponse> = {
     [DEFAULT_LOCALE]: cloneResponse(enrichedResponse),
@@ -1702,7 +1754,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
   if (ingestId) {
     const { error: ingestUpdateError } = await supabaseAdmin
       .from('IngestRequest')
-      .update({ logId: zeroFloored ? null : logId })
+      .update({ logId: createdLogId })
       .eq('id', ingestId);
     if (ingestUpdateError) {
       console.error('processMealLog: update ingest failed', ingestUpdateError);
