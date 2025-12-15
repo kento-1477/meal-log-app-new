@@ -84,8 +84,25 @@ function buildCacheKey(url: string, headers: Headers) {
   return `${url}::${locale}::${timezone}`;
 }
 
-async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+type ApiFetchOptions = RequestInit & { timeoutMs?: number };
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  if (!timeoutMs || timeoutMs <= 0 || typeof AbortController === 'undefined' || init.signal) {
+    return fetch(url, init);
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const url = buildApiUrl(path);
+  const { timeoutMs = 60_000, ...fetchOptions } = options;
   const headers = new Headers(options.headers ?? {});
 
   if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
@@ -105,11 +122,25 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     headers.set('X-Device-Id', await getDeviceFingerprintId());
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-    credentials: 'include',
-  });
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      url,
+      {
+        ...fetchOptions,
+        headers,
+        credentials: 'include',
+      },
+      timeoutMs,
+    );
+  } catch (err) {
+    if ((err as any)?.name === 'AbortError') {
+      const error = new Error('通信がタイムアウトしました。電波状況を確認して再度お試しください。') as ApiError;
+      error.code = 'network.timeout';
+      throw error;
+    }
+    throw err;
+  }
 
   const method = (options.method ?? 'GET').toUpperCase();
   const cacheKey = buildCacheKey(url, headers);
@@ -125,11 +156,25 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     bustHeaders.delete('if-none-match');
     bustHeaders.delete('If-Modified-Since');
     bustHeaders.delete('if-modified-since');
-    const retry = await fetch(bustUrl, {
-      ...options,
-      headers: bustHeaders,
-      credentials: 'include',
-    });
+    let retry: Response;
+    try {
+      retry = await fetchWithTimeout(
+        bustUrl,
+        {
+          ...fetchOptions,
+          headers: bustHeaders,
+          credentials: 'include',
+        },
+        timeoutMs,
+      );
+    } catch (err) {
+      if ((err as any)?.name === 'AbortError') {
+        const error = new Error('通信がタイムアウトしました。電波状況を確認して再度お試しください。') as ApiError;
+        error.code = 'network.timeout';
+        throw error;
+      }
+      throw err;
+    }
     if (!retry.ok) {
       let message = retry.statusText;
       try {
@@ -547,6 +592,7 @@ export async function submitIapPurchase(payload: IapPurchaseRequest) {
   return apiFetch<IapPurchaseResponse>('/api/iap/purchase', {
     method: 'POST',
     body: JSON.stringify(payload),
+    timeoutMs: 75_000,
   });
 }
 
@@ -585,7 +631,7 @@ export interface PremiumStatusResponse {
 }
 
 export async function getPremiumStatus(): Promise<PremiumStatusResponse> {
-  return apiFetch('/api/user/premium-status', { method: 'GET' });
+  return apiFetch('/api/user/premium-status', { method: 'GET', timeoutMs: 20_000 });
 }
 
 // Referral Status API

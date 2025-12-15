@@ -16,10 +16,19 @@ const app = createApp();
 
 const APP_STORE_SHARED_SECRET = getEnv('APP_STORE_SHARED_SECRET', { optional: true });
 const OFFLINE_VERIFICATION = boolEnv('IAP_OFFLINE_VERIFICATION', false);
+const APP_STORE_VERIFY_TIMEOUT_MS = Number(Deno.env.get('APP_STORE_VERIFY_TIMEOUT_MS') ?? 15_000);
 
 app.get('/health', (c) => c.json({ ok: true, service: 'iap' }));
 
-app.post('/api/iap/purchase', requireAuth, async (c) => {
+app.use('*', async (c, next) => {
+  console.log('[iap] request', { method: c.req.method, url: c.req.url });
+  await next();
+});
+
+const PURCHASE_PATHS = ['/api/iap/purchase', '/iap/api/iap/purchase'] as const;
+
+PURCHASE_PATHS.forEach((path) =>
+  app.post(path, requireAuth, async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
   const parsed = IapPurchaseRequestSchema.safeParse(body);
@@ -35,6 +44,13 @@ app.post('/api/iap/purchase', requireAuth, async (c) => {
     });
   }
 
+  console.log('iap purchase payload', {
+    userId: user.id,
+    productId: request.productId,
+    transactionId: request.transactionId,
+    environment: request.environment ?? null,
+  });
+
   const existing = await findReceiptByTransaction(request.transactionId);
   if (existing) {
     if (existing.userId !== user.id) {
@@ -43,12 +59,39 @@ app.post('/api/iap/purchase', requireAuth, async (c) => {
         expose: true,
       });
     }
+
+    await ensurePremiumGrantFromReceipt(existing);
+
     const usage = summarizeUsageStatus(await evaluateAiUsage(user.id));
     const premiumStatus = await buildPremiumStatusPayload(user.id);
     return c.json({ ok: true, creditsGranted: 0, usage, premiumStatus });
   }
 
   const verification = await verifyAppStoreReceipt(request);
+
+  if (verification.transactionId !== request.transactionId) {
+    console.log('iap transactionId mismatch', {
+      requestTransactionId: request.transactionId,
+      verifiedTransactionId: verification.transactionId,
+    });
+  }
+
+  const verifiedExisting = await findReceiptByTransaction(verification.transactionId);
+  if (verifiedExisting) {
+    if (verifiedExisting.userId !== user.id) {
+      throw new HttpError('別のユーザーで既に処理済みの購入です', {
+        status: HTTP_STATUS.CONFLICT,
+        expose: true,
+      });
+    }
+
+    await ensurePremiumGrantFromReceipt(verifiedExisting);
+
+    const usage = summarizeUsageStatus(await evaluateAiUsage(user.id));
+    const premiumStatus = await buildPremiumStatusPayload(user.id);
+    return c.json({ ok: true, creditsGranted: 0, usage, premiumStatus });
+  }
+
   const resolvedProductId = verification.productId ?? request.productId;
   const creditsPerUnit = resolveCreditsForProduct(resolvedProductId);
   const premiumDaysPerUnit = resolvePremiumDaysForProduct(resolvedProductId);
@@ -68,9 +111,9 @@ app.post('/api/iap/purchase', requireAuth, async (c) => {
     throw new HttpError('付与内容が計算できませんでした', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
   }
 
-  const now = new Date();
-  const nowIso = now.toISOString();
-  const endDate = DateTime.fromJSDate(now).plus({ days: premiumDaysGranted }).toJSDate();
+  const purchasedAt = verification.purchaseDate ?? new Date();
+  const purchasedAtIso = purchasedAt.toISOString();
+  const endDate = DateTime.fromJSDate(purchasedAt).plus({ days: premiumDaysGranted }).toJSDate();
 
   const iapReceiptId = await insertReceipt({
     userId: user.id,
@@ -79,7 +122,7 @@ app.post('/api/iap/purchase', requireAuth, async (c) => {
     environment: verification.environment,
     quantity,
     creditsGranted,
-    purchasedAt: verification.purchaseDate,
+    purchasedAt,
     raw: verification.raw,
   });
 
@@ -91,7 +134,7 @@ app.post('/api/iap/purchase', requireAuth, async (c) => {
     await insertPremiumGrant({
       userId: user.id,
       days: premiumDaysGranted,
-      startDate: nowIso,
+      startDate: purchasedAtIso,
       endDate: endDate.toISOString(),
       iapReceiptId,
     });
@@ -100,14 +143,15 @@ app.post('/api/iap/purchase', requireAuth, async (c) => {
   const usage = summarizeUsageStatus(await evaluateAiUsage(user.id));
   const premiumStatus = await buildPremiumStatusPayload(user.id);
   return c.json({ ok: true, creditsGranted, usage, premiumStatus });
-});
+}),
+);
 
 export default app;
 
 async function findReceiptByTransaction(transactionId: string) {
   const { data, error } = await supabaseAdmin
     .from('IapReceipt')
-    .select('id, userId')
+    .select('id, userId, productId, purchasedAt')
     .eq('transactionId', transactionId)
     .maybeSingle();
 
@@ -116,6 +160,49 @@ async function findReceiptByTransaction(transactionId: string) {
     throw new HttpError('購入情報の確認に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
   }
   return data;
+}
+
+async function ensurePremiumGrantFromReceipt(receipt: {
+  id: number;
+  userId: number;
+  productId: string;
+  purchasedAt: string;
+}) {
+  const premiumDays = resolvePremiumDaysForProduct(receipt.productId);
+  if (premiumDays == null || premiumDays <= 0) {
+    return;
+  }
+
+  const { data: existingGrant, error: grantError } = await supabaseAdmin
+    .from('PremiumGrant')
+    .select('id')
+    .eq('userId', receipt.userId)
+    .eq('iapReceiptId', receipt.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (grantError) {
+    console.error('iap: find premium grant failed', grantError);
+    throw new HttpError('プレミアム付与の確認に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  if (existingGrant) {
+    return;
+  }
+
+  const startDate = receipt.purchasedAt;
+  const endDate = DateTime.fromISO(startDate).plus({ days: premiumDays }).toISO();
+  if (!endDate) {
+    throw new HttpError('プレミアム期限の計算に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  await insertPremiumGrant({
+    userId: receipt.userId,
+    days: premiumDays,
+    startDate,
+    endDate,
+    iapReceiptId: receipt.id,
+  });
 }
 
 async function insertReceipt(params: {
@@ -277,7 +364,11 @@ async function verifyAppStoreReceipt(input: IapPurchaseRequest) {
   let lastError: Error | null = null;
   for (const endpoint of endpoints) {
     try {
-      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+      const response = await fetchWithTimeout(
+        endpoint,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body },
+        APP_STORE_VERIFY_TIMEOUT_MS,
+      );
       if (!response.ok) {
         lastError = new Error(`App Store verifyReceipt HTTP ${response.status}`);
         continue;
@@ -329,6 +420,19 @@ async function verifyAppStoreReceipt(input: IapPurchaseRequest) {
 
   console.error('iap: app store verification failed', lastError);
   throw new HttpError('App Store レシートの検証に失敗しました', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  if (!timeoutMs || timeoutMs <= 0) {
+    return fetch(url, init);
+  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function verifyTestReceipt(input: IapPurchaseRequest) {
