@@ -491,7 +491,7 @@ function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardP
     if (entry.total <= 0) {
       return sum;
     }
-    const dailyDeficit = Math.max(targetDaily - entry.total, 0);
+    const dailyDeficit = targetDaily - entry.total;
     return sum + dailyDeficit;
   }, 0);
 
@@ -500,7 +500,9 @@ function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardP
   const valueColor = hasMonthlyData
     ? totalDeficit > 0
       ? colors.success
-      : colors.textSecondary
+      : totalDeficit < 0
+        ? colors.error
+        : colors.textSecondary
     : colors.textSecondary;
 
   const maxAccumulation = dailyEntries.length * targetDaily;
@@ -532,39 +534,7 @@ function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardP
       <Text style={[styles.monthlyValue, { color: valueColor }]}>{displayValue}</Text>
       <MonthlyProgressMeter progress={progress} isLoading={isLoading} />
 
-      {/* 説明モーダル */}
-      <Modal
-        visible={helpVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setHelpVisible(false)}
-      >
-        <TouchableOpacity
-          style={burningStyles.modalBackdrop}
-          activeOpacity={1}
-          onPress={() => setHelpVisible(false)}
-        >
-          <View style={burningStyles.modalCard}>
-            <Text style={burningStyles.modalTitle}>🔥 月間脂肪燃焼量とは？</Text>
-            <Text style={burningStyles.modalBody}>
-              毎日の目標カロリーと実際の摂取カロリーの差を、1ヶ月分積み上げた値です。
-            </Text>
-            <Text style={burningStyles.modalBody}>
-              脂肪1kgは約7,200kcalに相当するため、カロリー差分をkg換算で表示しています。
-            </Text>
-            <Text style={burningStyles.modalBody}>
-              <Text style={{ color: '#34C759', fontWeight: '600' }}>マイナス</Text>
-              が大きいほど、目標より少なく食べられていることを意味します。
-            </Text>
-            <TouchableOpacity
-              style={burningStyles.modalCloseBtn}
-              onPress={() => setHelpVisible(false)}
-            >
-              <Text style={burningStyles.modalCloseBtnText}>閉じる</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} />
     </View>
   );
 }
@@ -720,40 +690,73 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
         <Text style={burningStyles.ctaLabel}>燃焼結果を確認する</Text>
       </TouchableOpacity>
 
-      {/* 説明モーダル */}
-      <Modal
-        visible={helpVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setHelpVisible(false)}
-      >
-        <TouchableOpacity
-          style={burningStyles.modalBackdrop}
-          activeOpacity={1}
-          onPress={() => setHelpVisible(false)}
-        >
-          <View style={burningStyles.modalCard}>
-            <Text style={burningStyles.modalTitle}>🔥 月間脂肪燃焼量とは？</Text>
-            <Text style={burningStyles.modalBody}>
-              毎日の目標カロリーと実際の摂取カロリーの差を、1ヶ月分積み上げた値です。
-            </Text>
-            <Text style={burningStyles.modalBody}>
-              脂肪1kgは約7,200kcalに相当するため、カロリー差分をkg換算で表示しています。
-            </Text>
-            <Text style={burningStyles.modalBody}>
-              <Text style={{ color: '#34C759', fontWeight: '600' }}>マイナス</Text>
-              が大きいほど、目標より少なく食べられていることを意味します。
-            </Text>
-            <TouchableOpacity
-              style={burningStyles.modalCloseBtn}
-              onPress={() => setHelpVisible(false)}
-            >
-              <Text style={burningStyles.modalCloseBtnText}>閉じる</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} />
     </View>
+  );
+}
+
+interface MonthlyDeficitHelpModalProps {
+  visible: boolean;
+  onClose: () => void;
+}
+
+function MonthlyDeficitHelpModal({ visible, onClose }: MonthlyDeficitHelpModalProps) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={burningStyles.modalBackdrop} activeOpacity={1} onPress={onClose}>
+        <View style={burningStyles.modalCard}>
+          <Text style={burningStyles.modalTitle}>🔥 月間脂肪燃焼量とは？</Text>
+
+          <View style={burningStyles.modalSection}>
+            <Text style={burningStyles.modalBody}>
+              「目標カロリーを守れた分の貯金（差分）」を1ヶ月間積み上げた成果です。
+            </Text>
+            <Text style={burningStyles.modalBody}>
+              <Text style={{ fontWeight: '700' }}>7,200kcal = 脂肪1kg</Text> として換算し、どれくらい脂肪を燃やせたかを表示しています。
+            </Text>
+          </View>
+
+          <View style={burningStyles.diagramContainer}>
+            <Text style={burningStyles.diagramTitle}>例: 目標2,000kcalの日</Text>
+
+            {/* Row 1: Target */}
+            <View style={burningStyles.diagramRow}>
+              <View style={burningStyles.diagramLabels}>
+                <Text style={burningStyles.diagramLabel}>目標</Text>
+                <Text style={burningStyles.diagramValue}>2,000</Text>
+              </View>
+              <View style={burningStyles.diagramBarTrack}>
+                <View style={[burningStyles.diagramBar, { width: '100%', backgroundColor: '#E5E5EA' }]} />
+              </View>
+            </View>
+
+            {/* Row 2: Intake & Burn */}
+            <View style={burningStyles.diagramRow}>
+              <View style={burningStyles.diagramLabels}>
+                <Text style={burningStyles.diagramLabel}>摂取</Text>
+                <Text style={burningStyles.diagramValue}>1,500</Text>
+              </View>
+              <View style={burningStyles.diagramBarTrack}>
+                <View style={[burningStyles.diagramBar, { width: '75%', backgroundColor: '#FFAB40' }]} />
+                <View style={[burningStyles.diagramBar, { width: '25%', backgroundColor: colors.success, position: 'absolute', right: 0 }]}>
+                  <Text style={burningStyles.diagramBarLabel}>500 燃焼!</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          <View style={burningStyles.modalSection}>
+            <Text style={burningStyles.modalHint}>
+              ※食べすぎてしまった日（目標オーバー）は、この貯金から差し引かれます。プラス（赤字）にならないよう気をつけましょう！
+            </Text>
+          </View>
+
+          <TouchableOpacity style={burningStyles.modalCloseBtn} onPress={onClose}>
+            <Text style={burningStyles.modalCloseBtnText}>閉じる</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
   );
 }
 
@@ -884,41 +887,107 @@ const burningStyles = StyleSheet.create({
   // モーダル
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   modalCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    maxWidth: 300,
+    borderRadius: 24,
+    padding: 24,
+    maxWidth: 340,
     width: '100%',
-    gap: 10,
+    gap: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
   },
   modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '800',
     color: '#1C1C1E',
     textAlign: 'center',
+    marginBottom: 4,
+  },
+  modalSection: {
+    gap: 8,
   },
   modalBody: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#3C3C43',
-    lineHeight: 20,
+    lineHeight: 22,
+  },
+  modalHint: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    backgroundColor: colors.background,
+    padding: 12,
+    borderRadius: 8,
+    overflow: 'hidden',
+    lineHeight: 18,
+  },
+  diagramContainer: {
+    backgroundColor: '#F2F2F7',
+    borderRadius: 12,
+    padding: 16,
+    gap: 12,
+  },
+  diagramTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 4,
+  },
+  diagramRow: {
+    gap: 4,
+  },
+  diagramLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+  },
+  diagramLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  diagramValue: {
+    fontSize: 12,
+    color: colors.textPrimary,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  diagramBarTrack: {
+    height: 24,
+    borderRadius: 6,
+    overflow: 'hidden',
+    position: 'relative',
+    flexDirection: 'row',
+  },
+  diagramBar: {
+    height: '100%',
+    borderRadius: 6,
+  },
+  diagramBarLabel: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 24,
   },
   modalCloseBtn: {
     backgroundColor: '#FF7043',
-    borderRadius: 10,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 8,
   },
   modalCloseBtnText: {
     color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
 
