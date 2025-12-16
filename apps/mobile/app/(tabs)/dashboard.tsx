@@ -22,7 +22,7 @@ import { MonthlyCalorieChart } from '@/features/dashboard/components/MonthlyCalo
 import { MealPeriodBreakdown } from '@/features/dashboard/components/MealPeriodBreakdown';
 
 import { EmptyStateCard } from '@/features/dashboard/components/EmptyStateCard';
-import { PeriodComparisonCard } from '@/features/dashboard/components/PeriodComparisonCard';
+
 import { type MacroRingProps, type RingColorToken } from '@/features/dashboard/components/RemainingRings';
 import { buildRingState } from '@/features/dashboard/components/ringMath';
 import Svg, { Circle, Defs, Pattern, Rect } from 'react-native-svg';
@@ -393,7 +393,7 @@ export default function DashboardScreen() {
                 </>
               ) : null}
 
-              {data.comparison && isPremium ? <PeriodComparisonCard comparison={data.comparison} /> : null}
+
 
               <View style={styles.section}>
                 <View style={styles.card}>
@@ -452,6 +452,7 @@ interface MonthlyDeficitCardProps {
 }
 
 function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardProps) {
+  const [helpVisible, setHelpVisible] = useState(false);
   const timezone = summary.range.timezone ?? null;
 
   const zonedNow = timezone ? DateTime.now().setZone(timezone) : DateTime.now();
@@ -509,17 +510,61 @@ function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardP
   return (
     <View style={[styles.metricCardContent, styles.monthlyCard]}>
       <View style={styles.monthlyHeader}>
-        <Feather name="unlock" size={14} color={colors.success} />
-        <Text style={styles.monthlyWhereLabel}>{t('dashboard.monthlyDeficit.premiumOnly')}</Text>
+        <View style={styles.monthlyHeaderLeft}>
+          <Feather name="unlock" size={14} color={colors.success} />
+          <Text style={styles.monthlyWhereLabel}>{t('dashboard.monthlyDeficit.premiumOnly')}</Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => setHelpVisible(true)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityLabel="月間脂肪燃焼量の説明"
+          accessibilityRole="button"
+        >
+          <Feather name="help-circle" size={18} color={colors.textTertiary} />
+        </TouchableOpacity>
       </View>
       <Text
         style={styles.monthlyLabelMultiline}
-        numberOfLines={2}
+        numberOfLines={1}
       >
-        {`${t('dashboard.monthlyDeficit.newTitle.line1')}\n${t('dashboard.monthlyDeficit.newTitle.line2')}`}
+        月間脂肪燃焼量
       </Text>
       <Text style={[styles.monthlyValue, { color: valueColor }]}>{displayValue}</Text>
       <MonthlyProgressMeter progress={progress} isLoading={isLoading} />
+
+      {/* 説明モーダル */}
+      <Modal
+        visible={helpVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setHelpVisible(false)}
+      >
+        <TouchableOpacity
+          style={burningStyles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setHelpVisible(false)}
+        >
+          <View style={burningStyles.modalCard}>
+            <Text style={burningStyles.modalTitle}>🔥 月間脂肪燃焼量とは？</Text>
+            <Text style={burningStyles.modalBody}>
+              毎日の目標カロリーと実際の摂取カロリーの差を、1ヶ月分積み上げた値です。
+            </Text>
+            <Text style={burningStyles.modalBody}>
+              脂肪1kgは約7,200kcalに相当するため、カロリー差分をkg換算で表示しています。
+            </Text>
+            <Text style={burningStyles.modalBody}>
+              <Text style={{ color: '#34C759', fontWeight: '600' }}>マイナス</Text>
+              が大きいほど、目標より少なく食べられていることを意味します。
+            </Text>
+            <TouchableOpacity
+              style={burningStyles.modalCloseBtn}
+              onPress={() => setHelpVisible(false)}
+            >
+              <Text style={burningStyles.modalCloseBtnText}>閉じる</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -1314,9 +1359,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   monthlyHeader: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    gap: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  monthlyHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   monthlyWhereLabel: {
     ...textStyles.caption,
