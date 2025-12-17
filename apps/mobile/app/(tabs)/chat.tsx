@@ -79,17 +79,28 @@ const composeTimeline = (messages: ReturnType<typeof useChatStore.getState>['mes
 
 const NETWORK_HINT_DELAY_IMAGE_MS = 30000;
 const NETWORK_HINT_DELAY_TEXT_MS = 15000;
+const PENDING_INGEST_STALE_MS = 1000 * 60 * 10;
 const NETWORK_ERROR_PATTERNS = [
   'Network request failed',
   'The network connection was lost',
   'A server with the specified hostname could not be found',
   'offline',
   'timed out',
+  'timeout',
+  'タイムアウト',
 ];
 
 function isLikelyNetworkError(error: unknown): boolean {
   if (!error) {
     return false;
+  }
+  const code = typeof (error as { code?: unknown }).code === 'string' ? (error as { code: string }).code : '';
+  if (code.startsWith('network.')) {
+    return true;
+  }
+  const name = typeof (error as { name?: unknown }).name === 'string' ? (error as { name: string }).name : '';
+  if (name === 'AbortError') {
+    return true;
   }
   if (error instanceof TypeError) {
     return true;
@@ -243,6 +254,14 @@ export default function ChatScreen() {
             queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
             queryClient.invalidateQueries({ queryKey: ['streak'] });
             scrollToEnd();
+          } else if (status.ok && status.status === 'processing') {
+            const tooOld = Date.now() - ingest.createdAt > PENDING_INGEST_STALE_MS;
+            if (tooOld) {
+              updateMessageStatus(ingest.userMessageId, 'error');
+              updateMessageStatus(ingest.assistantMessageId, 'error');
+              setMessageText(ingest.assistantMessageId, t('chat.genericErrorBubble'));
+              removePendingIngest(ingest.requestKey);
+            }
           }
         } catch (error) {
           if (__DEV__) {
