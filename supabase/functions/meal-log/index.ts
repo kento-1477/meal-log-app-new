@@ -1702,7 +1702,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
   if (ingestId) {
     const { error: ingestUpdateError } = await supabaseAdmin
       .from('IngestRequest')
-      .update({ logId: zeroFloored ? null : logId })
+      .update({ logId: createdLogId })
       .eq('id', ingestId);
     if (ingestUpdateError) {
       console.error('processMealLog: update ingest failed', ingestUpdateError);
