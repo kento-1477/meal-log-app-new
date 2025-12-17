@@ -2305,8 +2305,8 @@ function mapFavoriteMeal(
         carbs_g: item.carbsG,
         order_index: item.orderIndex,
       })),
-    created_at: favorite.createdAt.toISOString(),
-    updated_at: favorite.updatedAt.toISOString(),
+    created_at: new Date(favorite.createdAt).toISOString(),
+    updated_at: new Date(favorite.updatedAt).toISOString(),
   };
 }
 
