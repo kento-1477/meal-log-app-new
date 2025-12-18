@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Concept 1: Equation Style</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 40px;
+            background: rgba(0,0,0,0.6);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .modal {
+            background: white;
+            border-radius: 24px;
+            padding: 24px;
+            max-width: 340px;
+            width: 100%;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.25);
+        }
+        .title {
+            font-size: 18px;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .section {
+            margin-bottom: 16px;
+        }
+        .text {
+            font-size: 15px;
+            color: #3C3C43;
+            line-height: 22px;
+            margin-bottom: 8px;
+        }
+        .diagram {
+            background: #F2F2F7;
+            border-radius: 12px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        .diagram-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #8E8E93;
+            margin-bottom: 12px;
+        }
+        .equation {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .bar {
+            height: 32px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+            color: white;
+        }
+        .target-bar {
+            background: #E5E5EA;
+            color: #2C2C2E;
+            flex: 1;
+        }
+        .minus {
+            font-size: 20px;
+            font-weight: 700;
+            color: #2C2C2E;
+        }
+        .intake-bar {
+            background: #FFAB40;
+            flex: 0.75;
+        }
+        .equals {
+            font-size: 20px;
+            font-weight: 700;
+            color: #2C2C2E;
+        }
+        .result-bar {
+            background: #3BC894;
+            flex: 0.25;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .hint {
+            font-size: 13px;
+            color: #6E7684;
+            background: #F3F5FA;
+            padding: 12px;
+            border-radius: 8px;
+            line-height: 18px;
+        }
+        .close-btn {
+            background: #FF7043;
+            border-radius: 12px;
+            padding: 14px;
+            text-align: center;
+            margin-top: 20px;
+            cursor: pointer;
+        }
+        .close-btn-text {
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <div class="modal">
+        <div class="title">🔥 月間脂肪燃焼量とは？</div>
+        
+        <div class="section">
+            <div class="text">「目標カロリーを守れた分の貯金（差分）」を1ヶ月間積み上げた成果です。</div>
+            <div class="text"><strong>7,200kcal = 脂肪1kg</strong> として換算し、どれくらい脂肪を燃やせたかを表示しています。</div>
+        </div>
+
+        <div class="diagram">
+            <div class="diagram-title">例: 目標2,000kcalの日</div>
+            
+            <div class="equation">
+                <div class="bar target-bar">目標 2,000</div>
+            </div>
+            
+            <div class="equation">
+                <div class="minus">−</div>
+                <div class="bar intake-bar">摂取 1,500</div>
+            </div>
+            
+            <div class="equation">
+                <div class="equals">=</div>
+                <div class="bar result-bar">🔥 500燃焼!</div>
+            </div>
+        </div>
+
+        <div class="hint">
+            ※食べすぎてしまった日（目標オーバー）は、この貯金から差し引かれます。プラス（赤字）にならないよう気をつけましょう！
+        </div>
+
+        <div class="close-btn">
+            <div class="close-btn-text">閉じる</div>
+        </div>
+    </div>
+</body>
+</html>

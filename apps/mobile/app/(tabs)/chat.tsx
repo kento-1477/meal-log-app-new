@@ -79,17 +79,28 @@ const composeTimeline = (messages: ReturnType<typeof useChatStore.getState>['mes
 
 const NETWORK_HINT_DELAY_IMAGE_MS = 30000;
 const NETWORK_HINT_DELAY_TEXT_MS = 15000;
+const PENDING_INGEST_STALE_MS = 1000 * 60 * 10;
 const NETWORK_ERROR_PATTERNS = [
   'Network request failed',
   'The network connection was lost',
   'A server with the specified hostname could not be found',
   'offline',
   'timed out',
+  'timeout',
+  'タイムアウト',
 ];
 
 function isLikelyNetworkError(error: unknown): boolean {
   if (!error) {
     return false;
+  }
+  const code = typeof (error as { code?: unknown }).code === 'string' ? (error as { code: string }).code : '';
+  if (code.startsWith('network.')) {
+    return true;
+  }
+  const name = typeof (error as { name?: unknown }).name === 'string' ? (error as { name: string }).name : '';
+  if (name === 'AbortError') {
+    return true;
   }
   if (error instanceof TypeError) {
     return true;
@@ -214,6 +225,14 @@ export default function ChatScreen() {
             queryClient.invalidateQueries({ queryKey: ['streak'] });
             removePendingIngest(ingest.requestKey);
             scrollToEnd();
+          } else if (status.ok && status.status === 'processing') {
+            const tooOld = Date.now() - ingest.createdAt > PENDING_INGEST_STALE_MS;
+            if (tooOld) {
+              updateMessageStatus(ingest.userMessageId, 'error');
+              updateMessageStatus(ingest.assistantMessageId, 'error');
+              setMessageText(ingest.assistantMessageId, t('chat.genericErrorBubble'));
+              removePendingIngest(ingest.requestKey);
+            }
           }
         } catch (error) {
           const apiError = error as ApiError;
@@ -956,15 +975,18 @@ export default function ChatScreen() {
                 >
                   <View style={styles.inputRow}>
                     <TextInput
-                      style={[styles.textInput, styles.textInputMultiline]}
+                      style={styles.textInput}
                       placeholder={t('chat.placeholder')}
                       value={input}
                       onChangeText={setInput}
-                      multiline
-                      numberOfLines={3}
+                      multiline={false}
                       blurOnSubmit={false}
-                      returnKeyType="default"
-                      textAlignVertical="top"
+                      returnKeyType="send"
+                      onSubmitEditing={() => {
+                        if (!sendButtonDisabled) {
+                          void handleSend();
+                        }
+                      }}
                     />
                     <TouchableOpacity
                       onPress={() => {

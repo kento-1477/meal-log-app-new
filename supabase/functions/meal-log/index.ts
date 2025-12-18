@@ -1702,7 +1702,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
   if (ingestId) {
     const { error: ingestUpdateError } = await supabaseAdmin
       .from('IngestRequest')
-      .update({ logId: zeroFloored ? null : logId })
+      .update({ logId: createdLogId })
       .eq('id', ingestId);
     if (ingestUpdateError) {
       console.error('processMealLog: update ingest failed', ingestUpdateError);
@@ -2305,8 +2305,8 @@ function mapFavoriteMeal(
         carbs_g: item.carbsG,
         order_index: item.orderIndex,
       })),
-    created_at: favorite.createdAt.toISOString(),
-    updated_at: favorite.updatedAt.toISOString(),
+    created_at: new Date(favorite.createdAt).toISOString(),
+    updated_at: new Date(favorite.updatedAt).toISOString(),
   };
 }
 
