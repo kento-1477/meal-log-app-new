@@ -381,18 +381,31 @@ export default function PaywallScreen() {
 
           {/* Footer Links */}
           <View style={styles.footerLinks}>
-            <TouchableOpacity onPress={handleRestore} disabled={restoreMutation.isPending}>
+            <TouchableOpacity
+              style={styles.footerLinkItem}
+              onPress={handleRestore}
+              disabled={restoreMutation.isPending}
+              accessibilityRole="button"
+            >
               {restoreMutation.isPending ? (
                 <ActivityIndicator size="small" color={colors.textSecondary} />
               ) : (
                 <Text style={styles.footerLink}>{t('paywall.footer.restore')}</Text>
               )}
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleOpenUrl(TERMS_OF_SERVICE_URL)}>
-              <Text style={styles.footerLink}>{t('paywall.footer.terms')}</Text>
+            <TouchableOpacity
+              style={styles.footerLinkItem}
+              onPress={() => handleOpenUrl(TERMS_OF_SERVICE_URL)}
+              accessibilityRole="link"
+            >
+              <Text style={styles.footerLink}>{t('common.termsOfService')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleOpenUrl(PRIVACY_POLICY_URL)}>
-              <Text style={styles.footerLink}>{t('paywall.footer.privacy')}</Text>
+            <TouchableOpacity
+              style={styles.footerLinkItem}
+              onPress={() => handleOpenUrl(PRIVACY_POLICY_URL)}
+              accessibilityRole="link"
+            >
+              <Text style={styles.footerLink}>{t('common.privacyPolicy')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -644,10 +657,14 @@ const styles = StyleSheet.create({
   },
   footerLinks: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'center',
-    gap: 24,
     marginTop: 24,
     paddingHorizontal: 24,
+  },
+  footerLinkItem: {
+    marginHorizontal: 12,
+    marginVertical: 6,
   },
   footerLink: {
     ...textStyles.caption,

@@ -705,55 +705,72 @@ function MonthlyDeficitHelpModal({ visible, onClose }: MonthlyDeficitHelpModalPr
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={burningStyles.modalBackdrop} activeOpacity={1} onPress={onClose}>
         <View style={burningStyles.modalCard}>
-          <Text style={burningStyles.modalTitle}>🔥 月間脂肪燃焼量とは？</Text>
+          <LinearGradient
+            colors={['#FFF8F0', '#FFE8D6', '#FFDCC8']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={burningStyles.modalGradient}
+          >
+            <Text style={burningStyles.modalTitle}>🔥 脂肪燃焼の仕組み</Text>
 
-          <View style={burningStyles.modalSection}>
-            <Text style={burningStyles.modalBody}>
-              「目標カロリーを守れた分の貯金（差分）」を1ヶ月間積み上げた成果です。
-            </Text>
-            <Text style={burningStyles.modalBody}>
-              <Text style={{ fontWeight: '700' }}>7,200kcal = 脂肪1kg</Text> として換算し、どれくらい脂肪を燃やせたかを表示しています。
-            </Text>
-          </View>
-
-          <View style={burningStyles.diagramContainer}>
-            <Text style={burningStyles.diagramTitle}>例: 目標2,000kcalの日</Text>
-
-            {/* Row 1: Target */}
-            <View style={burningStyles.diagramRow}>
-              <View style={burningStyles.diagramLabels}>
-                <Text style={burningStyles.diagramLabel}>目標</Text>
-                <Text style={burningStyles.diagramValue}>2,000</Text>
-              </View>
-              <View style={burningStyles.diagramBarTrack}>
-                <View style={[burningStyles.diagramBar, { width: '100%', backgroundColor: '#E5E5EA' }]} />
-              </View>
+            {/* Fat Illustration */}
+            <View style={burningStyles.fatContainer}>
+              <Image
+                source={require('../../assets/illustrations/fat_character.png')}
+                style={burningStyles.fatImage}
+                resizeMode="contain"
+              />
+              <Text style={burningStyles.fatText}>この脂肪を燃やそう！</Text>
             </View>
 
-            {/* Row 2: Intake & Burn */}
-            <View style={burningStyles.diagramRow}>
-              <View style={burningStyles.diagramLabels}>
-                <Text style={burningStyles.diagramLabel}>摂取</Text>
-                <Text style={burningStyles.diagramValue}>1,500</Text>
-              </View>
-              <View style={burningStyles.diagramBarTrack}>
-                <View style={[burningStyles.diagramBar, { width: '75%', backgroundColor: '#FFAB40' }]} />
-                <View style={[burningStyles.diagramBar, { width: '25%', backgroundColor: colors.success, position: 'absolute', right: 0 }]}>
-                  <Text style={burningStyles.diagramBarLabel}>500 燃焼!</Text>
+            {/* Daily Calculation Flow */}
+            <View style={burningStyles.flowContainer}>
+              <Text style={burningStyles.flowTitle}>1日の計算</Text>
+              <View style={burningStyles.flowRow}>
+                <View style={burningStyles.flowBox}>
+                  <Text style={burningStyles.flowLabel}>目標</Text>
+                  <Text style={burningStyles.flowValue}>2,000</Text>
+                </View>
+                <Text style={burningStyles.flowArrow}>−</Text>
+                <View style={burningStyles.flowBox}>
+                  <Text style={burningStyles.flowLabel}>摂取</Text>
+                  <Text style={burningStyles.flowValue}>1,500</Text>
                 </View>
               </View>
+
+              <View style={burningStyles.resultBox}>
+                <Text style={burningStyles.resultLabel}>今日の燃焼</Text>
+                <Text style={burningStyles.resultValue}>500 kcal 🔥</Text>
+              </View>
             </View>
-          </View>
 
-          <View style={burningStyles.modalSection}>
-            <Text style={burningStyles.modalHint}>
-              ※食べすぎてしまった日（目標オーバー）は、この貯金から差し引かれます。プラス（赤字）にならないよう気をつけましょう！
-            </Text>
-          </View>
+            {/* Monthly Accumulation */}
+            <View style={burningStyles.accumulationBox}>
+              <Text style={burningStyles.accumulationTitle}>📊 月間合計</Text>
+              <Text style={burningStyles.accumulationText}>
+                毎日の燃焼カロリーを{'\n'}1ヶ月間積み上げた合計
+              </Text>
+              <Text style={burningStyles.accumulationResult}>= 15,000 kcal</Text>
+            </View>
 
-          <TouchableOpacity style={burningStyles.modalCloseBtn} onPress={onClose}>
-            <Text style={burningStyles.modalCloseBtnText}>閉じる</Text>
-          </TouchableOpacity>
+            {/* Explanation Text */}
+            <View style={burningStyles.textBox}>
+              <Text style={burningStyles.textBody}>
+                <Text style={{ fontWeight: '700' }}>7,200kcal = 脂肪1kg</Text>{'\n'}
+                月間合計で脂肪何kg分燃焼したか確認できます！
+              </Text>
+            </View>
+
+            <View style={burningStyles.textBox}>
+              <Text style={burningStyles.textBody}>
+                ※食べ過ぎた日は燃焼量が減ります。コツコツ積み上げましょう！
+              </Text>
+            </View>
+
+            <TouchableOpacity style={burningStyles.modalCloseBtn} onPress={onClose}>
+              <Text style={burningStyles.modalCloseBtnText}>閉じる</Text>
+            </TouchableOpacity>
+          </LinearGradient>
         </View>
       </TouchableOpacity>
     </Modal>
@@ -893,16 +910,18 @@ const burningStyles = StyleSheet.create({
     padding: 24,
   },
   modalCard: {
-    backgroundColor: '#FFFFFF',
     borderRadius: 24,
-    padding: 24,
     maxWidth: 340,
     width: '100%',
-    gap: 16,
     shadowColor: '#000',
     shadowOpacity: 0.25,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
+    overflow: 'hidden',
+  },
+  modalGradient: {
+    padding: 24,
+    gap: 16,
   },
   modalTitle: {
     fontSize: 18,
@@ -911,71 +930,114 @@ const burningStyles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 4,
   },
-  modalSection: {
-    gap: 8,
+  fatContainer: {
+    alignItems: 'center',
+    marginVertical: 20,
   },
-  modalBody: {
-    fontSize: 15,
-    color: '#3C3C43',
-    lineHeight: 22,
+  fatImage: {
+    width: 120,
+    height: 120,
+    marginBottom: 12,
   },
-  modalHint: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    backgroundColor: colors.background,
-    padding: 12,
-    borderRadius: 8,
-    overflow: 'hidden',
-    lineHeight: 18,
+  fatText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FF7043',
   },
-  diagramContainer: {
-    backgroundColor: '#F2F2F7',
+  flowContainer: {
+    backgroundColor: 'white',
     borderRadius: 12,
     padding: 16,
-    gap: 12,
+    marginBottom: 16,
   },
-  diagramTitle: {
+  flowTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.textSecondary,
+    color: '#8E8E93',
+    marginBottom: 12,
+  },
+  flowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  flowBox: {
+    flex: 1,
+    backgroundColor: '#F2F2F7',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+  },
+  flowLabel: {
+    fontSize: 11,
+    color: '#8E8E93',
     marginBottom: 4,
   },
-  diagramRow: {
-    gap: 4,
-  },
-  diagramLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-  },
-  diagramLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  diagramValue: {
-    fontSize: 12,
-    color: colors.textPrimary,
+  flowValue: {
+    fontSize: 16,
     fontWeight: '700',
-    fontVariant: ['tabular-nums'],
+    color: '#2C2C2E',
   },
-  diagramBarTrack: {
-    height: 24,
-    borderRadius: 6,
-    overflow: 'hidden',
-    position: 'relative',
-    flexDirection: 'row',
+  flowArrow: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FF7043',
   },
-  diagramBar: {
-    height: '100%',
-    borderRadius: 6,
+  resultBox: {
+    backgroundColor: '#FFA500',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
   },
-  diagramBarLabel: {
-    color: '#FFF',
+  resultLabel: {
     fontSize: 11,
-    fontWeight: '700',
+    color: 'rgba(0,0,0,0.7)',
+    marginBottom: 4,
+  },
+  resultValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: 'white',
+  },
+  accumulationBox: {
+    backgroundColor: 'white',
+    borderWidth: 2,
+    borderColor: '#FF7043',
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  accumulationTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FF7043',
+    marginBottom: 8,
+  },
+  accumulationText: {
+    fontSize: 14,
+    color: '#2C2C2E',
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  accumulationResult: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#FF7043',
+  },
+  textBox: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  textBody: {
+    fontSize: 14,
+    color: '#3C3C43',
+    lineHeight: 20,
   },
   modalCloseBtn: {
     backgroundColor: '#FF7043',
