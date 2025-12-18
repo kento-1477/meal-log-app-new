@@ -10,7 +10,7 @@ import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import { useSessionStore } from '@/store/session';
 import { usePremiumStatus } from '@/hooks/usePremiumStatus';
-import { SUPPORT_EMAIL } from '@/config/legal';
+import { PRIVACY_POLICY_URL, SUPPORT_EMAIL, TERMS_OF_SERVICE_URL } from '@/config/legal';
 import appManifest from '../../app.json';
 import { AuroraBackground } from '@/components/AuroraBackground';
 import { BrandHeader } from '@/components/BrandHeader';
@@ -60,6 +60,10 @@ export default function SettingsScreen() {
 
   const handleFeedback = () => {
     const url = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Meal Log feedback')}`;
+    void Linking.openURL(url);
+  };
+
+  const handleOpenUrl = (url: string) => {
     void Linking.openURL(url);
   };
 
@@ -124,6 +128,42 @@ export default function SettingsScreen() {
                 {index < menuItems.length - 1 ? <View style={styles.menuDivider} /> : null}
               </View>
             ))}
+          </View>
+
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>{t('settings.section.legal')}</Text>
+            </View>
+
+            <View style={styles.legalLinks}>
+              <TouchableOpacity
+                style={styles.legalRow}
+                onPress={() => handleOpenUrl(TERMS_OF_SERVICE_URL)}
+                activeOpacity={0.7}
+                accessibilityRole="link"
+              >
+                <View style={styles.legalIcon}>
+                  <Feather name="file-text" size={18} color={colors.textPrimary} />
+                </View>
+                <Text style={styles.legalLabel}>{t('settings.legal.terms')}</Text>
+                <Feather name="external-link" size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+
+              <View style={styles.legalDivider} />
+
+              <TouchableOpacity
+                style={styles.legalRow}
+                onPress={() => handleOpenUrl(PRIVACY_POLICY_URL)}
+                activeOpacity={0.7}
+                accessibilityRole="link"
+              >
+                <View style={styles.legalIcon}>
+                  <Feather name="shield" size={18} color={colors.textPrimary} />
+                </View>
+                <Text style={styles.legalLabel}>{t('settings.legal.privacy')}</Text>
+                <Feather name="external-link" size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.sectionCard}>
@@ -318,6 +358,36 @@ const styles = StyleSheet.create({
   sectionDescription: {
     ...textStyles.body,
     color: colors.textSecondary,
+  },
+  legalLinks: {
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  legalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    gap: spacing.md,
+  },
+  legalIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  legalLabel: {
+    flex: 1,
+    ...textStyles.body,
+    color: colors.textPrimary,
+  },
+  legalDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+    marginLeft: spacing.md + 36 + spacing.md,
   },
   caption: {
     ...textStyles.caption,
