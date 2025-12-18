@@ -64,7 +64,7 @@ const COMPARISON_DATA: ComparisonRow[] = [
 ];
 
 export default function PaywallScreen() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { status: premiumStatus, isLoading: premiumLoading } = usePremiumStatus();
   const isPremium = premiumStatus?.isPremium ?? false;
   const router = useRouter();
@@ -221,21 +221,31 @@ export default function PaywallScreen() {
   const yearlyPriceInfo = useMemo(() => {
     if (productLoading) return { price: t('paywall.price.loading'), perMonth: '' };
     if (!yearlyProduct) return { price: t('paywall.price.unavailable'), perMonth: '' };
-    const price = yearlyProduct.price || `¥${Math.round(yearlyProduct.priceAmount)}`;
-    const perMonth = yearlyProduct.priceAmount > 0 ? `¥${Math.round(yearlyProduct.priceAmount / 12)}` : '';
+    const price =
+      yearlyProduct.price || formatCurrencyAmount(yearlyProduct.priceAmount, yearlyProduct.currencyCode, locale);
+    const perMonth =
+      yearlyProduct.priceAmount > 0
+        ? formatCurrencyAmount(yearlyProduct.priceAmount / 12, yearlyProduct.currencyCode, locale)
+        : '';
     return { price, perMonth };
-  }, [yearlyProduct, productLoading, t]);
+  }, [yearlyProduct, productLoading, t, locale]);
 
   const monthlyPriceInfo = useMemo(() => {
     if (productLoading) return { price: t('paywall.price.loading') };
     if (!monthlyProduct) return { price: t('paywall.price.unavailable') };
-    return { price: monthlyProduct.price || `¥${Math.round(monthlyProduct.priceAmount)}` };
-  }, [monthlyProduct, productLoading, t]);
+    return {
+      price:
+        monthlyProduct.price || formatCurrencyAmount(monthlyProduct.priceAmount, monthlyProduct.currencyCode, locale),
+    };
+  }, [monthlyProduct, productLoading, t, locale]);
 
   const dailyPrice = useMemo(() => {
-    if (!yearlyProduct || yearlyProduct.priceAmount <= 0) return '16';
-    return Math.round(yearlyProduct.priceAmount / 365).toString();
-  }, [yearlyProduct]);
+    const fallbackDailyAmount = 16;
+    const dailyAmount =
+      yearlyProduct && yearlyProduct.priceAmount > 0 ? yearlyProduct.priceAmount / 365 : fallbackDailyAmount;
+    const currencyCode = yearlyProduct?.currencyCode ?? 'JPY';
+    return formatCurrencyAmount(dailyAmount, currencyCode, locale);
+  }, [yearlyProduct, locale]);
 
   const platformUnsupported = Platform.OS !== 'ios';
 
@@ -446,6 +456,27 @@ function transformPremiumStatus(payload: PremiumStatusPayload) {
       createdAt: grant.createdAt,
     })),
   };
+}
+
+function formatCurrencyAmount(amount: number, currencyCode: string, locale: string) {
+  if (!Number.isFinite(amount)) {
+    return '';
+  }
+
+  const normalizedCurrencyCode = currencyCode || 'JPY';
+  if (typeof Intl !== 'undefined' && typeof Intl.NumberFormat === 'function') {
+    try {
+      return new Intl.NumberFormat(locale, { style: 'currency', currency: normalizedCurrencyCode }).format(amount);
+    } catch {
+      // fall through to manual formatting
+    }
+  }
+
+  if (normalizedCurrencyCode === 'JPY') {
+    return `¥${Math.round(amount)}`;
+  }
+  const rounded = Math.round(amount * 100) / 100;
+  return `${normalizedCurrencyCode} ${rounded}`;
 }
 
 const styles = StyleSheet.create({

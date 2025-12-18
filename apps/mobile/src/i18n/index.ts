@@ -223,7 +223,7 @@ const dictionaries: Record<Locale, TranslationTable> = {
     'paywall.plan.yearly': '12ヶ月プラン',
     'paywall.plan.yearly.badge': '一番人気！',
     'paywall.plan.monthly': '1ヶ月プラン',
-    'paywall.trial.info': '3日間無料、終了後1日{{daily}}円',
+    'paywall.trial.info': '3日間無料、終了後1日{{daily}}',
     'paywall.cta.startTrial': '無料トライアルを始める',
     'paywall.footer.restore': '購入を復元',
     'paywall.footer.terms': '利用規約（EULA）',
