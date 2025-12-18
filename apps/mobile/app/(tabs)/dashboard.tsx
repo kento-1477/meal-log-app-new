@@ -34,12 +34,13 @@ import { useSessionStore } from '@/store/session';
 import {
   logout,
   getMealLogs,
+  getMealLogDetail,
   createFavoriteMeal,
   deleteFavoriteMeal,
   getDashboardSummary,
 } from '@/services/api';
 import { useTranslation } from '@/i18n';
-import { buildFavoriteDraftFromSummary } from '@/utils/favorites';
+import { buildFavoriteDraftFromDetail, buildFavoriteDraftFromSummary } from '@/utils/favorites';
 import { DateTime } from 'luxon';
 import { usePremiumStore } from '@/store/premium';
 import { useRouter } from 'expo-router';
@@ -156,7 +157,7 @@ export default function DashboardScreen() {
     range: customRange ?? undefined,
   });
   const chartMode: CalorieChartMode = segmentKey === 'monthly' ? 'monthly' : segmentKey === 'weekly' ? 'weekly' : 'daily';
-  const calorieTrend = useCalorieTrend(chartMode);
+  const calorieTrend = useCalorieTrend(chartMode, { enabled: isAuthenticated });
   const monthlySummary = useMemo(() => {
     if (chartMode !== 'monthly' || !calorieTrend.points.length) {
       return null;
@@ -191,20 +192,22 @@ export default function DashboardScreen() {
     };
   }, [chartMode, calorieTrend.points, calorieTrend.target]);
 
-  const showEmpty = data ? !data.calories.hasData : false;
-  const emptyMessage = period === 'thisWeek' ? t('dashboard.empty.week') : t('dashboard.empty.generic');
-  const chartEmptyLabel = t('dashboard.chart.empty');
-  const refreshing = isFetching || calorieTrend.isFetching;
-  const handleRefresh = () => {
-    refetch();
-    calorieTrend.refetch();
-  };
-
   const logsQuery = useQuery({
     queryKey: ['mealLogs', logsRange, locale],
     queryFn: () => getMealLogs({ range: logsRange, limit: 100 }),
     enabled: isAuthenticated,
+    staleTime: 1000 * 60 * 5,
   });
+
+  const showEmpty = data ? !data.calories.hasData : false;
+  const emptyMessage = period === 'thisWeek' ? t('dashboard.empty.week') : t('dashboard.empty.generic');
+  const chartEmptyLabel = t('dashboard.chart.empty');
+  const refreshing = isFetching || calorieTrend.isFetching || logsQuery.isFetching;
+  const handleRefresh = () => {
+    refetch();
+    calorieTrend.refetch();
+    logsQuery.refetch();
+  };
 
   const queryClient = useQueryClient();
   const [favoriteToggleId, setFavoriteToggleId] = useState<string | null>(null);
@@ -212,7 +215,9 @@ export default function DashboardScreen() {
   const toggleFavoriteMutation = useMutation({
     mutationFn: async ({ log, targetState }: { log: MealLogSummary; targetState: boolean }) => {
       if (targetState) {
-        const draft = buildFavoriteDraftFromSummary(log);
+        const draft = log.ai_raw
+          ? buildFavoriteDraftFromSummary(log)
+          : buildFavoriteDraftFromDetail((await getMealLogDetail(log.id)).item);
         await createFavoriteMeal(draft);
       } else if (log.favorite_meal_id) {
         await deleteFavoriteMeal(log.favorite_meal_id);
@@ -706,12 +711,12 @@ function MonthlyDeficitHelpModal({ visible, onClose }: MonthlyDeficitHelpModalPr
       <TouchableOpacity style={burningStyles.modalBackdrop} activeOpacity={1} onPress={onClose}>
         <View style={burningStyles.modalCard}>
           <LinearGradient
-            colors={['#FFF8F0', '#FFE8D6', '#FFDCC8']}
+            colors={['#FFF8F0', '#FFE8D6']}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
             style={burningStyles.modalGradient}
           >
-            <Text style={burningStyles.modalTitle}>🔥 脂肪燃焼の仕組み</Text>
+            <Text style={burningStyles.modalTitle}>🔥 月間脂肪燃焼量</Text>
 
             {/* Fat Illustration */}
             <View style={burningStyles.fatContainer}>
@@ -720,51 +725,61 @@ function MonthlyDeficitHelpModal({ visible, onClose }: MonthlyDeficitHelpModalPr
                 style={burningStyles.fatImage}
                 resizeMode="contain"
               />
-              <Text style={burningStyles.fatText}>この脂肪を燃やそう！</Text>
             </View>
 
-            {/* Daily Calculation Flow */}
-            <View style={burningStyles.flowContainer}>
-              <Text style={burningStyles.flowTitle}>1日の計算</Text>
-              <View style={burningStyles.flowRow}>
-                <View style={burningStyles.flowBox}>
-                  <Text style={burningStyles.flowLabel}>目標</Text>
-                  <Text style={burningStyles.flowValue}>2,000</Text>
+            {/* Clear Explanation */}
+            <View style={burningStyles.descriptionBox}>
+              <Text style={burningStyles.descriptionText}>
+                毎日「目標カロリーより少なく食べられた分」を1ヶ月間積み上げた数値です。{'\n\n'}
+                <Text style={burningStyles.highlightText}>7,200kcal</Text> 貯まるごとに
+                <Text style={burningStyles.highlightText}>脂肪1kg</Text>の減少に相当します。
+              </Text>
+            </View>
+            {/* Compact Diagram */}
+            <View style={burningStyles.diagramBox}>
+              <Text style={burningStyles.diagramTitle}>1日の計算例</Text>
+
+              <View style={burningStyles.calculationRow}>
+                <View style={burningStyles.calcBox}>
+                  <Text style={burningStyles.calcLabel}>目標</Text>
+                  <Text
+                    style={burningStyles.calcValue}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
+                    2,000
+                  </Text>
                 </View>
-                <Text style={burningStyles.flowArrow}>−</Text>
-                <View style={burningStyles.flowBox}>
-                  <Text style={burningStyles.flowLabel}>摂取</Text>
-                  <Text style={burningStyles.flowValue}>1,500</Text>
+                <Text style={burningStyles.calcOperator}>−</Text>
+                <View style={burningStyles.calcBox}>
+                  <Text style={burningStyles.calcLabel}>摂取</Text>
+                  <Text
+                    style={burningStyles.calcValue}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
+                    1,500
+                  </Text>
+                </View>
+                <Text style={burningStyles.calcOperator}>=</Text>
+                <View style={burningStyles.calcBox}>
+                  <Text style={burningStyles.calcLabel}>燃焼</Text>
+                  <Text
+                    style={burningStyles.calcValue}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
+                    500
+                  </Text>
                 </View>
               </View>
-
-              <View style={burningStyles.resultBox}>
-                <Text style={burningStyles.resultLabel}>今日の燃焼</Text>
-                <Text style={burningStyles.resultValue}>500 kcal 🔥</Text>
+              <View style={burningStyles.monthlyResultBox}>
+                <Text style={burningStyles.monthlyResultText}>月間合計 = 15,000 kcal 🔥</Text>
               </View>
-            </View>
-
-            {/* Monthly Accumulation */}
-            <View style={burningStyles.accumulationBox}>
-              <Text style={burningStyles.accumulationTitle}>📊 月間合計</Text>
-              <Text style={burningStyles.accumulationText}>
-                毎日の燃焼カロリーを{'\n'}1ヶ月間積み上げた合計
-              </Text>
-              <Text style={burningStyles.accumulationResult}>= 15,000 kcal</Text>
-            </View>
-
-            {/* Explanation Text */}
-            <View style={burningStyles.textBox}>
-              <Text style={burningStyles.textBody}>
-                <Text style={{ fontWeight: '700' }}>7,200kcal = 脂肪1kg</Text>{'\n'}
-                月間合計で脂肪何kg分燃焼したか確認できます！
-              </Text>
-            </View>
-
-            <View style={burningStyles.textBox}>
-              <Text style={burningStyles.textBody}>
-                ※食べ過ぎた日は燃焼量が減ります。コツコツ積み上げましょう！
-              </Text>
+              <Text style={burningStyles.noteText}>※毎日の燃焼を30日間積み上げた例</Text>
             </View>
 
             <TouchableOpacity style={burningStyles.modalCloseBtn} onPress={onClose}>
@@ -939,105 +954,78 @@ const burningStyles = StyleSheet.create({
     height: 120,
     marginBottom: 12,
   },
-  fatText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FF7043',
+  descriptionBox: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
   },
-  flowContainer: {
+  descriptionText: {
+    fontSize: 14,
+    color: '#2C2C2E',
+    lineHeight: 21,
+  },
+  highlightText: {
+    color: '#FF7043',
+    fontWeight: '700',
+  },
+  diagramBox: {
     backgroundColor: 'white',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 16,
-  },
-  flowTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#8E8E93',
     marginBottom: 12,
   },
-  flowRow: {
+  diagramTitle: {
+    fontSize: 12,
+    color: '#8E8E93',
+    marginBottom: 10,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  calculationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
+    gap: 8,
+    marginBottom: 10,
   },
-  flowBox: {
+  calcBox: {
     flex: 1,
     backgroundColor: '#F2F2F7',
     borderRadius: 8,
-    padding: 12,
+    padding: 10,
     alignItems: 'center',
   },
-  flowLabel: {
-    fontSize: 11,
+  calcLabel: {
+    fontSize: 10,
     color: '#8E8E93',
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  flowValue: {
-    fontSize: 16,
+  calcValue: {
+    fontSize: 18,
     fontWeight: '700',
     color: '#2C2C2E',
   },
-  flowArrow: {
-    fontSize: 20,
+  calcOperator: {
+    fontSize: 18,
     fontWeight: '700',
     color: '#FF7043',
   },
-  resultBox: {
+  monthlyResultBox: {
     backgroundColor: '#FFA500',
     borderRadius: 8,
-    padding: 12,
+    padding: 10,
     alignItems: 'center',
   },
-  resultLabel: {
-    fontSize: 11,
-    color: 'rgba(0,0,0,0.7)',
-    marginBottom: 4,
-  },
-  resultValue: {
-    fontSize: 20,
+  monthlyResultText: {
+    fontSize: 18,
     fontWeight: '800',
     color: 'white',
   },
-  accumulationBox: {
-    backgroundColor: 'white',
-    borderWidth: 2,
-    borderColor: '#FF7043',
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  accumulationTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#FF7043',
-    marginBottom: 8,
-  },
-  accumulationText: {
-    fontSize: 14,
-    color: '#2C2C2E',
+  noteText: {
+    fontSize: 11,
+    color: '#8E8E93',
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 8,
-  },
-  accumulationResult: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#FF7043',
-  },
-  textBox: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  textBody: {
-    fontSize: 14,
-    color: '#3C3C43',
-    lineHeight: 20,
+    marginTop: 8,
   },
   modalCloseBtn: {
     backgroundColor: '#FF7043',
