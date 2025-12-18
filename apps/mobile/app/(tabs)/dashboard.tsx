@@ -34,12 +34,13 @@ import { useSessionStore } from '@/store/session';
 import {
   logout,
   getMealLogs,
+  getMealLogDetail,
   createFavoriteMeal,
   deleteFavoriteMeal,
   getDashboardSummary,
 } from '@/services/api';
 import { useTranslation } from '@/i18n';
-import { buildFavoriteDraftFromSummary } from '@/utils/favorites';
+import { buildFavoriteDraftFromDetail, buildFavoriteDraftFromSummary } from '@/utils/favorites';
 import { DateTime } from 'luxon';
 import { usePremiumStore } from '@/store/premium';
 import { useRouter } from 'expo-router';
@@ -156,7 +157,7 @@ export default function DashboardScreen() {
     range: customRange ?? undefined,
   });
   const chartMode: CalorieChartMode = segmentKey === 'monthly' ? 'monthly' : segmentKey === 'weekly' ? 'weekly' : 'daily';
-  const calorieTrend = useCalorieTrend(chartMode);
+  const calorieTrend = useCalorieTrend(chartMode, { enabled: isAuthenticated });
   const monthlySummary = useMemo(() => {
     if (chartMode !== 'monthly' || !calorieTrend.points.length) {
       return null;
@@ -191,20 +192,22 @@ export default function DashboardScreen() {
     };
   }, [chartMode, calorieTrend.points, calorieTrend.target]);
 
-  const showEmpty = data ? !data.calories.hasData : false;
-  const emptyMessage = period === 'thisWeek' ? t('dashboard.empty.week') : t('dashboard.empty.generic');
-  const chartEmptyLabel = t('dashboard.chart.empty');
-  const refreshing = isFetching || calorieTrend.isFetching;
-  const handleRefresh = () => {
-    refetch();
-    calorieTrend.refetch();
-  };
-
   const logsQuery = useQuery({
     queryKey: ['mealLogs', logsRange, locale],
     queryFn: () => getMealLogs({ range: logsRange, limit: 100 }),
     enabled: isAuthenticated,
+    staleTime: 1000 * 60 * 5,
   });
+
+  const showEmpty = data ? !data.calories.hasData : false;
+  const emptyMessage = period === 'thisWeek' ? t('dashboard.empty.week') : t('dashboard.empty.generic');
+  const chartEmptyLabel = t('dashboard.chart.empty');
+  const refreshing = isFetching || calorieTrend.isFetching || logsQuery.isFetching;
+  const handleRefresh = () => {
+    refetch();
+    calorieTrend.refetch();
+    logsQuery.refetch();
+  };
 
   const queryClient = useQueryClient();
   const [favoriteToggleId, setFavoriteToggleId] = useState<string | null>(null);
@@ -212,7 +215,9 @@ export default function DashboardScreen() {
   const toggleFavoriteMutation = useMutation({
     mutationFn: async ({ log, targetState }: { log: MealLogSummary; targetState: boolean }) => {
       if (targetState) {
-        const draft = buildFavoriteDraftFromSummary(log);
+        const draft = log.ai_raw
+          ? buildFavoriteDraftFromSummary(log)
+          : buildFavoriteDraftFromDetail((await getMealLogDetail(log.id)).item);
         await createFavoriteMeal(draft);
       } else if (log.favorite_meal_id) {
         await deleteFavoriteMeal(log.favorite_meal_id);
@@ -737,17 +742,38 @@ function MonthlyDeficitHelpModal({ visible, onClose }: MonthlyDeficitHelpModalPr
               <View style={burningStyles.calculationRow}>
                 <View style={burningStyles.calcBox}>
                   <Text style={burningStyles.calcLabel}>目標</Text>
-                  <Text style={burningStyles.calcValue}>2,000</Text>
+                  <Text
+                    style={burningStyles.calcValue}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
+                    2,000
+                  </Text>
                 </View>
                 <Text style={burningStyles.calcOperator}>−</Text>
                 <View style={burningStyles.calcBox}>
                   <Text style={burningStyles.calcLabel}>摂取</Text>
-                  <Text style={burningStyles.calcValue}>1,500</Text>
+                  <Text
+                    style={burningStyles.calcValue}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
+                    1,500
+                  </Text>
                 </View>
                 <Text style={burningStyles.calcOperator}>=</Text>
                 <View style={burningStyles.calcBox}>
                   <Text style={burningStyles.calcLabel}>燃焼</Text>
-                  <Text style={burningStyles.calcValue}>500</Text>
+                  <Text
+                    style={burningStyles.calcValue}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
+                    500
+                  </Text>
                 </View>
               </View>
               <View style={burningStyles.monthlyResultBox}>
