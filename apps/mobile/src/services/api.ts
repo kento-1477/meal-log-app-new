@@ -294,7 +294,9 @@ export interface AuthResponse {
 }
 
 export async function signInWithApple(input: { identityToken: string; authorizationCode?: string; email?: string; fullName?: string }) {
-  console.log('[API] signInWithApple called, API_BASE_URL:', API_BASE_URL);
+  if (__DEV__) {
+    console.log('[API] signInWithApple called, API_BASE_URL:', API_BASE_URL);
+  }
   return apiFetch<AuthResponse>('/api/login/apple', {
     method: 'POST',
     body: JSON.stringify(input),

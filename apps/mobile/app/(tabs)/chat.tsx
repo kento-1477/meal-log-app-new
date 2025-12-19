@@ -187,6 +187,7 @@ export default function ChatScreen() {
   );
 
   const [mediaPermission, requestMediaPermission] = ImagePicker.useMediaLibraryPermissions();
+  const [cameraPermission, requestCameraPermission] = ImagePicker.useCameraPermissions();
 
   const prevMessagesRef = useRef<ChatMessage[] | null>(null);
   const [enhancedExchange, setEnhancedExchange] = useState<{ user: ChatMessage; assistant: ChatMessage | null } | null>(null);
@@ -756,6 +757,18 @@ export default function ChatScreen() {
     return current;
   }, [mediaPermission, requestMediaPermission]);
 
+  const ensureCameraPermission = useCallback(async () => {
+    const current = cameraPermission ?? (await ImagePicker.getCameraPermissionsAsync());
+    if (current?.granted) {
+      return current;
+    }
+    if (current?.canAskAgain) {
+      const updated = await requestCameraPermission();
+      return updated ?? current;
+    }
+    return current;
+  }, [cameraPermission, requestCameraPermission]);
+
   const handleAttach = useCallback(async () => {
     try {
       const permission = await ensureMediaLibraryPermission();
@@ -787,26 +800,61 @@ export default function ChatScreen() {
     }
   }, [ensureMediaLibraryPermission, setError, setComposingImage]);
 
+  const handleTakePhoto = useCallback(async () => {
+    try {
+      const permission = await ensureCameraPermission();
+      if (!permission?.granted) {
+        setError('カメラへのアクセスを許可してください。設定アプリから変更できます。');
+        if (permission && !permission.canAskAgain) {
+          Alert.alert('カメラにアクセスできません', '設定アプリで Meal Log のカメラアクセスを許可してください。');
+        }
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.8,
+        exif: false,
+        cameraType: ImagePicker.CameraType.back,
+      });
+
+      if (!result.canceled) {
+        const uri = result.assets?.[0]?.uri ?? null;
+        if (uri) {
+          setComposingImage(uri);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to open camera', error);
+      setError('カメラの起動に失敗しました。もう一度お試しください。');
+    }
+  }, [ensureCameraPermission, setComposingImage, setError]);
+
   const handlePhotoQuickAction = useCallback(() => {
-    console.log('[chat] photo quick action tapped');
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: [t('chat.actions.attachPhoto'), t('common.cancel')],
-          cancelButtonIndex: 1,
+          options: [t('chat.actions.takePhoto'), t('chat.actions.attachPhoto'), t('common.cancel')],
+          cancelButtonIndex: 2,
         },
         (buttonIndex) => {
           if (buttonIndex === 0) {
-            console.log('[chat] opening image picker from quick action');
+            void handleTakePhoto();
+          }
+          if (buttonIndex === 1) {
             void handleAttach();
           }
         },
       );
     } else {
-      console.log('[chat] opening image picker on Android');
-      void handleAttach();
+      Alert.alert(t('chat.quickActions.photo'), undefined, [
+        { text: t('chat.actions.takePhoto'), onPress: () => void handleTakePhoto() },
+        { text: t('chat.actions.attachPhoto'), onPress: () => void handleAttach() },
+        { text: t('common.cancel'), style: 'cancel' },
+      ]);
     }
-  }, [handleAttach, t]);
+  }, [handleAttach, handleTakePhoto, t]);
 
   type QuickAction = {
     key: string;

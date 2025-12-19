@@ -12,6 +12,7 @@ import type {
   UserProfile,
   SlotSelectionRequest,
   NutritionPlanInput,
+  HedgeAttemptReport,
 } from '@shared/index.js';
 import {
   UpdateMealLogRequestSchema,
@@ -50,10 +51,13 @@ import type { JwtUser } from '../_shared/auth.ts';
 const encoder = new TextEncoder();
 
 const app = createApp().basePath('/meal-log');
+const LOG_REQUESTS = (Deno.env.get('EDGE_LOG_REQUESTS') ?? '').toLowerCase() === 'true';
 
 // Basic request logging to confirm Edge invocation
 app.use('*', async (c, next) => {
-  console.log('[meal-log] request', { method: c.req.method, url: c.req.url });
+  if (LOG_REQUESTS) {
+    console.log('[meal-log] request', { method: c.req.method, url: c.req.url });
+  }
   await next();
 });
 
@@ -303,7 +307,6 @@ app.get('/api/logs', requireAuth, async (c) => {
       meal_period: toMealPeriodLabel(row.mealPeriod) ?? row.landingType ?? null,
       image_url: row.imageUrl ?? null,
       thumbnail_url: null,
-      ai_raw: buildAiRawPayload(localization),
       locale: localization.resolvedLocale,
       requested_locale: localization.requestedLocale,
       fallback_applied: localization.fallbackApplied,
@@ -1618,9 +1621,6 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
     throw buildUsageLimitError(usageStatus);
   }
 
-  const imageBase64 = params.file ? await fileToBase64(params.file) : undefined;
-  const imageMimeType = params.file?.type;
-
   let ingestId: number | null = null;
   if (!ingestExisting) {
     const { data: inserted, error: ingestInsertError } = await supabaseAdmin
@@ -1636,6 +1636,9 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
   } else {
     ingestId = ingestExisting.id;
   }
+
+  const imageMimeType = params.file?.type;
+  const imageBase64 = params.file ? await fileToBase64(params.file) : undefined;
 
   const analysis = await analyzeMeal({
     message: params.message,
@@ -1770,7 +1773,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
   const meta: Record<string, unknown> = {
     ...(enrichedResponse.meta ?? {}),
     imageUrl: params.file ? `data:${params.file.type};base64,${imageBase64 ?? ''}` : null,
-    fallback_model_used: analysis.meta.model === 'models/gemini-2.5-pro',
+    fallback_model_used: analysis.meta.attempt > 1,
     mealPeriod,
     timezone,
     localization: buildLocalizationMeta({ ...localization, translations: responseTranslations }),
@@ -2406,8 +2409,30 @@ async function getDashboardSummary(params: { userId: number; period: string; fro
       mealPeriod: row.mealPeriod,
     })) ?? [];
 
-  const todayTotals = await fetchTodayTotals(params.userId, DASHBOARD_TIMEZONE);
-  const dailyTargets = await resolveUserTargets(params.userId);
+  const today = DateTime.now().setZone(DASHBOARD_TIMEZONE).startOf('day');
+  const includesToday = range.fromDate <= today && range.toDate > today;
+
+  const todayTotalsPromise = includesToday
+    ? Promise.resolve(
+        logs.reduce(
+          (acc, log) => {
+            const dayKey = DateTime.fromJSDate(log.createdAt, { zone: DASHBOARD_TIMEZONE }).startOf('day').toISODate();
+            if (dayKey !== today.toISODate()) {
+              return acc;
+            }
+            return {
+              calories: acc.calories + (log.calories ?? 0),
+              protein_g: acc.protein_g + (log.proteinG ?? 0),
+              fat_g: acc.fat_g + (log.fatG ?? 0),
+              carbs_g: acc.carbs_g + (log.carbsG ?? 0),
+            };
+          },
+          { calories: 0, protein_g: 0, fat_g: 0, carbs_g: 0 },
+        ),
+      )
+    : fetchTodayTotals(params.userId, DASHBOARD_TIMEZONE);
+  const dailyTargetsPromise = resolveUserTargets(params.userId);
+  const [todayTotals, dailyTargets] = await Promise.all([todayTotalsPromise, dailyTargetsPromise]);
   const summary = buildDashboardSummary({
     logs,
     range,
@@ -2906,10 +2931,122 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
     return { response: mock, attemptReports: [{ model: 'mock', ok: true, latencyMs: meta.latencyMs, attempt: 1 }], meta };
   }
 
-  const primaryModel = 'models/gemini-2.5-flash';
-  const fallbackModel = 'models/gemini-2.5-pro';
+  const primaryModel = (Deno.env.get('GEMINI_PRIMARY_MODEL') ?? 'models/gemini-2.5-flash').trim();
+  const fallbackModelRaw = (Deno.env.get('GEMINI_FALLBACK_MODEL') ?? '').trim();
+  const fallbackModel = fallbackModelRaw && fallbackModelRaw !== primaryModel ? fallbackModelRaw : null;
+  const timeoutMsCandidate = Number(Deno.env.get('GEMINI_TIMEOUT_MS') ?? '25000');
+  const timeoutMs = Number.isFinite(timeoutMsCandidate) ? Math.max(1_000, timeoutMsCandidate) : 25_000;
 
-  const attempt = async (model: string) => {
+  const coerceNumberLike = (value: unknown) => {
+    if (typeof value === 'number') {
+      return value;
+    }
+    if (typeof value !== 'string') {
+      return value;
+    }
+    const normalized = value.trim().replace(/,/g, '');
+    if (!normalized) {
+      return value;
+    }
+    if (!/^-?\d+(?:\.\d+)?$/.test(normalized)) {
+      return value;
+    }
+    const asNumber = Number(normalized);
+    return Number.isFinite(asNumber) ? asNumber : value;
+  };
+
+  const normalizeCandidatePayload = (payload: unknown) => {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return payload;
+    }
+    const root = payload as Record<string, unknown>;
+    const result: Record<string, unknown> = { ...root };
+
+    if (result.confidence !== null && result.confidence !== undefined) {
+      result.confidence = coerceNumberLike(result.confidence);
+    }
+
+    const totals = root.totals;
+    if (totals && typeof totals === 'object' && !Array.isArray(totals)) {
+      const totalsObj = totals as Record<string, unknown>;
+      result.totals = {
+        ...totalsObj,
+        kcal: coerceNumberLike(totalsObj.kcal),
+        protein_g: coerceNumberLike(totalsObj.protein_g),
+        fat_g: coerceNumberLike(totalsObj.fat_g),
+        carbs_g: coerceNumberLike(totalsObj.carbs_g),
+      };
+    }
+
+    if (result.items === null || result.items === undefined) {
+      delete result.items;
+    } else if (Array.isArray(result.items)) {
+      result.items = result.items.map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          return item;
+        }
+        const itemObj = item as Record<string, unknown>;
+        const normalizedItem: Record<string, unknown> = { ...itemObj, grams: coerceNumberLike(itemObj.grams) };
+        for (const key of ['protein_g', 'fat_g', 'carbs_g'] as const) {
+          if (normalizedItem[key] === null || normalizedItem[key] === undefined) {
+            delete normalizedItem[key];
+          } else {
+            normalizedItem[key] = coerceNumberLike(normalizedItem[key]);
+          }
+        }
+        return normalizedItem;
+      });
+    }
+
+    if (result.warnings === null || result.warnings === undefined) {
+      delete result.warnings;
+    }
+
+    return result;
+  };
+
+  const extractJsonText = (text: string) => {
+    const trimmed = text.trim();
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    const candidate = fenced ? fenced[1].trim() : trimmed;
+    if (candidate.startsWith('{') || candidate.startsWith('[')) {
+      return candidate;
+    }
+    const start = candidate.indexOf('{');
+    const end = candidate.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      return candidate.slice(start, end + 1);
+    }
+    return candidate;
+  };
+
+  const parseGeminiNutritionResponse = (candidateText: string) => {
+    const jsonText = extractJsonText(candidateText);
+    const parsedJson = JSON.parse(jsonText) as unknown;
+    const direct = GeminiNutritionResponseSchema.safeParse(parsedJson);
+    if (direct.success) {
+      return direct.data;
+    }
+
+    const normalized = normalizeCandidatePayload(parsedJson);
+    const normalizedParse = GeminiNutritionResponseSchema.safeParse(normalized);
+    if (normalizedParse.success) {
+      return normalizedParse.data;
+    }
+
+    const issues = (direct.error as any).issues ?? (direct.error as any).errors;
+    const firstIssue = Array.isArray(issues) ? issues[0] : null;
+    const message = firstIssue ? `${String(firstIssue.path?.join?.('.') ?? '')}: ${String(firstIssue.message ?? 'invalid')}` : direct.error.message;
+    throw new Error(`Gemini response validation failed: ${message}`);
+  };
+
+  const buildAttemptError = (model: string, latencyMs: number, attempt: number, message: string, textLen = 0) => {
+    const err = new Error(message) as Error & { report: HedgeAttemptReport };
+    err.report = { model, ok: false, latencyMs, attempt, error: message, textLen };
+    return err;
+  };
+
+  const attempt = async (model: string, attemptNumber: number) => {
     const url = new URL(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent`);
     url.searchParams.set('key', apiKey);
     const prompt = buildPrompt(params.message, params.locale ?? DEFAULT_LOCALE);
@@ -2942,36 +3079,82 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
     };
 
     const started = Date.now();
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
-    const text = await resp.text();
-    if (!resp.ok) {
-      throw new Error(`Gemini error ${resp.status}: ${text}`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort('GEMINI_TIMEOUT'), timeoutMs);
+    let text = '';
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+      text = await resp.text();
+      const latencyMs = Date.now() - started;
+      if (!resp.ok) {
+        throw buildAttemptError(model, latencyMs, attemptNumber, `Gemini error ${resp.status}: ${text}`);
+      }
+      const data = JSON.parse(text) as any;
+      const first = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!first) {
+        throw buildAttemptError(model, latencyMs, attemptNumber, 'Gemini returned no content');
+      }
+      let parsed: GeminiNutritionResponse;
+      try {
+        parsed = parseGeminiNutritionResponse(first);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Gemini response parse failed';
+        throw buildAttemptError(model, latencyMs, attemptNumber, message, first.length);
+      }
+      const report: HedgeAttemptReport = { model, ok: true, latencyMs, attempt: attemptNumber, textLen: first.length };
+      return {
+        response: parsed,
+        report,
+        meta: { model, attempt: attemptNumber, latencyMs, rawText: first },
+      };
+    } catch (error) {
+      const latencyMs = Date.now() - started;
+      if (error instanceof Error && (error as any).report) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : 'Unknown AI error';
+      throw buildAttemptError(model, latencyMs, attemptNumber, message);
+    } finally {
+      clearTimeout(timer);
     }
-    const data = JSON.parse(text) as any;
-    const first = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!first) {
-      throw new Error('Gemini returned no content');
-    }
-    const parsed = GeminiNutritionResponseSchema.parse(JSON.parse(first));
-    const latencyMs = Date.now() - started;
-    return {
-      response: parsed,
-      attemptReports: [{ model, ok: true, latencyMs, attempt: 1 }],
-      meta: { model, attempt: 1, latencyMs, rawText: first },
-    };
   };
 
-  try {
-    return await attempt(primaryModel);
-  } catch (_error) {
-    const fallback = await attempt(fallbackModel);
-    fallback.response.meta = { ...(fallback.response.meta ?? {}), fallback_model_used: true };
-    return fallback;
+  const models: string[] = fallbackModel ? [primaryModel, fallbackModel] : [primaryModel];
+  const attemptReports: HedgeAttemptReport[] = [];
+  let firstError: Error | null = null;
+  for (let i = 0; i < models.length; i += 1) {
+    const model = models[i];
+    const attemptNumber = i + 1;
+    try {
+      const result = await attempt(model, attemptNumber);
+      attemptReports.push(result.report);
+      if (attemptNumber > 1) {
+        result.response.meta = { ...(result.response.meta ?? {}), fallback_model_used: true };
+      }
+      return { response: result.response, attemptReports, meta: result.meta };
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown AI error');
+      if (!firstError) {
+        firstError = err;
+      }
+      if ((err as any).report) {
+        attemptReports.push((err as any).report);
+      }
+      if (attemptNumber === 1 && fallbackModel) {
+        console.error('analyzeMeal: primary model failed', err);
+      }
+      if (attemptNumber === models.length) {
+        throw err;
+      }
+    }
   }
+
+  throw firstError ?? new Error('Gemini request failed');
 }
 
 async function parseMultipart(c: Context) {
