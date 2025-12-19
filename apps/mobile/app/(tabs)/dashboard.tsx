@@ -217,7 +217,13 @@ export default function DashboardScreen() {
       if (targetState) {
         const draft = log.ai_raw
           ? buildFavoriteDraftFromSummary(log)
-          : buildFavoriteDraftFromDetail((await getMealLogDetail(log.id)).item);
+          : await (async () => {
+              try {
+                return buildFavoriteDraftFromDetail((await getMealLogDetail(log.id)).item);
+              } catch (_error) {
+                return buildFavoriteDraftFromSummary(log);
+              }
+            })();
         await createFavoriteMeal(draft);
       } else if (log.favorite_meal_id) {
         await deleteFavoriteMeal(log.favorite_meal_id);

@@ -22,7 +22,7 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <StatusBar style="dark" />
-          <Stack screenOptions={{ headerShown: false }}>
+          <Stack screenOptions={{ headerShown: false, headerBackTitleVisible: false }}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="(onboarding)" />
             <Stack.Screen name="invite" options={{ presentation: 'transparentModal', headerShown: false }} />

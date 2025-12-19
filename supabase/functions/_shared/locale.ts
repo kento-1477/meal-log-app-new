@@ -49,8 +49,8 @@ export interface LocalizationResolution {
 
 export function resolveMealLogLocalization(raw: unknown, preferredLocale?: string | null): LocalizationResolution {
   const requestedLocale = normalizeLocale(preferredLocale);
-  const translations = collectTranslations(raw);
   const aiRaw = parseMealLogAiRaw(raw);
+  const translations = collectTranslations(raw, aiRaw);
 
   const fallbackOrder = buildFallbackOrder({ requestedLocale, aiRaw, translations });
 
@@ -112,10 +112,18 @@ function buildFallbackOrder({ requestedLocale, aiRaw, translations }: LocaleOrde
   return order;
 }
 
-export function collectTranslations(raw: unknown): Record<Locale, GeminiNutritionResponse> {
+export function collectTranslations(raw: unknown): Record<Locale, GeminiNutritionResponse>;
+export function collectTranslations(raw: unknown, parsed: MealLogAiRaw | null): Record<Locale, GeminiNutritionResponse>;
+export function collectTranslations(raw: unknown, parsed: MealLogAiRaw | null = parseMealLogAiRaw(raw)): Record<Locale, GeminiNutritionResponse> {
   const translations: Record<Locale, GeminiNutritionResponse> = {};
-  const parsed = parseMealLogAiRaw(raw);
+  return collectTranslationsFromParsed(raw, translations, parsed);
+}
 
+function collectTranslationsFromParsed(
+  raw: unknown,
+  translations: Record<Locale, GeminiNutritionResponse>,
+  parsed: MealLogAiRaw | null,
+) {
   if (parsed?.translations) {
     for (const [locale, value] of Object.entries(parsed.translations)) {
       const parsedLocale = normalizeLocale(locale);

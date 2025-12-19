@@ -6,12 +6,15 @@ import { useTranslation } from '@/i18n';
 
 export type CalorieChartMode = CalorieTrendMode;
 
-export function useCalorieTrend(mode: CalorieChartMode) {
+export function useCalorieTrend(mode: CalorieChartMode, options?: { enabled?: boolean }) {
   const { locale } = useTranslation();
+  const enabled = options?.enabled ?? true;
 
   const query = useQuery({
     queryKey: ['calorieTrend', mode, locale],
     queryFn: () => getCalorieTrend(mode),
+    enabled,
+    staleTime: 1000 * 60 * 5,
   });
 
   const transformedPoints = useMemo(() => {
