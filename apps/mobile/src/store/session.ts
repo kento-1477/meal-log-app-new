@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AiUsageSummary, OnboardingStatus, UserTier } from '@meal-log/shared';
 import { getLocale, setLocale as setI18nLocale, type Locale } from '@/i18n';
 import { savePreferredLocale } from '@/services/locale-storage';
@@ -19,6 +21,7 @@ interface SessionState {
   user: User | null;
   status: Status;
   hydrated: boolean;
+  sessionChecked: boolean;
   usage: AiUsageSummary | null;
   locale: Locale;
   onboarding: OnboardingStatus | null;
@@ -26,40 +29,63 @@ interface SessionState {
   setStatus: (status: Status) => void;
   setUsage: (usage: AiUsageSummary | null) => void;
   markHydrated: () => void;
+  markSessionChecked: () => void;
   setLocale: (locale: Locale) => void;
   setOnboarding: (status: OnboardingStatus | null) => void;
 }
 
-export const useSessionStore = create<SessionState>((set) => ({
-  user: null,
-  status: 'idle',
-  hydrated: false,
-  usage: null,
-  locale: getLocale(),
-  onboarding: null,
-  setUser: (user) =>
-    set((state) => ({
-      user,
-      status: user ? 'authenticated' : 'unauthenticated',
-      onboarding: user ? state.onboarding : null,
-    })),
-  setStatus: (status) => set({ status }),
-  setUsage: (usage) =>
-    set((state) => ({
-      usage,
-      user: state.user
-        ? {
-            ...state.user,
-            plan: usage?.plan ?? state.user.plan,
-            aiCredits: usage?.credits ?? state.user.aiCredits,
-          }
-        : state.user,
-    })),
-  markHydrated: () => set({ hydrated: true }),
-  setLocale: (locale) => {
-    set({ locale });
-    setI18nLocale(locale);
-    void savePreferredLocale(locale);
-  },
-  setOnboarding: (onboarding) => set({ onboarding }),
-}));
+export const useSessionStore = create<SessionState>()(
+  persist(
+    (set) => ({
+      user: null,
+      status: 'idle',
+      hydrated: false,
+      sessionChecked: false,
+      usage: null,
+      locale: getLocale(),
+      onboarding: null,
+      setUser: (user) =>
+        set((state) => ({
+          user,
+          status: user ? 'authenticated' : 'unauthenticated',
+          onboarding: user ? state.onboarding : null,
+        })),
+      setStatus: (status) => set({ status }),
+      setUsage: (usage) =>
+        set((state) => ({
+          usage,
+          user: state.user
+            ? {
+                ...state.user,
+                plan: usage?.plan ?? state.user.plan,
+                aiCredits: usage?.credits ?? state.user.aiCredits,
+              }
+            : state.user,
+        })),
+      markHydrated: () => set({ hydrated: true }),
+      markSessionChecked: () => set({ sessionChecked: true }),
+      setLocale: (locale) => {
+        set({ locale });
+        setI18nLocale(locale);
+        void savePreferredLocale(locale);
+      },
+      setOnboarding: (onboarding) => set({ onboarding }),
+    }),
+    {
+      name: 'meal-log.session',
+      storage: createJSONStorage(() => AsyncStorage),
+      version: 1,
+      partialize: (state) => ({
+        user: state.user,
+        usage: state.usage,
+        onboarding: state.onboarding,
+        locale: state.locale,
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        state.setUser(state.user);
+        state.markHydrated();
+      },
+    },
+  ),
+);

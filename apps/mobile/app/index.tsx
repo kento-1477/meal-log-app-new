@@ -1,20 +1,19 @@
 import { Redirect } from 'expo-router';
-import { View, ActivityIndicator } from 'react-native';
+import { AppSplash } from '@/components/AppSplash';
 import { useSessionStore } from '@/store/session';
-import { colors } from '@/theme/colors';
 
 export default function Index() {
   const user = useSessionStore((state) => state.user);
   const hydrated = useSessionStore((state) => state.hydrated);
-  const status = useSessionStore((state) => state.status);
+  const sessionChecked = useSessionStore((state) => state.sessionChecked);
   const onboarding = useSessionStore((state) => state.onboarding);
 
-  if (!hydrated || status === 'loading') {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
-        <ActivityIndicator size="large" color={colors.accent} />
-      </View>
-    );
+  if (!hydrated) {
+    return <AppSplash />;
+  }
+
+  if (!user && !sessionChecked) {
+    return <AppSplash />;
   }
 
   if (user) {

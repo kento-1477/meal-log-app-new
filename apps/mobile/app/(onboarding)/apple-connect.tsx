@@ -125,6 +125,8 @@ export default function OnboardingAppleConnect() {
           .catch((err) => console.warn('Failed to refresh premium status', err));
       }
 
+      setStatus('authenticated');
+
       router.replace('/(tabs)/chat');
     } catch (err: any) {
       if (err?.code === 'ERR_REQUEST_CANCELED' || err?.code === 'ERR_CANCELED') {
