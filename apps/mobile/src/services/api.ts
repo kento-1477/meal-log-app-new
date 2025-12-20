@@ -306,11 +306,7 @@ export async function logout() {
 }
 
 export async function getSession() {
-  try {
-    return await apiFetch<SessionPayload>('/api/session', { method: 'GET' });
-  } catch (_error) {
-    return { authenticated: false } satisfies SessionPayload;
-  }
+  return apiFetch<SessionPayload>('/api/session', { method: 'GET' });
 }
 
 export interface MealLogResponse {

@@ -6,16 +6,22 @@ import { Feather } from '@expo/vector-icons';
 import { useSessionStore } from '@/store/session';
 import { colors } from '@/theme/colors';
 import { useTranslation } from '@/i18n';
+import { AppSplash } from '@/components/AppSplash';
 
 const TabBarBackground = () => <BlurView tint="light" intensity={30} style={StyleSheet.absoluteFill} />;
 
 export default function TabsLayout() {
   const user = useSessionStore((state) => state.user);
   const hydrated = useSessionStore((state) => state.hydrated);
+  const sessionChecked = useSessionStore((state) => state.sessionChecked);
   useTranslation();
 
   if (!hydrated) {
-    return null;
+    return <AppSplash />;
+  }
+
+  if (!user && !sessionChecked) {
+    return <AppSplash />;
   }
 
   if (!user) {
