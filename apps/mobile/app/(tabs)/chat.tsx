@@ -127,7 +127,6 @@ export default function ChatScreen() {
   const [addingFavoriteId, setAddingFavoriteId] = useState<string | null>(null);
   const [limitModalVisible, setLimitModalVisible] = useState(false);
   const [streakModalVisible, setStreakModalVisible] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [bottomSectionHeight, setBottomSectionHeight] = useState(0);
   const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const usageRefreshInFlight = useRef(false);
@@ -331,16 +330,6 @@ export default function ChatScreen() {
   });
 
   useEffect(() => () => clearNetworkHintTimer(), [clearNetworkHintTimer]);
-  useEffect(() => {
-    const showEvent = Platform.select({ ios: 'keyboardWillShow', android: 'keyboardDidShow', default: 'keyboardDidShow' })!;
-    const hideEvent = Platform.select({ ios: 'keyboardWillHide', android: 'keyboardDidHide', default: 'keyboardDidHide' })!;
-    const show = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
-    const hide = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
 
   const streak = streakQuery.data;
   const hasStreak = Boolean(streak);
@@ -584,7 +573,7 @@ export default function ChatScreen() {
     setSending(true);
     setError(null);
 
-    const displayMessage = trimmedMessage || rawMessage || '（画像解析）';
+    const displayMessage = trimmedMessage || (hasImage ? t('chat.sentPhoto') : rawMessage);
 
     const userMessage = addUserMessage(displayMessage);
     const processingText = t('chat.processing');
@@ -735,9 +724,14 @@ export default function ChatScreen() {
   };
 
   const handleSend = async () => {
-    const response = await submitMeal(input, {
-      imageUri: composingImageUri ?? null,
-      onSuccess: resetComposer,
+    const messageSnapshot = input;
+    const imageSnapshot = composingImageUri ?? null;
+    if (imageSnapshot) {
+      resetComposer();
+    }
+    const response = await submitMeal(messageSnapshot, {
+      imageUri: imageSnapshot,
+      onSuccess: imageSnapshot ? undefined : resetComposer,
     });
     if (!response) {
       return;
@@ -1026,7 +1020,7 @@ export default function ChatScreen() {
             ) : (
               <>
                 {composingImageUri ? (
-                  <View style={[styles.previewContainer, keyboardVisible && styles.previewHidden]}>
+                  <View style={styles.previewContainer}>
                     <Image source={{ uri: composingImageUri }} style={styles.preview} />
                     <TouchableOpacity onPress={() => setComposingImage(null)} style={styles.removeImage}>
                       <Text style={{ color: '#fff' }}>✕</Text>
@@ -1440,10 +1434,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     position: 'relative',
     alignSelf: 'flex-start',
-  },
-  previewHidden: {
-    height: 0,
-    opacity: 0,
   },
   preview: {
     width: 120,
