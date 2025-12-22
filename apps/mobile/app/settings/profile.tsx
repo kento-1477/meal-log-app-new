@@ -28,7 +28,6 @@ type FormState = {
   activityLevel: string;
   planIntensity: PlanIntensity | '';
   goals: Set<string>;
-  referralCode: string;
 };
 
 type Snapshot = {
@@ -50,7 +49,6 @@ const EMPTY_FORM: FormState = {
   activityLevel: 'MODERATE',
   planIntensity: 'STANDARD',
   goals: new Set(),
-  referralCode: '',
 };
 
 export default function ProfileScreen() {
@@ -135,7 +133,6 @@ export default function ProfileScreen() {
       activity_level: form.activityLevel || null,
       plan_intensity: (form.planIntensity as PlanIntensity | null) ?? null,
       goals: Array.from(form.goals),
-      marketing_referral_code: form.referralCode.trim() || null,
     };
   };
 
@@ -268,13 +265,6 @@ export default function ProfileScreen() {
             <Text style={styles.goalCount}>
               {t('settings.profile.goalCount', { current: selectedGoalCount, max: MAX_GOAL_SELECTION })}
             </Text>
-            <ProfileField
-              label={t('settings.profile.referralCode')}
-              value={form.referralCode}
-              onChangeText={(value) => setForm((prev) => ({ ...prev, referralCode: value }))}
-              placeholder={t('settings.profile.referralPlaceholder')}
-              keyboardType="default"
-            />
           </View>
 
           <PrimaryButton
@@ -298,7 +288,6 @@ function mapProfileToForm(profile: UserProfile): FormState {
     activityLevel: profile.activity_level ?? 'MODERATE',
     planIntensity: (profile.plan_intensity as PlanIntensity | null) ?? 'STANDARD',
     goals: new Set(profile.goals ?? []),
-    referralCode: profile.marketing_referral_code ?? '',
   };
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { colors } from '@/theme/colors';
@@ -11,9 +11,7 @@ import { useTranslation } from '@/i18n';
 import { SelectableCard } from '@/components/SelectableCard';
 import type { CardIconRenderer } from '@/components/SelectableCard';
 import { Feather } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { onboardingInputStyle } from '@/theme/onboarding';
-import { REFERRAL_CODE_STORAGE_KEY } from '@/hooks/useReferralDeepLink';
 import { isJapaneseLocale } from '@/theme/localeTypography';
 
 export default function OnboardingMarketingScreen() {
@@ -22,39 +20,19 @@ export default function OnboardingMarketingScreen() {
   const marketing = useOnboardingStore((state) => state.draft.marketingSource ?? '');
   const referralCode = useOnboardingStore((state) => state.draft.marketingReferralCode ?? '');
   const updateDraft = useOnboardingStore((state) => state.updateDraft);
-  const [prefilledCodeLoaded, setPrefilledCodeLoaded] = useState(false);
   const isJapanese = isJapaneseLocale(locale);
 
   useOnboardingStep('marketing');
 
   const handleSelect = (id: string) => {
     const next = marketing === id ? '' : id;
-    updateDraft({ marketingSource: next });
+    updateDraft({
+      marketingSource: next,
+      marketingReferralCode: next === 'friend' ? referralCode : '',
+    });
   };
 
-  useEffect(() => {
-    if (prefilledCodeLoaded) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const stored = await AsyncStorage.getItem(REFERRAL_CODE_STORAGE_KEY);
-        if (!cancelled && stored && !referralCode) {
-          updateDraft({ marketingReferralCode: stored });
-        }
-      } catch (error) {
-        console.warn('Failed to preload referral code', error);
-      } finally {
-        if (!cancelled) {
-          setPrefilledCodeLoaded(true);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [prefilledCodeLoaded, referralCode, updateDraft]);
-
-  const iconMap: Record<string, CardIconRenderer> = {
+  const iconMap: Record<string, CardIconRenderer> = useMemo(() => ({
     instagram: (selected) => (
       <Feather name="camera" size={22} color={selected ? '#fff' : colors.textPrimary} />
     ),
@@ -73,7 +51,7 @@ export default function OnboardingMarketingScreen() {
     other: (selected) => (
       <Feather name="more-horizontal" size={22} color={selected ? '#fff' : colors.textPrimary} />
     ),
-  };
+  }), []);
 
   return (
     <OnboardingScaffold

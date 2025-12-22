@@ -1,18 +1,15 @@
 // apps/mobile/src/hooks/useReferralDeepLink.ts
 // 招待リンクのディープリンク処理を担当するカスタムフック
-// ログイン状態に応じて即座にclaimまたはコードを保存
+// ログイン状態に応じて即座にclaim、未ログイン時は入力案内
 // 関連: services/api.ts, store/session.ts
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { useURL } from 'expo-linking';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSessionStore } from '@/store/session';
 import { trackReferralPremiumClaimedFriend } from '@/analytics/events';
 import { getSession } from '@/services/api';
 import { getDeviceFingerprintId } from '@/services/device-fingerprint';
-
-export const REFERRAL_CODE_STORAGE_KEY = '@referral_code';
 
 interface ClaimReferralResponse {
   success: boolean;
@@ -115,11 +112,9 @@ export function useReferralDeepLink() {
             Alert.alert('エラー', message);
           }
         } else {
-          // 未ログイン：コードを保存してログイン画面へ
-          await AsyncStorage.setItem(REFERRAL_CODE_STORAGE_KEY, code);
           Alert.alert(
-            '招待リンクを受け取りました',
-            'ログイン後に自動的に14日間のプレミアムが付与されます。'
+            '招待コードを受け取りました',
+            `コード: ${code}\nオンボーディングの「友人」選択で入力してください。`
           );
         }
       } catch (error) {
@@ -133,42 +128,5 @@ export function useReferralDeepLink() {
     void handleDeepLink();
   }, [hydrated, url, user, isProcessing, refreshSessionState]);
 
-  // ログイン後の自動claim処理
-  useEffect(() => {
-    if (!hydrated || !user || isProcessing) return;
-
-    const checkPendingReferral = async () => {
-      try {
-        const savedCode = await AsyncStorage.getItem(REFERRAL_CODE_STORAGE_KEY);
-        if (!savedCode) return;
-
-        setIsProcessing(true);
-
-        try {
-          const result = await claimReferralCode(savedCode);
-          await AsyncStorage.removeItem(REFERRAL_CODE_STORAGE_KEY);
-          await refreshSessionState();
-
-          Alert.alert(
-            '🎉 プレミアムを獲得しました！',
-            `${result.premiumDays}日間のプレミアムが付与されました。${result.referrerUsername}さんからの紹介ありがとうございます！`
-          );
-          trackReferralPremiumClaimedFriend({ referrer: result.referrerUsername });
-        } catch (error) {
-          const referralError = error as ReferralError;
-          const message = referralError.message ?? '招待コードの適用に失敗しました';
-          Alert.alert('エラー', message);
-          if (referralError.status && [400, 403, 404, 409].includes(referralError.status)) {
-            await AsyncStorage.removeItem(REFERRAL_CODE_STORAGE_KEY);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to check pending referral:', error);
-      } finally {
-        setIsProcessing(false);
-      }
-    };
-
-    void checkPendingReferral();
-  }, [hydrated, user, isProcessing, refreshSessionState]);
+  // 未ログイン時のコードは保存しない（その場での入力のみ）
 }

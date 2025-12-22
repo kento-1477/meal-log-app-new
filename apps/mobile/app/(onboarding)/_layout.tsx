@@ -10,7 +10,6 @@ export default function OnboardingLayout() {
       <Stack.Screen name="current-weight" />
       <Stack.Screen name="activity" />
       <Stack.Screen name="plan-mode" />
-      <Stack.Screen name="plan-summary" />
       <Stack.Screen name="analysis" />
       <Stack.Screen name="apple-connect" />
     </Stack>

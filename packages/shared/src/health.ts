@@ -183,7 +183,6 @@ function determineGoalFocus(
 
 function guardInputs(input: NutritionPlanInput): PlanComputationContext | null {
   if (
-    input.gender == null ||
     input.heightCm == null ||
     input.currentWeightKg == null ||
     input.planIntensity == null ||
@@ -192,7 +191,7 @@ function guardInputs(input: NutritionPlanInput): PlanComputationContext | null {
     return null;
   }
 
-  const gender = input.gender;
+  const gender: Gender = input.gender ?? 'UNSPECIFIED';
   const heightCm = input.heightCm ?? null;
   const currentWeightKg = input.currentWeightKg ?? null;
   const targetWeightKg = input.targetWeightKg ?? currentWeightKg;
