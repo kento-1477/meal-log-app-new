@@ -55,6 +55,7 @@ async function claimReferralCode(code: string): Promise<ClaimReferralResponse> {
 export function useReferralDeepLink() {
   const url = useURL();
   const user = useSessionStore((state) => state.user);
+  const hydrated = useSessionStore((state) => state.hydrated);
   const setUser = useSessionStore((state) => state.setUser);
   const setUsage = useSessionStore((state) => state.setUsage);
   const setOnboarding = useSessionStore((state) => state.setOnboarding);
@@ -75,7 +76,7 @@ export function useReferralDeepLink() {
   }, [setOnboarding, setUsage, setUser]);
 
   useEffect(() => {
-    if (!url || isProcessing) return;
+    if (!hydrated || !url || isProcessing) return;
 
     const handleDeepLink = async () => {
       try {
@@ -130,11 +131,11 @@ export function useReferralDeepLink() {
     };
 
     void handleDeepLink();
-  }, [url, user, isProcessing, refreshSessionState]);
+  }, [hydrated, url, user, isProcessing, refreshSessionState]);
 
   // ログイン後の自動claim処理
   useEffect(() => {
-    if (!user || isProcessing) return;
+    if (!hydrated || !user || isProcessing) return;
 
     const checkPendingReferral = async () => {
       try {
@@ -169,5 +170,5 @@ export function useReferralDeepLink() {
     };
 
     void checkPendingReferral();
-  }, [user, isProcessing, refreshSessionState]);
+  }, [hydrated, user, isProcessing, refreshSessionState]);
 }
