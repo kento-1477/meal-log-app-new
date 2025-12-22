@@ -31,6 +31,7 @@ export default function OnboardingAppleConnect() {
   const draft = useOnboardingStore((state) => state.draft);
   const resetDraft = useOnboardingStore((state) => state.reset);
   const startedAt = useOnboardingStore((state) => state.startedAt);
+  const sessionId = useOnboardingStore((state) => state.sessionId);
   const setPremiumStatus = usePremiumStore((state) => state.setStatus);
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
@@ -112,7 +113,7 @@ export default function OnboardingAppleConnect() {
       const profileResult = await updateUserProfile(buildProfilePayload());
       const completedAt = profileResult.profile.questionnaire_completed_at ?? new Date().toISOString();
       setOnboarding({ completed: true, completed_at: completedAt });
-      trackOnboardingCompleted({ durationMs: Date.now() - (startedAt ?? Date.now()) });
+      trackOnboardingCompleted({ durationMs: Date.now() - (startedAt ?? Date.now()), sessionId });
       resetDraft();
 
       if (profileResult.referralClaimed && profileResult.referralResult) {

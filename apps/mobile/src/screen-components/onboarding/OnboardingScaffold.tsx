@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -8,9 +8,10 @@ import { fontFamilies, textStyles } from '@/theme/typography';
 import { onboardingTypography, onboardingJapaneseTypography } from '@/theme/onboarding';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import type { OnboardingStep } from '@/store/onboarding';
-import { ONBOARDING_STEPS } from '@/store/onboarding';
+import { ONBOARDING_STEPS, useOnboardingStore } from '@/store/onboarding';
 import { useTranslation } from '@/i18n';
 import { isJapaneseLocale } from '@/theme/localeTypography';
+import { trackOnboardingStepCompleted } from '@/analytics/events';
 
 interface Props {
   step: OnboardingStep;
@@ -53,6 +54,7 @@ export function OnboardingScaffold({
   const insets = useSafeAreaInsets();
   const { locale, t } = useTranslation();
   const isJapanese = isJapaneseLocale(locale);
+  const sessionId = useOnboardingStore((state) => state.sessionId);
   const remainingSteps = Math.max(0, total - index - 1);
   const estimatedMinutes = Math.max(1, Math.round(remainingSteps * 0.5));
   const progressHint =
@@ -66,6 +68,13 @@ export function OnboardingScaffold({
   const hasHeaderAction = Boolean(headerActionLabel && onHeaderAction);
   const showTopAction = hasHeaderAction && headerActionPosition === 'left';
   const showRightAction = hasHeaderAction && !showTopAction;
+  const handleNext = useCallback(() => {
+    if (!onNext) {
+      return;
+    }
+    trackOnboardingStepCompleted({ step, sessionId });
+    onNext();
+  }, [onNext, sessionId, step]);
 
   useEffect(() => {
     const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () =>
@@ -201,7 +210,7 @@ export function OnboardingScaffold({
               {onNext ? (
                 <PrimaryButton
                   label={nextLabel ?? '続ける'}
-                  onPress={onNext}
+                  onPress={handleNext}
                   disabled={nextDisabled}
                 />
               ) : null}

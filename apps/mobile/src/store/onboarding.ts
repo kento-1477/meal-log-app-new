@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { nanoid } from 'nanoid/non-secure';
 import type { ActivityLevelString, Gender, PlanIntensity, UserProfile } from '@meal-log/shared';
 
 export type OnboardingStep =
@@ -66,6 +67,7 @@ interface OnboardingState {
   draft: OnboardingDraft;
   currentStep: OnboardingStep;
   startedAt: number | null;
+  sessionId: string | null;
   updateDraft: (patch: Partial<OnboardingDraft>) => void;
   setGoals: (goals: string[]) => void;
   setStep: (step: OnboardingStep) => void;
@@ -78,6 +80,7 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
   draft: createDefaultDraft(),
   currentStep: 'welcome',
   startedAt: null,
+  sessionId: null,
   updateDraft: (patch) =>
     set((state) => ({
       draft: {
@@ -123,7 +126,15 @@ export const useOnboardingStore = create<OnboardingState>((set) => ({
         },
       };
     }),
-  reset: () => set({ draft: createDefaultDraft(), currentStep: 'welcome', startedAt: null }),
+  reset: () => set({ draft: createDefaultDraft(), currentStep: 'welcome', startedAt: null, sessionId: null }),
   markStarted: () =>
-    set((state) => (state.startedAt ? {} : { startedAt: Date.now() })),
+    set((state) => {
+      if (state.startedAt && state.sessionId) {
+        return {};
+      }
+      return {
+        startedAt: state.startedAt ?? Date.now(),
+        sessionId: state.sessionId ?? nanoid(12),
+      };
+    }),
 }));

@@ -86,6 +86,13 @@ function buildCacheKey(url: string, headers: Headers) {
 
 type ApiFetchOptions = RequestInit & { timeoutMs?: number };
 
+export type OnboardingEventPayload = {
+  eventName: 'onboarding.step_viewed' | 'onboarding.step_completed' | 'onboarding.completed';
+  step?: string | null;
+  sessionId: string;
+  metadata?: Record<string, unknown> | null;
+};
+
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
   if (!timeoutMs || timeoutMs <= 0 || typeof AbortController === 'undefined' || init.signal) {
     return fetch(url, init);
@@ -429,6 +436,13 @@ export async function claimReferralCodeApi(code: string) {
       body: JSON.stringify({ code }),
     },
   );
+}
+
+export async function postOnboardingEvent(payload: OnboardingEventPayload) {
+  return apiFetch<{ ok: boolean }>('/api/onboarding/events', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function getDailySummary(days = 7) {

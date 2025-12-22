@@ -5,9 +5,12 @@ import { useOnboardingStore } from '@/store/onboarding';
 
 export function useOnboardingStep(step: OnboardingStep) {
   const setStep = useOnboardingStore((state) => state.setStep);
+  const markStarted = useOnboardingStore((state) => state.markStarted);
 
   useEffect(() => {
     setStep(step);
-    trackOnboardingStepViewed({ step });
-  }, [setStep, step]);
+    markStarted();
+    const sessionId = useOnboardingStore.getState().sessionId;
+    trackOnboardingStepViewed({ step, sessionId });
+  }, [markStarted, setStep, step]);
 }

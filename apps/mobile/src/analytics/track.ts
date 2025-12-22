@@ -1,6 +1,9 @@
 // apps/mobile/src/analytics/track.ts
 // Minimal analytics facade. Replace console logging with your vendor SDK as needed.
 
+import { postOnboardingEvent } from '@/services/api';
+import type { OnboardingEventPayload } from '@/services/api';
+
 export type AnalyticsEventName =
   | 'referral.invite_link_generated'
   | 'referral.invite_link_shared'
@@ -16,9 +19,42 @@ export type AnalyticsEventName =
   | 'paywall.restore_success'
   | 'paywall.restore_failure'
   | 'onboarding.step_viewed'
+  | 'onboarding.step_completed'
   | 'onboarding.goal_selected'
   | 'onboarding.completed';
 
+const ONBOARDING_EVENTS = new Set<OnboardingEventPayload['eventName']>([
+  'onboarding.step_viewed',
+  'onboarding.step_completed',
+  'onboarding.completed',
+]);
+
+const isOnboardingEvent = (event: AnalyticsEventName): event is OnboardingEventPayload['eventName'] =>
+  ONBOARDING_EVENTS.has(event as OnboardingEventPayload['eventName']);
+
 export function trackEvent(event: AnalyticsEventName, params: Record<string, unknown> = {}) {
   console.log(`[analytics] ${event}`, params);
+
+  if (!isOnboardingEvent(event)) {
+    return;
+  }
+
+  const { step, sessionId, ...metadata } = params;
+  if (typeof sessionId !== 'string' || sessionId.length === 0) {
+    return;
+  }
+
+  const cleanedMetadata = Object.fromEntries(
+    Object.entries(metadata).filter(([, value]) => value !== undefined && value !== null),
+  );
+  const metadataPayload = Object.keys(cleanedMetadata).length > 0 ? cleanedMetadata : null;
+
+  void postOnboardingEvent({
+    eventName: event,
+    step: typeof step === 'string' ? step : null,
+    sessionId,
+    metadata: metadataPayload,
+  }).catch((error) => {
+    console.warn('[analytics] onboarding event failed', error);
+  });
 }
