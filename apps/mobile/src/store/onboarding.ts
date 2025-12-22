@@ -6,7 +6,6 @@ export type OnboardingStep =
   | 'goals'
   | 'basic-info'
   | 'marketing'
-  | 'current-weight'
   | 'activity'
   | 'plan-mode'
   | 'analysis';
@@ -16,7 +15,6 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   'goals',
   'basic-info',
   'marketing',
-  'current-weight',
   'activity',
   'plan-mode',
   'analysis',

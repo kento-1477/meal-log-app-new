@@ -51,8 +51,14 @@ export function OnboardingScaffold({
   const total = ONBOARDING_STEPS.length;
   const progress = (index + 1) / total;
   const insets = useSafeAreaInsets();
-  const { locale } = useTranslation();
+  const { locale, t } = useTranslation();
   const isJapanese = isJapaneseLocale(locale);
+  const remainingSteps = Math.max(0, total - index - 1);
+  const estimatedMinutes = Math.max(1, Math.round(remainingSteps * 0.5));
+  const progressHint =
+    remainingSteps === 0
+      ? t('onboarding.progress.last')
+      : t('onboarding.progress.remaining', { count: remainingSteps, minutes: estimatedMinutes });
 
   // Avoid leaving extra gap above the keyboard; push content right up to the keyboard edge.
   const keyboardOffset = 0;
@@ -134,13 +140,16 @@ export function OnboardingScaffold({
                 )}
 
                 <View style={styles.progressArea}>
-                  <View style={styles.progressTrack}>
-                    <View
-                      style={[styles.progressFill, { width: `${Math.min(1, Math.max(0, progress)) * 100}%` }]}
-                      accessible
-                      accessibilityRole="progressbar"
-                      accessibilityValue={{ min: 0, max: 1, now: Math.min(1, Math.max(0, progress)) }}
-                    />
+                  <View style={styles.progressColumn}>
+                    <View style={styles.progressTrack}>
+                      <View
+                        style={[styles.progressFill, { width: `${Math.min(1, Math.max(0, progress)) * 100}%` }]}
+                        accessible
+                        accessibilityRole="progressbar"
+                        accessibilityValue={{ min: 0, max: 1, now: Math.min(1, Math.max(0, progress)) }}
+                      />
+                    </View>
+                    <Text style={styles.progressHint}>{progressHint}</Text>
                   </View>
                   <Text style={styles.stepText}>{`${index + 1}/${total}`}</Text>
                 </View>
@@ -282,11 +291,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  progressColumn: {
+    flex: 1,
+    gap: 6,
+  },
   stepText: {
     ...textStyles.caption,
     color: colors.textSecondary,
     fontWeight: '600',
     fontFamily: fontFamilies.semibold,
+  },
+  progressHint: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
   },
   headerAction: {
     paddingHorizontal: 12,

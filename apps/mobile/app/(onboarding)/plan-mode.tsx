@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
-import { estimateTargetDate, type PlanIntensity } from '@meal-log/shared';
+import {
+  calculateBmi,
+  calculateIdealWeightRange,
+  computeNutritionPlan,
+  estimateTargetDate,
+  type PlanIntensity,
+} from '@meal-log/shared';
 import { useOnboardingStep } from '@/hooks/useOnboardingStep';
 import { OnboardingScaffold } from '@/screen-components/onboarding/OnboardingScaffold';
 import { PLAN_INTENSITY_OPTIONS } from '@/screen-components/onboarding/constants';
@@ -26,6 +32,9 @@ export default function OnboardingPlanModeScreen() {
 
   const plan = PLAN_INTENSITY_OPTIONS.find((item) => item.id === planIntensity) ?? null;
 
+  const initialKg = draft.currentWeightKg ?? draft.bodyWeightKg ?? null;
+  const [weightInput, setWeightInput] = useState(() => (initialKg ? String(roundTo(initialKg, 1)) : ''));
+  const [weightError, setWeightError] = useState<string | null>(null);
   const [targetInput, setTargetInput] = useState(() =>
     draft.targetWeightKg ? String(roundTo(draft.targetWeightKg, 1)) : '',
   );
@@ -34,6 +43,22 @@ export default function OnboardingPlanModeScreen() {
   const handleSelect = (id: PlanIntensity) => {
     const next: PlanIntensity | null = planIntensity === id ? null : id;
     updateDraft({ planIntensity: next });
+  };
+
+  const handleWeightChange = (value: string) => {
+    setWeightInput(value);
+    const parsed = Number(value);
+    if (parsed == null || parsed <= 0) {
+      if (!value) {
+        updateDraft({ currentWeightKg: null, bodyWeightKg: null });
+        setWeightError(null);
+      } else {
+        setWeightError(t('onboarding.weight.invalid'));
+      }
+      return;
+    }
+    setWeightError(null);
+    updateDraft({ currentWeightKg: parsed, bodyWeightKg: parsed });
   };
 
   const handleTargetChange = (value: string) => {
@@ -80,6 +105,34 @@ export default function OnboardingPlanModeScreen() {
     };
   }, [draft.currentWeightKg, draft.targetWeightKg, plan]);
 
+  const previewPlan = useMemo(
+    () =>
+      computeNutritionPlan({
+        gender: draft.gender ?? null,
+        birthdate: draft.birthdate ?? null,
+        heightCm: draft.heightCm ?? null,
+        currentWeightKg: draft.currentWeightKg ?? draft.bodyWeightKg ?? null,
+        targetWeightKg: draft.targetWeightKg ?? null,
+        activityLevel: draft.activityLevel ?? null,
+        planIntensity: draft.planIntensity ?? null,
+        goals: draft.goals,
+      }),
+    [
+      draft.activityLevel,
+      draft.birthdate,
+      draft.bodyWeightKg,
+      draft.currentWeightKg,
+      draft.gender,
+      draft.goals,
+      draft.heightCm,
+      draft.planIntensity,
+      draft.targetWeightKg,
+    ],
+  );
+
+  const bmi = calculateBmi(draft.currentWeightKg ?? null, draft.heightCm ?? null);
+  const idealRange = calculateIdealWeightRange(draft.heightCm ?? null);
+
   const targetDateIsoMemo = summary?.targetDate?.toISOString() ?? null;
 
   useEffect(() => {
@@ -98,7 +151,7 @@ export default function OnboardingPlanModeScreen() {
 
   const weeklyChange = summary ? roundTo(summary.difference / Math.max(summary.weeks, 1), 2) : null;
 
-  const canProceed = Boolean(plan && draft.targetWeightKg && !error);
+  const canProceed = Boolean(plan && draft.currentWeightKg && draft.targetWeightKg && !error && !weightError);
 
   const iconMap: Record<PlanIntensity, CardIconRenderer> = {
     GENTLE: (selected) => (
@@ -123,6 +176,48 @@ export default function OnboardingPlanModeScreen() {
       onBack={() => router.back()}
     >
       <View style={styles.stack}>
+        <View style={styles.card}>
+          <Text style={onboardingTypography.label}>{t('onboarding.weight.currentLabel')}</Text>
+          <Text style={onboardingTypography.helper}>{t('onboarding.weight.currentHelper')}</Text>
+          <View style={styles.inputRow}>
+            <TextInput
+              style={styles.input}
+              value={weightInput}
+              onChangeText={handleWeightChange}
+              keyboardType="decimal-pad"
+              textContentType="oneTimeCode"
+              autoComplete="off"
+              importantForAutofill="no"
+              placeholder="65"
+            />
+            <Text style={styles.unit}>{t('onboarding.weight.kg')}</Text>
+          </View>
+          {weightError ? <Text style={styles.error}>{weightError}</Text> : null}
+        </View>
+
+        {draft.heightCm ? (
+          <View style={[styles.card, styles.metricsCard]}>
+            <Text style={onboardingTypography.cardTitle}>{t('onboarding.weight.metricsTitle')}</Text>
+            <View style={styles.metricsRow}>
+              <Text style={onboardingTypography.cardDetail}>{t('onboarding.weight.bmi')}</Text>
+              <Text style={onboardingTypography.cardTitle}>{bmi ? roundTo(bmi, 1) : '--'}</Text>
+            </View>
+            {idealRange ? (
+              <View style={styles.metricsRow}>
+                <Text style={onboardingTypography.cardDetail}>{t('onboarding.weight.idealRange')}</Text>
+                <Text style={onboardingTypography.cardTitle}>
+                  {`${roundTo(idealRange.minKg, 1)} - ${roundTo(idealRange.maxKg, 1)} kg`}
+                </Text>
+              </View>
+            ) : null}
+            <Text style={onboardingTypography.helper}>{t('onboarding.weight.idealHint')}</Text>
+          </View>
+        ) : (
+          <View style={styles.card}>
+            <Text style={styles.notice}>{t('onboarding.weight.needHeight')}</Text>
+          </View>
+        )}
+
         <View style={styles.optionStack}>
           {PLAN_INTENSITY_OPTIONS.map((option) => {
             const selected = option.id === planIntensity;
@@ -155,6 +250,14 @@ export default function OnboardingPlanModeScreen() {
           </View>
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>
+
+        {previewPlan ? (
+          <View style={[styles.card, styles.previewCard]}>
+            <Text style={onboardingTypography.cardTitle}>{t('onboarding.plan.previewTitle')}</Text>
+            <Text style={styles.previewValue}>{`${previewPlan.targetCalories} kcal`}</Text>
+            <Text style={onboardingTypography.helper}>{t('onboarding.plan.previewHelper')}</Text>
+          </View>
+        ) : null}
 
         <View style={[styles.card, styles.summaryCard]}>
           <View style={styles.summaryRow}>
@@ -211,6 +314,13 @@ const styles = StyleSheet.create({
   summaryCard: {
     gap: 12,
   },
+  previewCard: {
+    gap: 8,
+  },
+  previewValue: {
+    ...textStyles.titleMedium,
+    color: colors.textPrimary,
+  },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -218,6 +328,18 @@ const styles = StyleSheet.create({
   },
   summaryValue: {
     textAlign: 'right',
+  },
+  metricsCard: {
+    gap: 12,
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  notice: {
+    ...textStyles.caption,
+    color: colors.error,
   },
   error: {
     ...textStyles.caption,
