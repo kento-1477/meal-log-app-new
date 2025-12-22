@@ -1,15 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
-import {
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
-} from 'react-native';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Gender } from '@meal-log/shared';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
@@ -26,6 +17,7 @@ import {
 import { isJapaneseLocale } from '@/theme/localeTypography';
 
 const GENDER_ORDER: Gender[] = ['FEMALE', 'MALE', 'NON_BINARY', 'UNSPECIFIED'];
+const MAX_AGE = 120;
 
 export default function OnboardingBasicInfoScreen() {
   const router = useRouter();
@@ -38,47 +30,9 @@ export default function OnboardingBasicInfoScreen() {
 
   const [name, setName] = useState(draft.displayName ?? '');
   const [gender, setGender] = useState<Gender | null>(draft.gender ?? null);
-  const initialBirthdate = draft.birthdate ? new Date(draft.birthdate) : null;
-  const defaultBirthdate = initialBirthdate ?? buildDefaultBirthdate();
-  const [birthdate, setBirthdate] = useState<Date | null>(initialBirthdate);
-  const [birthdateInput, setBirthdateInput] = useState(initialBirthdate ? formatDate(initialBirthdate) : '');
-  const [birthdatePickerVisible, setBirthdatePickerVisible] = useState(false);
-
-  const years = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const minYear = currentYear - 100;
-    const list: number[] = [];
-    for (let year = currentYear; year >= minYear; year -= 1) {
-      list.push(year);
-    }
-    return list;
-  }, []);
-
-  const months = useMemo(() => Array.from({ length: 12 }, (_, index) => index), []); // 0-based
-
-  const findYearIndex = (target: number) => {
-    const idx = years.indexOf(target);
-    return idx >= 0 ? idx : 0;
-  };
-
-  const birthdateYearIndex = findYearIndex(defaultBirthdate.getFullYear());
-
-  const [pickerYearIndex, setPickerYearIndex] = useState(birthdateYearIndex);
-  const [pickerMonthIndex, setPickerMonthIndex] = useState(defaultBirthdate.getMonth());
-  const [pickerDayIndex, setPickerDayIndex] = useState(defaultBirthdate.getDate() - 1);
-  const days = useMemo(() => {
-    const year = years[pickerYearIndex] ?? years[0];
-    const total = getDaysInMonth(year, pickerMonthIndex);
-    return Array.from({ length: total }, (_, index) => index + 1);
-  }, [pickerYearIndex, pickerMonthIndex, years]);
-
-  useEffect(() => {
-    const total = days.length;
-    setPickerDayIndex((prev) => {
-      if (total === 0) return 0;
-      return Math.min(prev, total - 1);
-    });
-  }, [days.length]);
+  const initialAge = calculateAgeFromBirthdate(draft.birthdate);
+  const [ageInput, setAgeInput] = useState(initialAge ? `${initialAge}` : '');
+  const [age, setAge] = useState<number | null>(initialAge);
   const [heightInput, setHeightInput] = useState(
     draft.heightCm ? Math.round(draft.heightCm).toString() : '',
   );
@@ -96,36 +50,22 @@ export default function OnboardingBasicInfoScreen() {
     updateDraft({ gender: next });
   };
 
-  const openBirthdatePicker = () => {
-    const target = birthdate ?? buildDefaultBirthdate();
-    const yearIdx = findYearIndex(target.getFullYear());
-    const monthIdx = target.getMonth();
-    const maxDays = getDaysInMonth(years[yearIdx] ?? years[0], monthIdx);
-    const dayIdx = Math.min(target.getDate() - 1, Math.max(0, maxDays - 1));
-    setPickerYearIndex(yearIdx);
-    setPickerMonthIndex(monthIdx);
-    setPickerDayIndex(dayIdx);
-    setBirthdatePickerVisible(true);
-  };
-
-  const closeBirthdatePicker = () => {
-    setBirthdatePickerVisible(false);
-  };
-
-  const handleBirthdateConfirm = (date: Date) => {
-    setBirthdate(date);
-    const formatted = formatDate(date);
-    setBirthdateInput(formatted);
-    updateDraft({ birthdate: date.toISOString() });
-    setBirthdatePickerVisible(false);
-  };
-
-  const handleBirthdateConfirmFromPicker = () => {
-    const year = years[pickerYearIndex] ?? years[0];
-    const month = pickerMonthIndex;
-    const day = days[pickerDayIndex] ?? 1;
-    const selected = new Date(year, month, day);
-    handleBirthdateConfirm(selected);
+  const handleAgeChange = (value: string) => {
+    const normalized = value.replace(/[^\d]/g, '');
+    setAgeInput(normalized);
+    if (!normalized) {
+      setAge(null);
+      updateDraft({ birthdate: null });
+      return;
+    }
+    const numeric = Number(normalized);
+    if (!Number.isFinite(numeric) || numeric <= 0 || numeric > MAX_AGE) {
+      setAge(null);
+      updateDraft({ birthdate: null });
+      return;
+    }
+    setAge(numeric);
+    updateDraft({ birthdate: buildBirthdateFromAge(numeric).toISOString() });
   };
 
   const handleHeightChange = (value: string) => {
@@ -149,7 +89,7 @@ export default function OnboardingBasicInfoScreen() {
     [t],
   );
 
-  const canProceed = Boolean(name.trim()) && Boolean(birthdate) && heightCm != null;
+  const canProceed = age != null && heightCm != null;
 
   return (
     <>
@@ -211,20 +151,20 @@ export default function OnboardingBasicInfoScreen() {
             <Text style={[onboardingTypography.helper, isJapanese && onboardingJapaneseTypography.helper]}>
               {t('onboarding.basicInfo.birthdateHelper')}
             </Text>
-            <TouchableOpacity
-              style={styles.inputButton}
-              onPress={openBirthdatePicker}
-              activeOpacity={0.85}
-            >
-              <Text
-                style={[
-                  styles.inputButtonText,
-                  birthdate ? styles.inputButtonValue : styles.inputButtonPlaceholder,
-                ]}
-              >
-                {birthdate ? birthdateInput : t('onboarding.basicInfo.birthdatePlaceholder')}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.inlineField}>
+              <TextInput
+                style={[styles.input, styles.inlineInput]}
+                value={ageInput}
+                onChangeText={handleAgeChange}
+                keyboardType="numeric"
+                placeholder={t('onboarding.basicInfo.birthdatePlaceholder')}
+                maxLength={3}
+              />
+              <Text style={styles.inlineSuffix}>{t('onboarding.basicInfo.ageSuffix')}</Text>
+            </View>
+            {ageInput.length > 0 && age == null ? (
+              <Text style={styles.error}>{t('onboarding.basicInfo.birthdateError')}</Text>
+            ) : null}
           </View>
 
           <View style={styles.card}>
@@ -247,111 +187,26 @@ export default function OnboardingBasicInfoScreen() {
           </View>
         </View>
       </OnboardingScaffold>
-
-      <Modal
-        visible={birthdatePickerVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={closeBirthdatePicker}
-      >
-        <View style={styles.modalContainer}>
-          <TouchableWithoutFeedback onPress={closeBirthdatePicker}>
-            <View style={styles.modalBackdrop} />
-          </TouchableWithoutFeedback>
-          <View style={styles.modalSheet}>
-            <Text style={styles.modalTitle}>{t('onboarding.basicInfo.birthdate')}</Text>
-            <View style={styles.wheelContainer}>
-              <View style={styles.wheelHighlight} pointerEvents="none" />
-              <WheelColumn
-                data={years}
-                selectedIndex={pickerYearIndex}
-                onSelect={setPickerYearIndex}
-                formatItem={(value) => `${value}`}
-              />
-              <WheelColumn
-                data={months}
-                selectedIndex={pickerMonthIndex}
-                onSelect={setPickerMonthIndex}
-                formatItem={(value) => `${value + 1}`}
-              />
-              <WheelColumn
-                data={days}
-                selectedIndex={pickerDayIndex}
-                onSelect={setPickerDayIndex}
-                formatItem={(value) => `${value}`}
-              />
-            </View>
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalButtonSecondary} onPress={closeBirthdatePicker}>
-                <Text style={styles.modalButtonSecondaryLabel}>{t('common.cancel')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalButtonPrimary} onPress={handleBirthdateConfirmFromPicker}>
-                <Text style={styles.modalButtonPrimaryLabel}>{t('common.done')}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </>
   );
 }
 
-function formatDate(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function buildDefaultBirthdate() {
+function calculateAgeFromBirthdate(birthdate: string | Date | null | undefined) {
+  if (!birthdate) return null;
+  const date = typeof birthdate === 'string' ? new Date(birthdate) : birthdate;
+  if (Number.isNaN(date.getTime())) return null;
   const today = new Date();
-  today.setFullYear(today.getFullYear() - 25);
-  return today;
+  let computed = today.getFullYear() - date.getFullYear();
+  const monthDelta = today.getMonth() - date.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < date.getDate())) {
+    computed -= 1;
+  }
+  return computed;
 }
 
-function getDaysInMonth(year: number, monthIndex: number) {
-  return new Date(year, monthIndex + 1, 0).getDate();
-}
-
-const WHEEL_ITEM_HEIGHT = 44;
-
-interface WheelColumnProps<T> {
-  data: T[];
-  selectedIndex: number;
-  onSelect: (index: number) => void;
-  formatItem: (value: T) => string;
-}
-
-function WheelColumn<T>({ data, selectedIndex, onSelect, formatItem }: WheelColumnProps<T>) {
-  const scrollRef = useRef<ScrollView | null>(null);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ y: selectedIndex * WHEEL_ITEM_HEIGHT, animated: false });
-  }, [selectedIndex]);
-
-  return (
-    <ScrollView
-      ref={scrollRef}
-      style={styles.wheelColumn}
-      contentContainerStyle={styles.wheelContent}
-      showsVerticalScrollIndicator={false}
-      snapToInterval={WHEEL_ITEM_HEIGHT}
-      decelerationRate="fast"
-      onMomentumScrollEnd={(event) => {
-        const index = Math.round(event.nativeEvent.contentOffset.y / WHEEL_ITEM_HEIGHT);
-        const clamped = Math.max(0, Math.min(data.length - 1, index));
-        onSelect(clamped);
-      }}
-    >
-      {data.map((item, index) => {
-        const active = index === selectedIndex;
-        return (
-          <View key={`${item}-${index}`} style={[styles.wheelItem, active && styles.wheelItemActive]}>
-            <Text style={[styles.wheelItemLabel, active && styles.wheelItemLabelActive]}>
-              {formatItem(item)}
-            </Text>
-          </View>
-        );
-      })}
-    </ScrollView>
-  );
+function buildBirthdateFromAge(age: number) {
+  const today = new Date();
+  return new Date(today.getFullYear() - age, today.getMonth(), today.getDate());
 }
 
 const styles = StyleSheet.create({
@@ -364,22 +219,6 @@ const styles = StyleSheet.create({
   },
   input: {
     ...onboardingInputStyle,
-  },
-  inputButton: {
-    height: 56,
-    justifyContent: 'center',
-    ...onboardingInputStyle,
-  },
-  inputButtonText: {
-    ...textStyles.body,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  inputButtonPlaceholder: {
-    color: colors.textSecondary,
-  },
-  inputButtonValue: {
-    color: colors.textPrimary,
   },
   chipRow: {
     flexDirection: 'row',
@@ -427,95 +266,5 @@ const styles = StyleSheet.create({
   error: {
     ...textStyles.caption,
     color: colors.error,
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  modalSheet: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 24,
-    paddingHorizontal: 24,
-    paddingBottom: 32,
-  },
-  modalTitle: {
-    ...textStyles.body,
-    textAlign: 'center',
-    fontWeight: '600',
-    marginBottom: 16,
-    color: colors.textPrimary,
-  },
-  wheelContainer: {
-    flexDirection: 'row',
-    position: 'relative',
-    marginHorizontal: 4,
-    marginBottom: 16,
-    height: WHEEL_ITEM_HEIGHT * 5,
-  },
-  wheelHighlight: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: (WHEEL_ITEM_HEIGHT * 5 - WHEEL_ITEM_HEIGHT) / 2,
-    height: WHEEL_ITEM_HEIGHT,
-    borderRadius: 12,
-    backgroundColor: 'rgba(10,132,255,0.08)',
-  },
-  wheelColumn: {
-    flex: 1,
-  },
-  wheelContent: {
-    paddingVertical: (WHEEL_ITEM_HEIGHT * 5 - WHEEL_ITEM_HEIGHT) / 2,
-  },
-  wheelItem: {
-    height: WHEEL_ITEM_HEIGHT,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  wheelItemActive: {},
-  wheelItemLabel: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    fontSize: 18,
-  },
-  wheelItemLabelActive: {
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
-  },
-  modalButtonSecondary: {
-    flex: 1,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  modalButtonSecondaryLabel: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  modalButtonPrimary: {
-    flex: 1,
-    borderRadius: 14,
-    backgroundColor: colors.accent,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  modalButtonPrimaryLabel: {
-    ...textStyles.body,
-    color: '#fff',
-    fontWeight: '600',
   },
 });
