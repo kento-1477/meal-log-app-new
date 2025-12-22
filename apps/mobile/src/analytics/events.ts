@@ -35,14 +35,18 @@ export function trackPaywallRestoreFailure(params: { productId: string; code?: s
   trackEvent('paywall.restore_failure', params);
 }
 
-export function trackOnboardingStepViewed(params: { step: string }) {
+export function trackOnboardingStepViewed(params: { step: string; sessionId?: string | null }) {
   trackEvent('onboarding.step_viewed', params);
+}
+
+export function trackOnboardingStepCompleted(params: { step: string; sessionId?: string | null }) {
+  trackEvent('onboarding.step_completed', params);
 }
 
 export function trackOnboardingGoalsUpdated(params: { goals: string[] }) {
   trackEvent('onboarding.goal_selected', params);
 }
 
-export function trackOnboardingCompleted(params: { durationMs: number }) {
+export function trackOnboardingCompleted(params: { durationMs: number; sessionId?: string | null }) {
   trackEvent('onboarding.completed', params);
 }

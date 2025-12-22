@@ -58,11 +58,11 @@ export default function OnboardingMarketingScreen() {
       step="marketing"
       title={t('onboarding.marketing.title')}
       subtitle={t('onboarding.marketing.subtitle')}
-      onNext={() => router.push('/(onboarding)/current-weight')}
+      onNext={() => router.push('/(onboarding)/activity')}
       nextLabel={t('common.next')}
       onBack={() => router.back()}
       footer={
-        <TouchableOpacity onPress={() => router.push('/(onboarding)/current-weight')}>
+        <TouchableOpacity onPress={() => router.push('/(onboarding)/activity')}>
           <Text style={styles.skip}>{t('common.skip')}</Text>
         </TouchableOpacity>
       }

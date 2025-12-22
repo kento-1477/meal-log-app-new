@@ -7,7 +7,6 @@ export default function OnboardingLayout() {
       <Stack.Screen name="goals" />
       <Stack.Screen name="basic-info" />
       <Stack.Screen name="marketing" />
-      <Stack.Screen name="current-weight" />
       <Stack.Screen name="activity" />
       <Stack.Screen name="plan-mode" />
       <Stack.Screen name="analysis" />

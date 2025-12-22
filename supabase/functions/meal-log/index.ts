@@ -32,7 +32,7 @@ import {
 } from '@shared/index.js';
 import type { Context } from 'hono';
 import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
-import { requireAuth } from '../_shared/auth.ts';
+import { getAuthSession, requireAuth } from '../_shared/auth.ts';
 import {
   resolveMealLogLocalization,
   type LocalizationResolution,
@@ -176,6 +176,13 @@ const exportQuerySchema = z.object({
   anchor: z.string().optional(),
 });
 
+const OnboardingEventSchema = z.object({
+  eventName: z.enum(['onboarding.step_viewed', 'onboarding.step_completed', 'onboarding.completed']),
+  step: z.string().min(1).max(64).optional().nullable(),
+  sessionId: z.string().min(1).max(64),
+  metadata: z.record(z.unknown()).optional().nullable(),
+});
+
 app.get('/health', (c) => c.json({ ok: true, service: 'meal-log' }));
 
 // Premium status (simple placeholder based on isPremium + grants)
@@ -223,6 +230,39 @@ app.get('/api/profile', requireAuth, async (c) => {
   const payload = { ok: true, profile: serializeProfile(profile) };
   UserProfileResponseSchema.parse(payload);
   return c.json(payload);
+});
+
+app.post('/api/onboarding/events', async (c) => {
+  const body = OnboardingEventSchema.parse(await c.req.json());
+  const session = await getAuthSession(c);
+  const deviceId = c.req.header('x-device-id') ?? null;
+
+  const metadata = {
+    ...(body.metadata ?? {}),
+    locale: c.req.header('accept-language') ?? undefined,
+    timezone: c.req.header('x-timezone') ?? undefined,
+    userAgent: c.req.header('user-agent') ?? undefined,
+  };
+  const cleanedMetadata = Object.fromEntries(
+    Object.entries(metadata).filter(([, value]) => value !== undefined && value !== null && value !== ''),
+  );
+  const metadataPayload = Object.keys(cleanedMetadata).length > 0 ? cleanedMetadata : null;
+
+  const { error } = await supabaseAdmin.from('OnboardingEvent').insert({
+    eventName: body.eventName,
+    step: body.step ?? null,
+    sessionId: body.sessionId,
+    userId: session?.user.id ?? null,
+    deviceId,
+    metadata: metadataPayload,
+  });
+
+  if (error) {
+    console.error('onboarding events: insert failed', error);
+    throw new HttpError('オンボーディングの記録に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  return c.json({ ok: true }, HTTP_STATUS.CREATED);
 });
 
 app.put('/api/profile', requireAuth, async (c) => {

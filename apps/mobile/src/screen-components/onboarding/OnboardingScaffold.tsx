@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -8,9 +8,10 @@ import { fontFamilies, textStyles } from '@/theme/typography';
 import { onboardingTypography, onboardingJapaneseTypography } from '@/theme/onboarding';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import type { OnboardingStep } from '@/store/onboarding';
-import { ONBOARDING_STEPS } from '@/store/onboarding';
+import { ONBOARDING_STEPS, useOnboardingStore } from '@/store/onboarding';
 import { useTranslation } from '@/i18n';
 import { isJapaneseLocale } from '@/theme/localeTypography';
+import { trackOnboardingStepCompleted } from '@/analytics/events';
 
 interface Props {
   step: OnboardingStep;
@@ -51,8 +52,15 @@ export function OnboardingScaffold({
   const total = ONBOARDING_STEPS.length;
   const progress = (index + 1) / total;
   const insets = useSafeAreaInsets();
-  const { locale } = useTranslation();
+  const { locale, t } = useTranslation();
   const isJapanese = isJapaneseLocale(locale);
+  const sessionId = useOnboardingStore((state) => state.sessionId);
+  const remainingSteps = Math.max(0, total - index - 1);
+  const estimatedMinutes = Math.max(1, Math.round(remainingSteps * 0.5));
+  const progressHint =
+    remainingSteps === 0
+      ? t('onboarding.progress.last')
+      : t('onboarding.progress.remaining', { count: remainingSteps, minutes: estimatedMinutes });
 
   // Avoid leaving extra gap above the keyboard; push content right up to the keyboard edge.
   const keyboardOffset = 0;
@@ -60,6 +68,13 @@ export function OnboardingScaffold({
   const hasHeaderAction = Boolean(headerActionLabel && onHeaderAction);
   const showTopAction = hasHeaderAction && headerActionPosition === 'left';
   const showRightAction = hasHeaderAction && !showTopAction;
+  const handleNext = useCallback(() => {
+    if (!onNext) {
+      return;
+    }
+    trackOnboardingStepCompleted({ step, sessionId });
+    onNext();
+  }, [onNext, sessionId, step]);
 
   useEffect(() => {
     const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () =>
@@ -134,13 +149,16 @@ export function OnboardingScaffold({
                 )}
 
                 <View style={styles.progressArea}>
-                  <View style={styles.progressTrack}>
-                    <View
-                      style={[styles.progressFill, { width: `${Math.min(1, Math.max(0, progress)) * 100}%` }]}
-                      accessible
-                      accessibilityRole="progressbar"
-                      accessibilityValue={{ min: 0, max: 1, now: Math.min(1, Math.max(0, progress)) }}
-                    />
+                  <View style={styles.progressColumn}>
+                    <View style={styles.progressTrack}>
+                      <View
+                        style={[styles.progressFill, { width: `${Math.min(1, Math.max(0, progress)) * 100}%` }]}
+                        accessible
+                        accessibilityRole="progressbar"
+                        accessibilityValue={{ min: 0, max: 1, now: Math.min(1, Math.max(0, progress)) }}
+                      />
+                    </View>
+                    <Text style={styles.progressHint}>{progressHint}</Text>
                   </View>
                   <Text style={styles.stepText}>{`${index + 1}/${total}`}</Text>
                 </View>
@@ -192,7 +210,7 @@ export function OnboardingScaffold({
               {onNext ? (
                 <PrimaryButton
                   label={nextLabel ?? '続ける'}
-                  onPress={onNext}
+                  onPress={handleNext}
                   disabled={nextDisabled}
                 />
               ) : null}
@@ -282,11 +300,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  progressColumn: {
+    flex: 1,
+    gap: 6,
+  },
   stepText: {
     ...textStyles.caption,
     color: colors.textSecondary,
     fontWeight: '600',
     fontFamily: fontFamilies.semibold,
+  },
+  progressHint: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
   },
   headerAction: {
     paddingHorizontal: 12,
