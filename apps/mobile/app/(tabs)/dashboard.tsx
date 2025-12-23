@@ -559,10 +559,8 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
 
   // 炎アニメーション（Pulse: スケール & 不透明度）
   const fireScale = useRef(new Animated.Value(1)).current;
-  const fireOpacity = useRef(new Animated.Value(0.9)).current;
-
-  // ぼかし数値の揺らめきアニメーション
-  const blurSway = useRef(new Animated.Value(0)).current;
+  const fireOpacity = useRef(new Animated.Value(0.75)).current;
+  const previewBarHeights = [5, 8, 6, 10, 7, 12, 9, 14, 11] as const;
 
   useEffect(() => {
     // 炎のPulseアニメーション
@@ -570,21 +568,7 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
       Animated.sequence([
         Animated.parallel([
           Animated.timing(fireScale, {
-            toValue: 1.15,
-            duration: 1200,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(fireOpacity, {
-            toValue: 1,
-            duration: 1200,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.parallel([
-          Animated.timing(fireScale, {
-            toValue: 1,
+            toValue: 1.06,
             duration: 1200,
             easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
@@ -596,39 +580,28 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
             useNativeDriver: true,
           }),
         ]),
+        Animated.parallel([
+          Animated.timing(fireScale, {
+            toValue: 1,
+            duration: 1200,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(fireOpacity, {
+            toValue: 0.7,
+            duration: 1200,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ]),
       ])
     );
     fireAnimation.start();
 
-    // ぼかし数値のSwayアニメーション
-    const swayAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(blurSway, {
-          toValue: 1,
-          duration: 2000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(blurSway, {
-          toValue: -1,
-          duration: 2000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    swayAnimation.start();
-
     return () => {
       fireAnimation.stop();
-      swayAnimation.stop();
     };
-  }, [fireScale, fireOpacity, blurSway]);
-
-  const swayTranslateX = blurSway.interpolate({
-    inputRange: [-1, 1],
-    outputRange: [-1.5, 1.5],
-  });
+  }, [fireScale, fireOpacity]);
 
   return (
     <View style={burningStyles.container}>
@@ -661,43 +634,41 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
       <Text style={burningStyles.title}>月間脂肪燃焼量</Text>
 
       {/* 炎アイコン（アニメーション付き） */}
-      <View style={burningStyles.fireContainer}>
-        <Animated.Text
+      <View style={burningStyles.fireContainer} pointerEvents="none">
+        <Animated.View
           style={[
-            burningStyles.fireEmoji,
+            burningStyles.fireIconWrap,
             {
               transform: [{ scale: fireScale }],
               opacity: fireOpacity,
             },
           ]}
         >
-          🔥
-        </Animated.Text>
+          <Feather name="fire" size={26} color="rgba(232,93,4,0.6)" />
+        </Animated.View>
       </View>
 
       {/* ティザー（数値はPREMIUMでアンロック） */}
       <View style={burningStyles.resultCard}>
         <View style={burningStyles.lockedResultRow}>
           <Text style={burningStyles.resultPrefix}>脂肪</Text>
-          <Animated.Text
-            style={[
-              burningStyles.blurredValue,
-              {
-                transform: [{ translateX: swayTranslateX }],
-              },
-            ]}
-          >
-            ◯◯
-          </Animated.Text>
-          <Text style={burningStyles.resultUnit}>kg</Text>
+          <View style={burningStyles.valuePill} pointerEvents="none">
+            <Text style={burningStyles.valuePillValue}>◯◯</Text>
+            <Text style={burningStyles.valuePillUnit}>kg</Text>
+          </View>
           <Text style={burningStyles.resultSuffix}>相当</Text>
         </View>
         <View style={burningStyles.previewRow} pointerEvents="none">
-          <View style={[burningStyles.previewPill, burningStyles.previewPillSm]} />
-          <View style={[burningStyles.previewPill, burningStyles.previewPillMd]} />
-          <View style={[burningStyles.previewPill, burningStyles.previewPillLg]} />
-          <View style={[burningStyles.previewPill, burningStyles.previewPillMd]} />
-          <View style={[burningStyles.previewPill, burningStyles.previewPillSm]} />
+          {previewBarHeights.map((height, index) => (
+            <View
+              key={`preview-bar-${index}`}
+              style={[
+                burningStyles.previewBar,
+                { height },
+                index === previewBarHeights.length - 1 ? burningStyles.previewBarHighlight : null,
+              ]}
+            />
+          ))}
         </View>
       </View>
 
@@ -851,23 +822,27 @@ const burningStyles = StyleSheet.create({
     paddingBottom: 2,
   },
   premiumBadge: {
-    backgroundColor: '#FF7043',
+    backgroundColor: 'rgba(232,93,4,0.12)',
+    borderColor: 'rgba(232,93,4,0.28)',
+    borderWidth: 1,
     borderRadius: 999,
+    height: 30,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   premiumBadgeText: {
-    color: '#FFFFFF',
+    color: '#E85D04',
     fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   helpCircle: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.65)',
-    borderColor: 'rgba(0,0,0,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    borderColor: 'rgba(232,93,4,0.14)',
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -875,7 +850,7 @@ const burningStyles = StyleSheet.create({
   helpCircleText: {
     fontSize: 15,
     fontWeight: '800',
-    color: 'rgba(0,0,0,0.55)',
+    color: 'rgba(232,93,4,0.62)',
   },
   title: {
     fontSize: 13,
@@ -890,11 +865,13 @@ const burningStyles = StyleSheet.create({
     height: 42,
     marginTop: 6,
   },
-  fireEmoji: {
-    fontSize: 34,
-    textShadowColor: 'rgba(255,120,60,0.3)',
-    textShadowOffset: { width: 0, height: 3 },
-    textShadowRadius: 8,
+  fireIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   resultCard: {
     backgroundColor: 'rgba(255,255,255,0.9)',
@@ -923,28 +900,39 @@ const burningStyles = StyleSheet.create({
   },
   lockedResultRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'center',
   },
   resultPrefix: {
     fontSize: 12,
     fontWeight: '600',
     color: '#2C2C2E',
-    marginRight: 6,
+    marginRight: 8,
   },
-  blurredValue: {
-    fontSize: 20,
+  valuePill: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    backgroundColor: 'rgba(232,93,4,0.10)',
+    borderColor: 'rgba(232,93,4,0.18)',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginRight: 8,
+  },
+  valuePillValue: {
+    fontSize: 18,
     fontWeight: '800',
-    color: '#FF6B35',
-    opacity: 0.75,
-    marginRight: 6,
-    letterSpacing: 1.5,
+    color: '#E85D04',
+    opacity: 0.55,
+    letterSpacing: 0,
   },
-  resultUnit: {
+  valuePillUnit: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#2C2C2E',
-    marginRight: 4,
+    fontWeight: '700',
+    color: '#E85D04',
+    opacity: 0.7,
+    marginLeft: 0,
   },
   resultHighlight: {
     fontSize: 12,
@@ -958,25 +946,19 @@ const burningStyles = StyleSheet.create({
   },
   previewRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'center',
     marginTop: 10,
     opacity: 0.55,
   },
-  previewPill: {
-    height: 10,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,107,53,0.35)',
-    marginHorizontal: 4,
+  previewBar: {
+    width: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(232,93,4,0.38)',
+    marginHorizontal: 3,
   },
-  previewPillSm: {
-    width: 10,
-  },
-  previewPillMd: {
-    width: 16,
-  },
-  previewPillLg: {
-    width: 22,
+  previewBarHighlight: {
+    backgroundColor: 'rgba(232,93,4,0.55)',
   },
   ctaButton: {
     flexDirection: 'row',
