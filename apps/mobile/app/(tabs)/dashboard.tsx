@@ -545,7 +545,7 @@ function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardP
       <Text style={[styles.monthlyValue, { color: valueColor }]}>{displayValue}</Text>
       <MonthlyProgressMeter progress={progress} isLoading={isLoading} />
 
-      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="unlocked" />
+      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} />
     </View>
   );
 }
@@ -712,7 +712,7 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
         </Text>
       </TouchableOpacity>
 
-      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="locked" />
+      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} />
     </View>
   );
 }
@@ -720,10 +720,11 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
 interface MonthlyDeficitHelpModalProps {
   visible: boolean;
   onClose: () => void;
-  mode?: 'locked' | 'unlocked';
 }
 
-function MonthlyDeficitHelpModal({ visible, onClose, mode = 'unlocked' }: MonthlyDeficitHelpModalProps) {
+function MonthlyDeficitHelpModal({ visible, onClose }: MonthlyDeficitHelpModalProps) {
+  const exampleBarHeights = [6, 9, 8, 11, 10, 13, 12, 15, 14, 17, 16, 18] as const;
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={burningStyles.modalBackdrop} activeOpacity={1} onPress={onClose}>
@@ -752,58 +753,73 @@ function MonthlyDeficitHelpModal({ visible, onClose, mode = 'unlocked' }: Monthl
                 <Text style={burningStyles.highlightText}>7,200kcal</Text> 貯まるごとに
                 <Text style={burningStyles.highlightText}>脂肪1kg</Text>の減少に相当します。
               </Text>
-              {mode === 'locked' ? (
-                <Text style={burningStyles.descriptionNoteText}>
-                  <Text style={burningStyles.highlightText}>※PREMIUM</Text>であなたの数値・推移が表示されます。
-                </Text>
-              ) : null}
             </View>
-	            {/* Compact Diagram */}
-	            <View style={burningStyles.diagramBox}>
-	              <Text style={burningStyles.diagramTitle}>計算イメージ</Text>
+		            {/* Compact Diagram */}
+		            <View style={burningStyles.diagramBox}>
+		              <Text style={burningStyles.diagramTitle}>計算イメージ（例）</Text>
 
-              <View style={burningStyles.calculationRow}>
-                <View style={burningStyles.calcBox}>
-                  <Text style={burningStyles.calcLabel}>目標</Text>
+                  <View style={burningStyles.exampleChart} pointerEvents="none">
+                    <View style={burningStyles.exampleBars}>
+                      {exampleBarHeights.map((height, index) => (
+                        <View
+                          key={`bar-${index}`}
+                          style={[
+                            burningStyles.exampleBar,
+                            { height },
+                            index === exampleBarHeights.length - 1 ? burningStyles.exampleBarHighlight : null,
+                          ]}
+                        />
+                      ))}
+                    </View>
+                    <Image
+                      source={require('../../assets/illustrations/fat_character.png')}
+                      style={burningStyles.exampleChartMascot}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+	              <View style={burningStyles.calculationRow}>
+	                <View style={burningStyles.calcBox}>
+	                  <Text style={burningStyles.calcLabel}>目標</Text>
                   <Text
                     style={burningStyles.calcValue}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.85}
-	                  >
-	                    ◯◯◯◯
-	                  </Text>
-	                </View>
-	                <Text style={burningStyles.calcOperator}>−</Text>
-	                <View style={burningStyles.calcBox}>
+	                    numberOfLines={1}
+	                    adjustsFontSizeToFit
+	                    minimumFontScale={0.85}
+		                  >
+		                    2,000kcal
+		                  </Text>
+		                </View>
+		                <Text style={burningStyles.calcOperator}>−</Text>
+		                <View style={burningStyles.calcBox}>
 	                  <Text style={burningStyles.calcLabel}>摂取</Text>
                   <Text
                     style={burningStyles.calcValue}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.85}
-	                  >
-	                    ◯◯◯◯
-	                  </Text>
-	                </View>
-	                <Text style={burningStyles.calcOperator}>=</Text>
-	                <View style={burningStyles.calcBox}>
+	                    numberOfLines={1}
+	                    adjustsFontSizeToFit
+	                    minimumFontScale={0.85}
+		                  >
+		                    1,760kcal
+		                  </Text>
+		                </View>
+		                <Text style={burningStyles.calcOperator}>=</Text>
+		                <View style={burningStyles.calcBox}>
 	                  <Text style={burningStyles.calcLabel}>燃焼</Text>
                   <Text
                     style={burningStyles.calcValue}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.85}
-	                  >
-	                    ◯◯◯
-	                  </Text>
-	                </View>
-	              </View>
-	              <View style={burningStyles.monthlyResultBox}>
-	                <Text style={burningStyles.monthlyResultText}>月間合計 = ◯◯◯◯ kcal 🔥</Text>
-	              </View>
-	              <Text style={burningStyles.noteText}>※一ヶ月分を積み上げたイメージ</Text>
-	            </View>
+	                    numberOfLines={1}
+	                    adjustsFontSizeToFit
+	                    minimumFontScale={0.85}
+		                  >
+		                    240kcal
+		                  </Text>
+		                </View>
+		              </View>
+		              <View style={burningStyles.monthlyResultBox}>
+		                <Text style={burningStyles.monthlyResultText}>月間合計 = 7,200kcal 🔥</Text>
+		              </View>
+		              <Text style={burningStyles.noteText}>※上の例を1ヶ月分積み上げたイメージ</Text>
+		            </View>
 
             <TouchableOpacity style={burningStyles.modalCloseBtn} onPress={onClose}>
               <Text style={burningStyles.modalCloseBtnText}>閉じる</Text>
@@ -1035,12 +1051,6 @@ const burningStyles = StyleSheet.create({
     color: '#2C2C2E',
     lineHeight: 21,
   },
-  descriptionNoteText: {
-    marginTop: 10,
-    fontSize: 12,
-    color: '#2C2C2E',
-    lineHeight: 18,
-  },
   highlightText: {
     color: '#FF7043',
     fontWeight: '700',
@@ -1057,6 +1067,35 @@ const burningStyles = StyleSheet.create({
     marginBottom: 10,
     textAlign: 'center',
     fontWeight: '600',
+  },
+  exampleChart: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,112,67,0.10)',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  exampleBars: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    marginRight: 10,
+  },
+  exampleBar: {
+    width: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,112,67,0.55)',
+  },
+  exampleBarHighlight: {
+    backgroundColor: '#FF7043',
+  },
+  exampleChartMascot: {
+    width: 26,
+    height: 26,
+    opacity: 0.92,
   },
   calculationRow: {
     flexDirection: 'row',
