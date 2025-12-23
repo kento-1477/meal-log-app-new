@@ -545,7 +545,7 @@ function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardP
       <Text style={[styles.monthlyValue, { color: valueColor }]}>{displayValue}</Text>
       <MonthlyProgressMeter progress={progress} isLoading={isLoading} />
 
-      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} />
+      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="unlocked" />
     </View>
   );
 }
@@ -559,8 +559,10 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
 
   // 炎アニメーション（Pulse: スケール & 不透明度）
   const fireScale = useRef(new Animated.Value(1)).current;
-  const fireOpacity = useRef(new Animated.Value(0.75)).current;
-  const previewBarHeights = [5, 8, 6, 10, 7, 12, 9, 14, 11] as const;
+  const fireOpacity = useRef(new Animated.Value(0.9)).current;
+
+  // ぼかし数値の揺らめきアニメーション
+  const blurSway = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     // 炎のPulseアニメーション
@@ -568,13 +570,13 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
       Animated.sequence([
         Animated.parallel([
           Animated.timing(fireScale, {
-            toValue: 1.06,
+            toValue: 1.15,
             duration: 1200,
             easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
           }),
           Animated.timing(fireOpacity, {
-            toValue: 0.85,
+            toValue: 1,
             duration: 1200,
             easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
@@ -588,7 +590,7 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
             useNativeDriver: true,
           }),
           Animated.timing(fireOpacity, {
-            toValue: 0.7,
+            toValue: 0.85,
             duration: 1200,
             easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
@@ -598,10 +600,35 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
     );
     fireAnimation.start();
 
+    // ぼかし数値のSwayアニメーション
+    const swayAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(blurSway, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(blurSway, {
+          toValue: -1,
+          duration: 2000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    swayAnimation.start();
+
     return () => {
       fireAnimation.stop();
+      swayAnimation.stop();
     };
-  }, [fireScale, fireOpacity]);
+  }, [fireScale, fireOpacity, blurSway]);
+
+  const swayTranslateX = blurSway.interpolate({
+    inputRange: [-1, 1],
+    outputRange: [-1.5, 1.5],
+  });
 
   return (
     <View style={burningStyles.container}>
@@ -634,41 +661,43 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
       <Text style={burningStyles.title}>月間脂肪燃焼量</Text>
 
       {/* 炎アイコン（アニメーション付き） */}
-      <View style={burningStyles.fireContainer} pointerEvents="none">
-        <Animated.View
+      <View style={burningStyles.fireContainer}>
+        <Animated.Text
           style={[
-            burningStyles.fireIconWrap,
+            burningStyles.fireEmoji,
             {
               transform: [{ scale: fireScale }],
               opacity: fireOpacity,
             },
           ]}
         >
-          <Feather name="fire" size={26} color="rgba(232,93,4,0.6)" />
-        </Animated.View>
+          🔥
+        </Animated.Text>
       </View>
 
       {/* ティザー（数値はPREMIUMでアンロック） */}
       <View style={burningStyles.resultCard}>
         <View style={burningStyles.lockedResultRow}>
           <Text style={burningStyles.resultPrefix}>脂肪</Text>
-          <View style={burningStyles.valuePill} pointerEvents="none">
-            <Text style={burningStyles.valuePillValue}>◯◯</Text>
-            <Text style={burningStyles.valuePillUnit}>kg</Text>
-          </View>
+          <Animated.Text
+            style={[
+              burningStyles.blurredValue,
+              {
+                transform: [{ translateX: swayTranslateX }],
+              },
+            ]}
+          >
+            ◯◯
+          </Animated.Text>
+          <Text style={burningStyles.resultUnit}>kg</Text>
           <Text style={burningStyles.resultSuffix}>相当</Text>
         </View>
         <View style={burningStyles.previewRow} pointerEvents="none">
-          {previewBarHeights.map((height, index) => (
-            <View
-              key={`preview-bar-${index}`}
-              style={[
-                burningStyles.previewBar,
-                { height },
-                index === previewBarHeights.length - 1 ? burningStyles.previewBarHighlight : null,
-              ]}
-            />
-          ))}
+          <View style={[burningStyles.previewPill, burningStyles.previewPillSm]} />
+          <View style={[burningStyles.previewPill, burningStyles.previewPillMd]} />
+          <View style={[burningStyles.previewPill, burningStyles.previewPillLg]} />
+          <View style={[burningStyles.previewPill, burningStyles.previewPillMd]} />
+          <View style={[burningStyles.previewPill, burningStyles.previewPillSm]} />
         </View>
       </View>
 
@@ -683,7 +712,7 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
         </Text>
       </TouchableOpacity>
 
-      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} />
+      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="locked" />
     </View>
   );
 }
@@ -691,11 +720,10 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
 interface MonthlyDeficitHelpModalProps {
   visible: boolean;
   onClose: () => void;
+  mode?: 'locked' | 'unlocked';
 }
 
-function MonthlyDeficitHelpModal({ visible, onClose }: MonthlyDeficitHelpModalProps) {
-  const exampleBarHeights = [6, 9, 8, 11, 10, 13, 12, 15, 14, 17, 16, 18] as const;
-
+function MonthlyDeficitHelpModal({ visible, onClose, mode = 'unlocked' }: MonthlyDeficitHelpModalProps) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={burningStyles.modalBackdrop} activeOpacity={1} onPress={onClose}>
@@ -724,73 +752,58 @@ function MonthlyDeficitHelpModal({ visible, onClose }: MonthlyDeficitHelpModalPr
                 <Text style={burningStyles.highlightText}>7,200kcal</Text> 貯まるごとに
                 <Text style={burningStyles.highlightText}>脂肪1kg</Text>の減少に相当します。
               </Text>
+              {mode === 'locked' ? (
+                <Text style={burningStyles.descriptionNoteText}>
+                  <Text style={burningStyles.highlightText}>※PREMIUM</Text>であなたの数値・推移が表示されます。
+                </Text>
+              ) : null}
             </View>
-		            {/* Compact Diagram */}
-		            <View style={burningStyles.diagramBox}>
-		              <Text style={burningStyles.diagramTitle}>計算イメージ（例）</Text>
+	            {/* Compact Diagram */}
+	            <View style={burningStyles.diagramBox}>
+	              <Text style={burningStyles.diagramTitle}>計算イメージ</Text>
 
-                  <View style={burningStyles.exampleChart} pointerEvents="none">
-                    <View style={burningStyles.exampleBars}>
-                      {exampleBarHeights.map((height, index) => (
-                        <View
-                          key={`bar-${index}`}
-                          style={[
-                            burningStyles.exampleBar,
-                            { height },
-                            index === exampleBarHeights.length - 1 ? burningStyles.exampleBarHighlight : null,
-                          ]}
-                        />
-                      ))}
-                    </View>
-                    <Image
-                      source={require('../../assets/illustrations/fat_character.png')}
-                      style={burningStyles.exampleChartMascot}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-	              <View style={burningStyles.calculationRow}>
-	                <View style={burningStyles.calcBox}>
-	                  <Text style={burningStyles.calcLabel}>目標</Text>
+              <View style={burningStyles.calculationRow}>
+                <View style={burningStyles.calcBox}>
+                  <Text style={burningStyles.calcLabel}>目標</Text>
                   <Text
                     style={burningStyles.calcValue}
-	                    numberOfLines={1}
-	                    adjustsFontSizeToFit
-	                    minimumFontScale={0.85}
-		                  >
-		                    2,000kcal
-		                  </Text>
-		                </View>
-		                <Text style={burningStyles.calcOperator}>−</Text>
-		                <View style={burningStyles.calcBox}>
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+	                  >
+	                    ◯◯◯◯
+	                  </Text>
+	                </View>
+	                <Text style={burningStyles.calcOperator}>−</Text>
+	                <View style={burningStyles.calcBox}>
 	                  <Text style={burningStyles.calcLabel}>摂取</Text>
                   <Text
                     style={burningStyles.calcValue}
-	                    numberOfLines={1}
-	                    adjustsFontSizeToFit
-	                    minimumFontScale={0.85}
-		                  >
-		                    1,760kcal
-		                  </Text>
-		                </View>
-		                <Text style={burningStyles.calcOperator}>=</Text>
-		                <View style={burningStyles.calcBox}>
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+	                  >
+	                    ◯◯◯◯
+	                  </Text>
+	                </View>
+	                <Text style={burningStyles.calcOperator}>=</Text>
+	                <View style={burningStyles.calcBox}>
 	                  <Text style={burningStyles.calcLabel}>燃焼</Text>
                   <Text
                     style={burningStyles.calcValue}
-	                    numberOfLines={1}
-	                    adjustsFontSizeToFit
-	                    minimumFontScale={0.85}
-		                  >
-		                    240kcal
-		                  </Text>
-		                </View>
-		              </View>
-		              <View style={burningStyles.monthlyResultBox}>
-		                <Text style={burningStyles.monthlyResultText}>月間合計 = 7,200kcal 🔥</Text>
-		              </View>
-		              <Text style={burningStyles.noteText}>※上の例を1ヶ月分積み上げたイメージ</Text>
-		            </View>
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+	                  >
+	                    ◯◯◯
+	                  </Text>
+	                </View>
+	              </View>
+	              <View style={burningStyles.monthlyResultBox}>
+	                <Text style={burningStyles.monthlyResultText}>月間合計 = ◯◯◯◯ kcal 🔥</Text>
+	              </View>
+	              <Text style={burningStyles.noteText}>※一ヶ月分を積み上げたイメージ</Text>
+	            </View>
 
             <TouchableOpacity style={burningStyles.modalCloseBtn} onPress={onClose}>
               <Text style={burningStyles.modalCloseBtnText}>閉じる</Text>
@@ -822,27 +835,23 @@ const burningStyles = StyleSheet.create({
     paddingBottom: 2,
   },
   premiumBadge: {
-    backgroundColor: 'rgba(232,93,4,0.12)',
-    borderColor: 'rgba(232,93,4,0.28)',
-    borderWidth: 1,
+    backgroundColor: '#FF7043',
     borderRadius: 999,
-    height: 30,
     paddingHorizontal: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 6,
   },
   premiumBadgeText: {
-    color: '#E85D04',
+    color: '#FFFFFF',
     fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   helpCircle: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.72)',
-    borderColor: 'rgba(232,93,4,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.65)',
+    borderColor: 'rgba(0,0,0,0.08)',
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -850,7 +859,7 @@ const burningStyles = StyleSheet.create({
   helpCircleText: {
     fontSize: 15,
     fontWeight: '800',
-    color: 'rgba(232,93,4,0.62)',
+    color: 'rgba(0,0,0,0.55)',
   },
   title: {
     fontSize: 13,
@@ -865,13 +874,11 @@ const burningStyles = StyleSheet.create({
     height: 42,
     marginTop: 6,
   },
-  fireIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(255,255,255,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  fireEmoji: {
+    fontSize: 34,
+    textShadowColor: 'rgba(255,120,60,0.3)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 8,
   },
   resultCard: {
     backgroundColor: 'rgba(255,255,255,0.9)',
@@ -900,39 +907,28 @@ const burningStyles = StyleSheet.create({
   },
   lockedResultRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
     justifyContent: 'center',
   },
   resultPrefix: {
     fontSize: 12,
     fontWeight: '600',
     color: '#2C2C2E',
-    marginRight: 8,
+    marginRight: 6,
   },
-  valuePill: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    backgroundColor: 'rgba(232,93,4,0.10)',
-    borderColor: 'rgba(232,93,4,0.18)',
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    marginRight: 8,
-  },
-  valuePillValue: {
-    fontSize: 18,
+  blurredValue: {
+    fontSize: 20,
     fontWeight: '800',
-    color: '#E85D04',
-    opacity: 0.55,
-    letterSpacing: 0,
+    color: '#FF6B35',
+    opacity: 0.75,
+    marginRight: 6,
+    letterSpacing: 1.5,
   },
-  valuePillUnit: {
+  resultUnit: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#E85D04',
-    opacity: 0.7,
-    marginLeft: 0,
+    fontWeight: '600',
+    color: '#2C2C2E',
+    marginRight: 4,
   },
   resultHighlight: {
     fontSize: 12,
@@ -946,19 +942,25 @@ const burningStyles = StyleSheet.create({
   },
   previewRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'center',
     marginTop: 10,
     opacity: 0.55,
   },
-  previewBar: {
-    width: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(232,93,4,0.38)',
-    marginHorizontal: 3,
+  previewPill: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,107,53,0.35)',
+    marginHorizontal: 4,
   },
-  previewBarHighlight: {
-    backgroundColor: 'rgba(232,93,4,0.55)',
+  previewPillSm: {
+    width: 10,
+  },
+  previewPillMd: {
+    width: 16,
+  },
+  previewPillLg: {
+    width: 22,
   },
   ctaButton: {
     flexDirection: 'row',
@@ -1033,6 +1035,12 @@ const burningStyles = StyleSheet.create({
     color: '#2C2C2E',
     lineHeight: 21,
   },
+  descriptionNoteText: {
+    marginTop: 10,
+    fontSize: 12,
+    color: '#2C2C2E',
+    lineHeight: 18,
+  },
   highlightText: {
     color: '#FF7043',
     fontWeight: '700',
@@ -1049,35 +1057,6 @@ const burningStyles = StyleSheet.create({
     marginBottom: 10,
     textAlign: 'center',
     fontWeight: '600',
-  },
-  exampleChart: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,112,67,0.10)',
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-  },
-  exampleBars: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    marginRight: 10,
-  },
-  exampleBar: {
-    width: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,112,67,0.55)',
-  },
-  exampleBarHighlight: {
-    backgroundColor: '#FF7043',
-  },
-  exampleChartMascot: {
-    width: 26,
-    height: 26,
-    opacity: 0.92,
   },
   calculationRow: {
     flexDirection: 'row',
