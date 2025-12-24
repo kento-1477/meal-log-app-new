@@ -218,12 +218,12 @@ export default function DashboardScreen() {
         const draft = log.ai_raw
           ? buildFavoriteDraftFromSummary(log)
           : await (async () => {
-              try {
-                return buildFavoriteDraftFromDetail((await getMealLogDetail(log.id)).item);
-              } catch (_error) {
-                return buildFavoriteDraftFromSummary(log);
-              }
-            })();
+            try {
+              return buildFavoriteDraftFromDetail((await getMealLogDetail(log.id)).item);
+            } catch (_error) {
+              return buildFavoriteDraftFromSummary(log);
+            }
+          })();
         await createFavoriteMeal(draft);
       } else if (log.favorite_meal_id) {
         await deleteFavoriteMeal(log.favorite_meal_id);
@@ -507,143 +507,38 @@ function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardP
   }, 0);
 
   const hasMonthlyData = monthlySummary !== null;
-  const displayValue = hasMonthlyData ? formatDelta(-totalDeficit) : '-- kcal';
-  const valueColor = hasMonthlyData
-    ? totalDeficit > 0
-      ? colors.success
-      : totalDeficit < 0
-        ? colors.error
-        : colors.textSecondary
-    : colors.textSecondary;
 
-  const maxAccumulation = dailyEntries.length * targetDaily;
-  const progress = maxAccumulation > 0 ? Math.min(totalDeficit / maxAccumulation, 1) : 0;
+  // kg換算: 7200kcal = 1kg
+  const fatKg = Math.abs(totalDeficit) / 7200;
+  const displayKg = hasMonthlyData ? fatKg.toFixed(1) : '--';
+  const displayKcal = hasMonthlyData
+    ? (totalDeficit >= 0 ? `-${Math.abs(totalDeficit).toLocaleString()}` : `+${Math.abs(totalDeficit).toLocaleString()}`)
+    : '--';
+
+  // ペース判定
+  const daysElapsed = dailyEntries.length;
+  const expectedDeficitPerDay = targetDaily * 0.15; // 目標の15%削減を基準
+  const expectedTotal = expectedDeficitPerDay * daysElapsed;
+  const paceStatus = totalDeficit >= expectedTotal * 0.8 ? '順調✓' : '頑張り中';
+
   const isLoading = monthlySummaryQuery.isLoading && !monthlySummary;
 
   return (
-    <View style={[styles.metricCardContent, styles.monthlyCard]}>
-      <View style={styles.monthlyHeader}>
-        <View style={styles.monthlyHeaderLeft}>
-          <Feather name="unlock" size={14} color={colors.success} />
-          <Text style={styles.monthlyWhereLabel}>{t('dashboard.monthlyDeficit.premiumOnly')}</Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => setHelpVisible(true)}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityLabel="月間脂肪燃焼量の説明"
-          accessibilityRole="button"
-        >
-          <Feather name="help-circle" size={18} color={colors.textTertiary} />
-        </TouchableOpacity>
-      </View>
-      <Text
-        style={styles.monthlyLabelMultiline}
-        numberOfLines={1}
-      >
-        月間脂肪燃焼量
-      </Text>
-      <Text style={[styles.monthlyValue, { color: valueColor }]}>{displayValue}</Text>
-      <MonthlyProgressMeter progress={progress} isLoading={isLoading} />
-
-      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="unlocked" />
-    </View>
-  );
-}
-
-interface MonthlyDeficitLockedCardProps {
-  onUpgrade: () => void;
-}
-
-function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) {
-  const [helpVisible, setHelpVisible] = useState(false);
-
-  // 炎アニメーション（Pulse: スケール & 不透明度）
-  const fireScale = useRef(new Animated.Value(1)).current;
-  const fireOpacity = useRef(new Animated.Value(0.9)).current;
-
-  // ぼかし数値の揺らめきアニメーション
-  const blurSway = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    // 炎のPulseアニメーション
-    const fireAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(fireScale, {
-            toValue: 1.15,
-            duration: 1200,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(fireOpacity, {
-            toValue: 1,
-            duration: 1200,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.parallel([
-          Animated.timing(fireScale, {
-            toValue: 1,
-            duration: 1200,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(fireOpacity, {
-            toValue: 0.85,
-            duration: 1200,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-        ]),
-      ])
-    );
-    fireAnimation.start();
-
-    // ぼかし数値のSwayアニメーション
-    const swayAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(blurSway, {
-          toValue: 1,
-          duration: 2000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(blurSway, {
-          toValue: -1,
-          duration: 2000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    swayAnimation.start();
-
-    return () => {
-      fireAnimation.stop();
-      swayAnimation.stop();
-    };
-  }, [fireScale, fireOpacity, blurSway]);
-
-  const swayTranslateX = blurSway.interpolate({
-    inputRange: [-1, 1],
-    outputRange: [-1.5, 1.5],
-  });
-
-  return (
     <View style={burningStyles.container}>
-      {/* 背景グラデーション */}
       <LinearGradient
-        colors={['#FFF8F0', '#FFE8D6', '#FFDCC8']}
+        colors={['#FFF8F0', '#FFF4EC', '#FFEFE4']}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
         style={burningStyles.gradientBg}
       />
 
-      {/* ヘッダー: PREMIUMバッジ + ヘルプアイコン */}
+      {/* ヘッダー: タイトル + ヘルプアイコン */}
       <View style={burningStyles.header}>
-        <View style={burningStyles.premiumBadge}>
-          <Text style={burningStyles.premiumBadgeText}>PREMIUM限定</Text>
+        <View style={burningStyles.headerTitle}>
+          <View style={burningStyles.fireIconContainer}>
+            <Text style={burningStyles.fireIconSmall}>🔥</Text>
+          </View>
+          <Text style={burningStyles.headerTitleText}>月間脂肪燃焼量</Text>
         </View>
         <TouchableOpacity
           onPress={() => setHelpVisible(true)}
@@ -657,59 +552,104 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
         </TouchableOpacity>
       </View>
 
-      {/* タイトル */}
-      <Text style={burningStyles.title}>月間脂肪燃焼量</Text>
-
-      {/* 炎アイコン（アニメーション付き） */}
-      <View style={burningStyles.fireContainer}>
-        <Animated.Text
-          style={[
-            burningStyles.fireEmoji,
-            {
-              transform: [{ scale: fireScale }],
-              opacity: fireOpacity,
-            },
-          ]}
-        >
-          🔥
-        </Animated.Text>
+      {/* メインコンテンツ */}
+      <View style={burningStyles.premiumCard}>
+        {isLoading ? (
+          <ActivityIndicator size="small" color="#FF7043" />
+        ) : (
+          <>
+            <View style={burningStyles.sampleValueRow}>
+              <Text style={burningStyles.samplePrefix}>脂肪</Text>
+              <Text style={burningStyles.sampleNumber}>{displayKg}</Text>
+              <Text style={burningStyles.sampleUnit}>kg</Text>
+              <Text style={burningStyles.sampleSuffix}>相当</Text>
+            </View>
+            <View style={burningStyles.sampleDetailRow}>
+              <Text style={burningStyles.sampleDetail}>累計 {displayKcal}kcal</Text>
+              <Text style={burningStyles.sampleDetailSeparator}>  </Text>
+              <Text style={burningStyles.sampleDetail}>ペース {paceStatus}</Text>
+            </View>
+          </>
+        )}
       </View>
 
-      {/* ティザー（数値はPREMIUMでアンロック） */}
-      <View style={burningStyles.resultCard}>
-        <View style={burningStyles.lockedResultRow}>
-          <Text style={burningStyles.resultPrefix}>脂肪</Text>
-          <Animated.Text
-            style={[
-              burningStyles.blurredValue,
-              {
-                transform: [{ translateX: swayTranslateX }],
-              },
-            ]}
-          >
-            ◯◯
-          </Animated.Text>
-          <Text style={burningStyles.resultUnit}>kg</Text>
-          <Text style={burningStyles.resultSuffix}>相当</Text>
+      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="unlocked" />
+    </View>
+  );
+}
+
+interface MonthlyDeficitLockedCardProps {
+  onUpgrade: () => void;
+}
+
+function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) {
+  const [helpVisible, setHelpVisible] = useState(false);
+
+  return (
+    <View style={burningStyles.container}>
+      {/* 背景グラデーション */}
+      <LinearGradient
+        colors={['#FFF8F0', '#FFF4EC', '#FFEFE4']}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={burningStyles.gradientBg}
+      />
+
+      {/* ヘッダー: タイトル + ヘルプアイコン */}
+      <View style={burningStyles.header}>
+        <View style={burningStyles.headerTitle}>
+          <View style={burningStyles.fireIconContainer}>
+            <Text style={burningStyles.fireIconSmall}>🔥</Text>
+          </View>
+          <Text style={burningStyles.headerTitleText}>月間脂肪燃焼量</Text>
         </View>
-        <View style={burningStyles.previewRow} pointerEvents="none">
-          <View style={[burningStyles.previewPill, burningStyles.previewPillSm]} />
-          <View style={[burningStyles.previewPill, burningStyles.previewPillMd]} />
-          <View style={[burningStyles.previewPill, burningStyles.previewPillLg]} />
-          <View style={[burningStyles.previewPill, burningStyles.previewPillMd]} />
-          <View style={[burningStyles.previewPill, burningStyles.previewPillSm]} />
+        <TouchableOpacity
+          onPress={() => setHelpVisible(true)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityLabel="月間脂肪燃焼量の説明"
+          accessibilityRole="button"
+        >
+          <View style={burningStyles.helpCircle} pointerEvents="none">
+            <Text style={burningStyles.helpCircleText}>?</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* プレビュー説明テキスト */}
+      <Text style={burningStyles.previewHint}>解放するとこんな表示に ↓</Text>
+
+      {/* SAMPLEプレビューカード */}
+      <View style={burningStyles.sampleCard}>
+        <View style={burningStyles.sampleBadge}>
+          <Text style={burningStyles.sampleBadgeText}>SAMPLE</Text>
         </View>
+        <View style={burningStyles.sampleValueRow}>
+          <Text style={burningStyles.samplePrefix}>脂肪</Text>
+          <Text style={burningStyles.sampleNumber}>0.8</Text>
+          <Text style={burningStyles.sampleUnit}>kg</Text>
+          <Text style={burningStyles.sampleSuffix}>相当</Text>
+        </View>
+        <View style={burningStyles.sampleDetailRow}>
+          <Text style={burningStyles.sampleDetail}>累計 -5,600kcal</Text>
+          <Text style={burningStyles.sampleDetailSeparator}>  </Text>
+          <Text style={burningStyles.sampleDetail}>ペース 順調✓</Text>
+        </View>
+      </View>
+
+      {/* 区切り線 */}
+      <View style={burningStyles.dividerRow}>
+        <View style={burningStyles.dividerLine} />
+        <Text style={burningStyles.dividerText}>🔒 プレミアム限定</Text>
+        <View style={burningStyles.dividerLine} />
       </View>
 
       {/* CTAボタン */}
       <TouchableOpacity
-        style={burningStyles.ctaButton}
+        style={burningStyles.ctaButtonNew}
         onPress={onUpgrade}
         activeOpacity={0.8}
       >
-        <Text style={burningStyles.ctaLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.9}>
-          プレミアムで解放
-        </Text>
+        <Text style={burningStyles.ctaLabelNew}>✨ プレミアムで解放</Text>
       </TouchableOpacity>
 
       <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="locked" />
@@ -758,9 +698,9 @@ function MonthlyDeficitHelpModal({ visible, onClose, mode = 'unlocked' }: Monthl
                 </Text>
               ) : null}
             </View>
-	            {/* Compact Diagram */}
-	            <View style={burningStyles.diagramBox}>
-	              <Text style={burningStyles.diagramTitle}>計算イメージ</Text>
+            {/* Compact Diagram */}
+            <View style={burningStyles.diagramBox}>
+              <Text style={burningStyles.diagramTitle}>計算イメージ</Text>
 
               <View style={burningStyles.calculationRow}>
                 <View style={burningStyles.calcBox}>
@@ -770,40 +710,40 @@ function MonthlyDeficitHelpModal({ visible, onClose, mode = 'unlocked' }: Monthl
                     numberOfLines={1}
                     adjustsFontSizeToFit
                     minimumFontScale={0.85}
-	                  >
-	                    ◯◯◯◯
-	                  </Text>
-	                </View>
-	                <Text style={burningStyles.calcOperator}>−</Text>
-	                <View style={burningStyles.calcBox}>
-	                  <Text style={burningStyles.calcLabel}>摂取</Text>
+                  >
+                    ◯◯◯◯
+                  </Text>
+                </View>
+                <Text style={burningStyles.calcOperator}>−</Text>
+                <View style={burningStyles.calcBox}>
+                  <Text style={burningStyles.calcLabel}>摂取</Text>
                   <Text
                     style={burningStyles.calcValue}
                     numberOfLines={1}
                     adjustsFontSizeToFit
                     minimumFontScale={0.85}
-	                  >
-	                    ◯◯◯◯
-	                  </Text>
-	                </View>
-	                <Text style={burningStyles.calcOperator}>=</Text>
-	                <View style={burningStyles.calcBox}>
-	                  <Text style={burningStyles.calcLabel}>燃焼</Text>
+                  >
+                    ◯◯◯◯
+                  </Text>
+                </View>
+                <Text style={burningStyles.calcOperator}>=</Text>
+                <View style={burningStyles.calcBox}>
+                  <Text style={burningStyles.calcLabel}>燃焼</Text>
                   <Text
                     style={burningStyles.calcValue}
                     numberOfLines={1}
                     adjustsFontSizeToFit
                     minimumFontScale={0.85}
-	                  >
-	                    ◯◯◯
-	                  </Text>
-	                </View>
-	              </View>
-	              <View style={burningStyles.monthlyResultBox}>
-	                <Text style={burningStyles.monthlyResultText}>月間合計 = ◯◯◯◯ kcal 🔥</Text>
-	              </View>
-	              <Text style={burningStyles.noteText}>※一ヶ月分を積み上げたイメージ</Text>
-	            </View>
+                  >
+                    ◯◯◯
+                  </Text>
+                </View>
+              </View>
+              <View style={burningStyles.monthlyResultBox}>
+                <Text style={burningStyles.monthlyResultText}>月間合計 = ◯◯◯◯ kcal 🔥</Text>
+              </View>
+              <Text style={burningStyles.noteText}>※一ヶ月分を積み上げたイメージ</Text>
+            </View>
 
             <TouchableOpacity style={burningStyles.modalCloseBtn} onPress={onClose}>
               <Text style={burningStyles.modalCloseBtnText}>閉じる</Text>
@@ -986,6 +926,159 @@ const burningStyles = StyleSheet.create({
     color: '#E85D04',
     fontSize: 13,
     fontWeight: '800',
+  },
+  // 案F: Header with title
+  headerTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerTitleText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#2C2C2E',
+  },
+  fireIconContainer: {
+    width: 28,
+    height: 28,
+    backgroundColor: 'rgba(255, 240, 230, 0.9)',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fireIconSmall: {
+    fontSize: 16,
+  },
+  // 案F: Preview hint text
+  previewHint: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  // 案F: Sample preview card
+  sampleCard: {
+    backgroundColor: 'rgba(255, 248, 244, 0.95)',
+    borderColor: 'rgba(255, 140, 100, 0.2)',
+    borderWidth: 1,
+    borderRadius: 14,
+    marginHorizontal: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  sampleBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 10,
+    backgroundColor: 'rgba(255, 112, 67, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  sampleBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#FF7043',
+    letterSpacing: 0.5,
+  },
+  sampleValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  samplePrefix: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#666',
+    marginRight: 6,
+  },
+  sampleNumber: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FF7043',
+  },
+  sampleUnit: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#444',
+    marginLeft: 2,
+  },
+  sampleSuffix: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#666',
+    marginLeft: 4,
+  },
+  sampleDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sampleDetail: {
+    fontSize: 11,
+    color: '#888',
+  },
+  sampleDetailSeparator: {
+    fontSize: 11,
+    color: '#CCC',
+    marginHorizontal: 6,
+  },
+  // 案F: Divider with lock
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.08)',
+  },
+  dividerText: {
+    fontSize: 11,
+    color: '#AAA',
+    marginHorizontal: 10,
+  },
+  // 案F: New CTA button
+  ctaButtonNew: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF7043',
+    borderRadius: 14,
+    marginHorizontal: 12,
+    marginBottom: 12,
+    paddingVertical: 14,
+    shadowColor: '#FF7043',
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  ctaLabelNew: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  // 案F: Premium card content area
+  premiumCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 14,
+    marginHorizontal: 12,
+    marginTop: 12,
+    marginBottom: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   // モーダル
   modalBackdrop: {
