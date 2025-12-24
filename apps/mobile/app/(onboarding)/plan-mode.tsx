@@ -16,12 +16,12 @@ import { useTranslation } from '@/i18n';
 import { colors } from '@/theme/colors';
 import { fontFamilies, textStyles } from '@/theme/typography';
 import { roundTo } from '@/utils/units';
-import { onboardingCardStyle, onboardingInputStyle, onboardingTypography } from '@/theme/onboarding';
+import { onboardingCardStyle, onboardingTypography } from '@/theme/onboarding';
 import { Feather } from '@expo/vector-icons';
 
 export default function OnboardingPlanModeScreen() {
   const router = useRouter();
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
   const draft = useOnboardingStore((state) => state.draft);
   const planIntensity = draft.planIntensity ?? null;
   const updateDraft = useOnboardingStore((state) => state.updateDraft);
@@ -57,6 +57,17 @@ export default function OnboardingPlanModeScreen() {
     }
     setWeightError(null);
     updateDraft({ currentWeightKg: parsed, bodyWeightKg: parsed });
+  };
+
+  const adjustCurrentWeight = (delta: number) => {
+    const base = draft.currentWeightKg ?? draft.bodyWeightKg ?? null;
+    if (base == null) {
+      return;
+    }
+    const next = roundTo(Math.max(base + delta, 1), 1);
+    setWeightInput(String(next));
+    setWeightError(null);
+    updateDraft({ currentWeightKg: next, bodyWeightKg: next });
   };
 
   const handleTargetChange = (value: string) => {
@@ -150,15 +161,17 @@ export default function OnboardingPlanModeScreen() {
     }
   }, [draft.targetDate, targetDateIsoMemo, updateDraft]);
 
-  const targetDateText = summary?.targetDate
-    ? summary.targetDate.toLocaleDateString(locale === 'ja-JP' ? 'ja-JP' : undefined, {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      })
-    : '--';
+  const weeklyRate = summary ? roundTo(Math.abs(summary.difference / Math.max(summary.weeks, 1)), 2) : null;
+  const weeklyDirection = summary ? (summary.difference >= 0 ? -1 : 1) : 1;
+  const weeklyText =
+    weeklyRate != null
+      ? `${weeklyDirection < 0 ? '-' : '+'}${weeklyRate} ${t('onboarding.weight.kg')}/${t('common.week')}`
+      : '--';
 
-  const weeklyChange = summary ? roundTo(summary.difference / Math.max(summary.weeks, 1), 2) : null;
+  const etaWeeks = summary ? Math.max(1, Math.round(summary.weeks)) : null;
+  const etaText = etaWeeks ? t('onboarding.summary.etaWeeks', { count: etaWeeks }) : '--';
+
+  const caloriesText = previewPlan ? `${previewPlan.targetCalories} ${t('unit.kcal')}` : '--';
 
   const canProceed = Boolean(plan && draft.currentWeightKg && draft.targetWeightKg && !error && !weightError);
 
@@ -166,10 +179,12 @@ export default function OnboardingPlanModeScreen() {
     draft.currentWeightKg && draft.targetWeightKg
       ? roundTo(draft.targetWeightKg - draft.currentWeightKg, 1)
       : null;
-
-  const targetDeltaLabel =
-    draft.currentWeightKg && draft.targetWeightKg
-      ? `${roundTo(draft.currentWeightKg, 1)} → ${roundTo(draft.targetWeightKg, 1)} ${t('onboarding.weight.kg')}`
+  const absTargetDelta = targetDelta != null ? roundTo(Math.abs(targetDelta), 1) : null;
+  const targetDeltaText =
+    absTargetDelta != null
+      ? targetDelta < 0
+        ? t('onboarding.summary.deltaLoss', { value: absTargetDelta })
+        : t('onboarding.summary.deltaGain', { value: absTargetDelta })
       : null;
 
   const paceIconMap: Record<PlanIntensity, 'feather' | 'wind' | 'target'> = {
@@ -189,89 +204,101 @@ export default function OnboardingPlanModeScreen() {
       onBack={() => router.back()}
     >
       <View style={styles.stack}>
-        <View style={[styles.card, styles.compactCard]}>
-          <View style={styles.compactRow}>
-            <View style={styles.compactText}>
-              <Text style={onboardingTypography.label}>{t('onboarding.weight.currentLabel')}</Text>
-              <Text style={onboardingTypography.helper}>{t('onboarding.weight.currentHelper')}</Text>
-            </View>
-            <View style={styles.compactInputRow}>
-              <TextInput
-                style={styles.compactInput}
-                value={weightInput}
-                onChangeText={handleWeightChange}
-                keyboardType="decimal-pad"
-                textContentType="oneTimeCode"
-                autoComplete="off"
-                importantForAutofill="no"
-                placeholder="65"
-              />
-              <Text style={styles.unit}>{t('onboarding.weight.kg')}</Text>
-            </View>
-          </View>
-          {weightError ? <Text style={styles.error}>{weightError}</Text> : null}
-        </View>
-
-        <View style={[styles.card, styles.goalCard]}>
-          <View style={styles.goalHeader}>
-            <Text style={onboardingTypography.label}>{t('onboarding.summary.targetWeight')}</Text>
-            <Text style={onboardingTypography.helper}>{t('onboarding.summary.targetHelper')}</Text>
-          </View>
-          <View style={styles.goalInputRow}>
-            <TextInput
-              style={styles.goalInput}
-              value={targetInput}
-              onChangeText={handleTargetChange}
-              keyboardType="decimal-pad"
-              placeholder="60"
-              selectionColor={colors.accent}
-            />
-            <Text style={styles.goalUnit}>{t('onboarding.weight.kg')}</Text>
-            <View style={styles.stepper}>
-              <TouchableOpacity
-                style={styles.stepperButton}
-                onPress={() => adjustTargetWeight(0.5)}
-                accessibilityRole="button"
-              >
-                <Text style={styles.stepperText}>+</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.stepperButton}
-                onPress={() => adjustTargetWeight(-0.5)}
-                accessibilityRole="button"
-              >
-                <Text style={styles.stepperText}>−</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          {targetDelta != null && targetDeltaLabel ? (
-            <View style={styles.deltaRow}>
-              <View
-                style={[
-                  styles.deltaChip,
-                  { backgroundColor: targetDelta < 0 ? 'rgba(245,178,37,0.2)' : 'rgba(116,210,194,0.2)' },
-                ]}
-              >
-                <Feather
-                  name={targetDelta < 0 ? 'trending-down' : 'trending-up'}
-                  size={14}
-                  color={targetDelta < 0 ? colors.accentInk : colors.accentSage}
+        <View style={styles.weightGrid}>
+          <View style={styles.weightCard}>
+            <Text style={styles.cardLabel}>{t('onboarding.weight.currentLabel')}</Text>
+            <View style={styles.weightRow}>
+              <View style={styles.weightValue}>
+                <TextInput
+                  style={styles.weightInput}
+                  value={weightInput}
+                  onChangeText={handleWeightChange}
+                  keyboardType="decimal-pad"
+                  textContentType="oneTimeCode"
+                  autoComplete="off"
+                  importantForAutofill="no"
+                  placeholder="65"
                 />
-                <Text
+                <Text style={styles.weightUnit}>{t('onboarding.weight.kg')}</Text>
+              </View>
+              <View style={styles.stepper}>
+                <TouchableOpacity
+                  style={styles.stepperButton}
+                  onPress={() => adjustCurrentWeight(0.5)}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.stepperText}>+</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.stepperButton}
+                  onPress={() => adjustCurrentWeight(-0.5)}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.stepperText}>−</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            <Text style={styles.weightNote}>{t('onboarding.weight.currentHelper')}</Text>
+            {weightError ? <Text style={styles.error}>{weightError}</Text> : null}
+          </View>
+
+          <View style={[styles.weightCard, styles.weightCardTarget]}>
+            <Text style={styles.cardLabel}>{t('onboarding.summary.targetWeight')}</Text>
+            <View style={styles.weightRow}>
+              <View style={styles.weightValue}>
+                <TextInput
+                  style={styles.weightInput}
+                  value={targetInput}
+                  onChangeText={handleTargetChange}
+                  keyboardType="decimal-pad"
+                  placeholder="60"
+                  selectionColor={colors.accent}
+                />
+                <Text style={styles.weightUnit}>{t('onboarding.weight.kg')}</Text>
+              </View>
+              <View style={styles.stepper}>
+                <TouchableOpacity
+                  style={styles.stepperButton}
+                  onPress={() => adjustTargetWeight(0.5)}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.stepperText}>+</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.stepperButton}
+                  onPress={() => adjustTargetWeight(-0.5)}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.stepperText}>−</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            {targetDelta != null && targetDeltaText ? (
+              <View style={styles.deltaRow}>
+                <View
                   style={[
-                    styles.deltaText,
-                    { color: targetDelta < 0 ? colors.accentInk : colors.accentSage },
+                    styles.deltaChip,
+                    { backgroundColor: targetDelta < 0 ? 'rgba(245,178,37,0.2)' : 'rgba(116,210,194,0.2)' },
                   ]}
                 >
-                  {`${targetDelta < 0 ? '' : '+'}${targetDelta} ${t('onboarding.weight.kg')}`}
-                </Text>
+                  <Feather
+                    name={targetDelta < 0 ? 'trending-down' : 'trending-up'}
+                    size={14}
+                    color={targetDelta < 0 ? colors.accentInk : colors.accentSage}
+                  />
+                  <Text
+                    style={[
+                      styles.deltaText,
+                      { color: targetDelta < 0 ? colors.accentInk : colors.accentSage },
+                    ]}
+                  >
+                    {targetDeltaText}
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.deltaNote} numberOfLines={1}>
-                {targetDeltaLabel}
-              </Text>
-            </View>
-          ) : null}
+            ) : null}
+          </View>
         </View>
 
         <View style={styles.paceSection}>
@@ -282,6 +309,10 @@ export default function OnboardingPlanModeScreen() {
           <View style={styles.paceList}>
             {PLAN_INTENSITY_OPTIONS.map((option) => {
               const selected = option.id === planIntensity;
+              const title =
+                option.id === 'STANDARD'
+                  ? `${t(option.labelKey)}（${t('onboarding.plan.recommended')}）`
+                  : t(option.labelKey);
               return (
                 <TouchableOpacity
                   key={option.id}
@@ -300,7 +331,7 @@ export default function OnboardingPlanModeScreen() {
                   </View>
                   <View style={styles.paceText}>
                     <Text style={[styles.paceTitle, selected ? styles.paceTitleSelected : null]}>
-                      {t(option.labelKey)}
+                      {title}
                     </Text>
                     <Text style={[styles.paceSubtitle, selected ? styles.paceSubtitleSelected : null]} numberOfLines={2}>
                       {t(option.descriptionKey)}
@@ -317,56 +348,49 @@ export default function OnboardingPlanModeScreen() {
           </View>
         </View>
 
+        <View style={styles.insightCard}>
+          <View style={styles.insightItem}>
+            <Text style={styles.insightLabel}>{t('onboarding.summary.weeklyChange')}</Text>
+            <Text style={styles.insightValue} numberOfLines={1}>
+              {weeklyText}
+            </Text>
+          </View>
+          <View style={styles.insightItem}>
+            <Text style={styles.insightLabel}>{t('onboarding.summary.etaLabel')}</Text>
+            <Text style={styles.insightValue} numberOfLines={1}>
+              {etaText}
+            </Text>
+          </View>
+          <View style={styles.insightItem}>
+            <Text style={styles.insightLabel}>{t('onboarding.analysis.calories')}</Text>
+            <Text style={styles.insightValue} numberOfLines={1}>
+              {caloriesText}
+            </Text>
+          </View>
+        </View>
+
         {draft.heightCm ? (
           <View style={[styles.card, styles.metricsCard]}>
             <Text style={onboardingTypography.cardTitle}>{t('onboarding.weight.metricsTitle')}</Text>
-            <View style={styles.metricsRow}>
-              <Text style={onboardingTypography.cardDetail}>{t('onboarding.weight.bmi')}</Text>
-              <Text style={onboardingTypography.cardTitle}>{bmi ? roundTo(bmi, 1) : '--'}</Text>
-            </View>
-            {idealRange ? (
-              <View style={styles.metricsRow}>
-                <Text style={onboardingTypography.cardDetail}>{t('onboarding.weight.idealRange')}</Text>
-                <Text style={onboardingTypography.cardTitle}>
-                  {`${roundTo(idealRange.minKg, 1)} - ${roundTo(idealRange.maxKg, 1)} kg`}
+            <View style={styles.metricsGrid}>
+              <View style={styles.metricsItem}>
+                <Text style={styles.metricsLabel}>{t('onboarding.weight.bmi')}</Text>
+                <Text style={styles.metricsValue}>{bmi ? roundTo(bmi, 1) : '--'}</Text>
+              </View>
+              <View style={styles.metricsItem}>
+                <Text style={styles.metricsLabel}>{t('onboarding.weight.idealRange')}</Text>
+                <Text style={styles.metricsValue} numberOfLines={1}>
+                  {idealRange ? `${roundTo(idealRange.minKg, 1)} - ${roundTo(idealRange.maxKg, 1)} kg` : '--'}
                 </Text>
               </View>
-            ) : null}
-            <Text style={onboardingTypography.helper}>{t('onboarding.weight.idealHint')}</Text>
+            </View>
+            <Text style={styles.metricsHint}>{t('onboarding.weight.idealHint')}</Text>
           </View>
         ) : (
           <View style={styles.card}>
             <Text style={styles.notice}>{t('onboarding.weight.needHeight')}</Text>
           </View>
         )}
-
-        {previewPlan ? (
-          <View style={[styles.card, styles.previewCard]}>
-            <Text style={onboardingTypography.cardTitle}>{t('onboarding.plan.previewTitle')}</Text>
-            <Text style={styles.previewValue}>{`${previewPlan.targetCalories} kcal`}</Text>
-            <Text style={onboardingTypography.helper}>{t('onboarding.plan.previewHelper')}</Text>
-          </View>
-        ) : null}
-
-        <View style={[styles.card, styles.summaryCard]}>
-          <View style={styles.summaryRow}>
-            <Text style={onboardingTypography.cardDetail}>{t('onboarding.summary.planMode')}</Text>
-            <Text style={[onboardingTypography.cardTitle, styles.summaryValue]}>
-              {plan ? t(plan.labelKey) : t('onboarding.summary.unselected')}
-            </Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={onboardingTypography.cardDetail}>{t('onboarding.summary.weeklyChange')}</Text>
-            <Text style={[onboardingTypography.cardTitle, styles.summaryValue]}>
-              {weeklyChange != null ? `${roundTo(Math.abs(weeklyChange), 2)} kg / ${t('common.week')}` : '--'}
-            </Text>
-          </View>
-          <View style={styles.summaryRow}>
-            <Text style={onboardingTypography.cardDetail}>{t('onboarding.summary.projectedDate')}</Text>
-            <Text style={[onboardingTypography.cardTitle, styles.summaryValue]}>{targetDateText}</Text>
-          </View>
-          <Text style={onboardingTypography.helper}>{t('onboarding.summary.note')}</Text>
-        </View>
       </View>
     </OnboardingScaffold>
   );
@@ -374,155 +398,155 @@ export default function OnboardingPlanModeScreen() {
 
 const styles = StyleSheet.create({
   stack: {
-    gap: 20,
+    gap: 16,
   },
   card: {
-    gap: 16,
+    gap: 12,
     ...onboardingCardStyle,
   },
-  compactCard: {
-    paddingVertical: 18,
-  },
-  compactRow: {
+  weightGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 14,
-  },
-  compactText: {
-    flex: 1,
-    gap: 6,
-  },
-  compactInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  compactInput: {
-    minWidth: 110,
-    ...onboardingInputStyle,
-    paddingVertical: 12,
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  unit: {
-    ...textStyles.body,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  goalCard: {
-    borderColor: 'rgba(245,178,37,0.35)',
-    backgroundColor: 'rgba(255,248,236,0.96)',
-  },
-  goalHeader: {
-    gap: 6,
-  },
-  goalInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 12,
   },
-  goalInput: {
-    flex: 1,
-    ...onboardingInputStyle,
-    paddingVertical: 18,
-    fontSize: 32,
-    fontWeight: '700',
-    fontFamily: fontFamilies.display,
-    textAlign: 'center',
-  },
-  goalUnit: {
-    ...textStyles.titleMedium,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  stepper: {
+  weightCard: {
+    flexGrow: 1,
+    flexBasis: 0,
+    minWidth: 160,
     gap: 10,
-  },
-  stepperButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.98)',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.95)',
     borderWidth: 1,
     borderColor: 'rgba(28,28,30,0.08)',
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
+    elevation: 3,
+  },
+  weightCardTarget: {
+    borderColor: 'rgba(245,178,37,0.45)',
+    backgroundColor: 'rgba(255,248,236,0.95)',
+  },
+  cardLabel: {
+    ...textStyles.overline,
+    color: colors.textSecondary,
+  },
+  weightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  weightValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  weightInput: {
+    minWidth: 70,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(28,28,30,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    fontSize: 24,
+    fontWeight: '700',
+    fontFamily: fontFamilies.display,
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  weightUnit: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  weightNote: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  stepper: {
+    gap: 8,
+  },
+  stepperButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    borderWidth: 1,
+    borderColor: 'rgba(28,28,30,0.08)',
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
     elevation: 2,
   },
   stepperText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: colors.textPrimary,
   },
   deltaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
+    justifyContent: 'flex-start',
   },
   deltaChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 999,
   },
   deltaText: {
     ...textStyles.caption,
     fontWeight: '600',
   },
-  deltaNote: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    flex: 1,
-    textAlign: 'right',
-  },
   paceSection: {
-    gap: 12,
+    gap: 10,
   },
   paceHeader: {
-    gap: 6,
+    gap: 4,
   },
   paceList: {
-    gap: 12,
+    gap: 10,
   },
   paceCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 12,
     backgroundColor: 'rgba(255,255,255,0.95)',
-    borderRadius: 22,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderWidth: 1,
     borderColor: 'rgba(28,28,30,0.08)',
     shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 4,
+    shadowRadius: 12,
+    elevation: 3,
   },
   paceCardSelected: {
     borderColor: colors.accent,
     backgroundColor: 'rgba(255,226,162,0.35)',
   },
   paceIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(28,28,30,0.06)',
   },
   paceIconSelected: {
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: 'rgba(255,255,255,0.85)',
   },
   paceText: {
     flex: 1,
@@ -530,19 +554,21 @@ const styles = StyleSheet.create({
   },
   paceTitle: {
     ...onboardingTypography.cardTitle,
+    fontSize: 16,
   },
   paceTitleSelected: {
     color: colors.textPrimary,
   },
   paceSubtitle: {
     ...onboardingTypography.cardDetail,
+    fontSize: 12,
   },
   paceSubtitleSelected: {
     color: colors.textSecondary,
   },
   paceRate: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 999,
     backgroundColor: 'rgba(28,28,30,0.08)',
   },
@@ -557,31 +583,62 @@ const styles = StyleSheet.create({
   paceRateTextSelected: {
     color: colors.accentInk,
   },
-  summaryCard: {
-    gap: 12,
+  insightCard: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(28,28,30,0.08)',
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
-  previewCard: {
-    gap: 8,
+  insightItem: {
+    flex: 1,
+    minWidth: 90,
+    alignItems: 'center',
+    gap: 4,
   },
-  previewValue: {
+  insightLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  insightValue: {
     ...textStyles.titleMedium,
+    fontFamily: fontFamilies.semibold,
     color: colors.textPrimary,
   },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  summaryValue: {
-    textAlign: 'right',
-  },
   metricsCard: {
+    gap: 10,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+  },
+  metricsGrid: {
+    flexDirection: 'row',
     gap: 12,
   },
-  metricsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  metricsItem: {
+    flex: 1,
+    gap: 4,
+  },
+  metricsLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  metricsValue: {
+    ...textStyles.titleMedium,
+    fontFamily: fontFamilies.semibold,
+    color: colors.textPrimary,
+  },
+  metricsHint: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
   },
   notice: {
     ...textStyles.caption,
