@@ -25,7 +25,7 @@ import { EmptyStateCard } from '@/features/dashboard/components/EmptyStateCard';
 
 import { type MacroRingProps, type RingColorToken } from '@/features/dashboard/components/RemainingRings';
 import { buildRingState } from '@/features/dashboard/components/ringMath';
-import Svg, { Circle, Defs, Pattern, Rect } from 'react-native-svg';
+import Svg, { Circle } from 'react-native-svg';
 import { RecentLogsList } from '@/features/dashboard/components/RecentLogsList';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
@@ -44,7 +44,7 @@ import { buildFavoriteDraftFromDetail, buildFavoriteDraftFromSummary } from '@/u
 import { DateTime } from 'luxon';
 import { usePremiumStore } from '@/store/premium';
 import { useRouter } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+// Feather icon removed - now using emoji icons
 import { LinearGradient } from 'expo-linear-gradient';
 import { AuroraBackground } from '@/components/AuroraBackground';
 import { useCalorieTrend, type CalorieChartMode } from '@/features/dashboard/useCalorieTrend';
@@ -218,12 +218,12 @@ export default function DashboardScreen() {
         const draft = log.ai_raw
           ? buildFavoriteDraftFromSummary(log)
           : await (async () => {
-              try {
-                return buildFavoriteDraftFromDetail((await getMealLogDetail(log.id)).item);
-              } catch (_error) {
-                return buildFavoriteDraftFromSummary(log);
-              }
-            })();
+            try {
+              return buildFavoriteDraftFromDetail((await getMealLogDetail(log.id)).item);
+            } catch (_error) {
+              return buildFavoriteDraftFromSummary(log);
+            }
+          })();
         await createFavoriteMeal(draft);
       } else if (log.favorite_meal_id) {
         await deleteFavoriteMeal(log.favorite_meal_id);
@@ -462,7 +462,7 @@ interface MonthlyDeficitCardProps {
   locale: string;
 }
 
-function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardProps) {
+function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProps) {
   const [helpVisible, setHelpVisible] = useState(false);
   const timezone = summary.range.timezone ?? null;
 
@@ -507,116 +507,38 @@ function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardP
   }, 0);
 
   const hasMonthlyData = monthlySummary !== null;
-  const displayValue = hasMonthlyData ? formatDelta(-totalDeficit) : '-- kcal';
-  const valueColor = hasMonthlyData
-    ? totalDeficit > 0
-      ? colors.success
-      : totalDeficit < 0
-        ? colors.error
-        : colors.textSecondary
-    : colors.textSecondary;
 
-  const maxAccumulation = dailyEntries.length * targetDaily;
-  const progress = maxAccumulation > 0 ? Math.min(totalDeficit / maxAccumulation, 1) : 0;
+  // kg換算: 7200kcal = 1kg
+  const fatKg = Math.abs(totalDeficit) / 7200;
+  const displayKg = hasMonthlyData ? fatKg.toFixed(1) : '--';
+  const displayKcal = hasMonthlyData
+    ? (totalDeficit >= 0 ? `-${Math.abs(totalDeficit).toLocaleString()}` : `+${Math.abs(totalDeficit).toLocaleString()}`)
+    : '--';
+
+  // ペース判定
+  const daysElapsed = dailyEntries.length;
+  const expectedDeficitPerDay = targetDaily * 0.15; // 目標の15%削減を基準
+  const expectedTotal = expectedDeficitPerDay * daysElapsed;
+  const paceStatus = totalDeficit >= expectedTotal * 0.8 ? '順調✓' : '頑張り中';
+
   const isLoading = monthlySummaryQuery.isLoading && !monthlySummary;
 
   return (
-    <View style={[styles.metricCardContent, styles.monthlyCard]}>
-      <View style={styles.monthlyHeader}>
-        <View style={styles.monthlyHeaderLeft}>
-          <Feather name="unlock" size={14} color={colors.success} />
-          <Text style={styles.monthlyWhereLabel}>{t('dashboard.monthlyDeficit.premiumOnly')}</Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => setHelpVisible(true)}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityLabel="月間脂肪燃焼量の説明"
-          accessibilityRole="button"
-        >
-          <Feather name="help-circle" size={18} color={colors.textTertiary} />
-        </TouchableOpacity>
-      </View>
-      <Text
-        style={styles.monthlyLabelMultiline}
-        numberOfLines={1}
-      >
-        月間脂肪燃焼量
-      </Text>
-      <Text style={[styles.monthlyValue, { color: valueColor }]}>{displayValue}</Text>
-      <MonthlyProgressMeter progress={progress} isLoading={isLoading} />
-
-      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} />
-    </View>
-  );
-}
-
-interface MonthlyDeficitLockedCardProps {
-  onUpgrade: () => void;
-}
-
-function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) {
-  const [helpVisible, setHelpVisible] = useState(false);
-
-  // 炎アニメーション（Pulse: スケール & 不透明度）
-  const fireScale = useRef(new Animated.Value(1)).current;
-  const fireOpacity = useRef(new Animated.Value(0.75)).current;
-  const previewBarHeights = [5, 8, 6, 10, 7, 12, 9, 14, 11] as const;
-
-  useEffect(() => {
-    // 炎のPulseアニメーション
-    const fireAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(fireScale, {
-            toValue: 1.06,
-            duration: 1200,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(fireOpacity, {
-            toValue: 0.85,
-            duration: 1200,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.parallel([
-          Animated.timing(fireScale, {
-            toValue: 1,
-            duration: 1200,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(fireOpacity, {
-            toValue: 0.7,
-            duration: 1200,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-        ]),
-      ])
-    );
-    fireAnimation.start();
-
-    return () => {
-      fireAnimation.stop();
-    };
-  }, [fireScale, fireOpacity]);
-
-  return (
     <View style={burningStyles.container}>
-      {/* 背景グラデーション */}
       <LinearGradient
-        colors={['#FFF8F0', '#FFE8D6', '#FFDCC8']}
+        colors={['#FFF8F0', '#FFF4EC', '#FFEFE4']}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
         style={burningStyles.gradientBg}
       />
 
-      {/* ヘッダー: PREMIUMバッジ + ヘルプアイコン */}
+      {/* ヘッダー: タイトル + ヘルプアイコン */}
       <View style={burningStyles.header}>
-        <View style={burningStyles.premiumBadge}>
-          <Text style={burningStyles.premiumBadgeText}>PREMIUM限定</Text>
+        <View style={burningStyles.headerTitle}>
+          <View style={burningStyles.fireIconContainer}>
+            <Text style={burningStyles.fireIconSmall}>🔥</Text>
+          </View>
+          <Text style={burningStyles.headerTitleText}>月間脂肪燃焼量</Text>
         </View>
         <TouchableOpacity
           onPress={() => setHelpVisible(true)}
@@ -630,60 +552,107 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
         </TouchableOpacity>
       </View>
 
-      {/* タイトル */}
-      <Text style={burningStyles.title}>月間脂肪燃焼量</Text>
-
-      {/* 炎アイコン（アニメーション付き） */}
-      <View style={burningStyles.fireContainer} pointerEvents="none">
-        <Animated.View
-          style={[
-            burningStyles.fireIconWrap,
-            {
-              transform: [{ scale: fireScale }],
-              opacity: fireOpacity,
-            },
-          ]}
-        >
-          <Feather name="fire" size={26} color="rgba(232,93,4,0.6)" />
-        </Animated.View>
+      {/* メインコンテンツ */}
+      <View style={burningStyles.premiumCard}>
+        {isLoading ? (
+          <ActivityIndicator size="small" color="#FF7043" />
+        ) : (
+          <>
+            <View style={burningStyles.sampleValueRow}>
+              <Text style={burningStyles.samplePrefix}>脂肪</Text>
+              <Text style={burningStyles.sampleNumber}>{displayKg}</Text>
+              <Text style={burningStyles.sampleUnit}>kg</Text>
+              <Text style={burningStyles.sampleSuffix}>相当</Text>
+            </View>
+            <View style={burningStyles.sampleDetailRow}>
+              <Text style={burningStyles.sampleDetail}>累計 {displayKcal}kcal</Text>
+              <Text style={burningStyles.sampleDetailSeparator}>  </Text>
+              <Text style={burningStyles.sampleDetail}>ペース {paceStatus}</Text>
+            </View>
+          </>
+        )}
       </View>
 
-      {/* ティザー（数値はPREMIUMでアンロック） */}
-      <View style={burningStyles.resultCard}>
-        <View style={burningStyles.lockedResultRow}>
-          <Text style={burningStyles.resultPrefix}>脂肪</Text>
-          <View style={burningStyles.valuePill} pointerEvents="none">
-            <Text style={burningStyles.valuePillValue}>◯◯</Text>
-            <Text style={burningStyles.valuePillUnit}>kg</Text>
+      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="unlocked" />
+    </View>
+  );
+}
+
+interface MonthlyDeficitLockedCardProps {
+  onUpgrade: () => void;
+}
+
+function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) {
+  const [helpVisible, setHelpVisible] = useState(false);
+
+  return (
+    <View style={burningStyles.container}>
+      {/* 背景グラデーション */}
+      <LinearGradient
+        colors={['#FFF8F0', '#FFF4EC', '#FFEFE4']}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={burningStyles.gradientBg}
+      />
+
+      {/* ヘッダー: タイトル + ヘルプアイコン */}
+      <View style={burningStyles.header}>
+        <View style={burningStyles.headerTitle}>
+          <View style={burningStyles.fireIconContainer}>
+            <Text style={burningStyles.fireIconSmall}>🔥</Text>
           </View>
-          <Text style={burningStyles.resultSuffix}>相当</Text>
+          <Text style={burningStyles.headerTitleText}>月間脂肪燃焼量</Text>
         </View>
-        <View style={burningStyles.previewRow} pointerEvents="none">
-          {previewBarHeights.map((height, index) => (
-            <View
-              key={`preview-bar-${index}`}
-              style={[
-                burningStyles.previewBar,
-                { height },
-                index === previewBarHeights.length - 1 ? burningStyles.previewBarHighlight : null,
-              ]}
-            />
-          ))}
+        <TouchableOpacity
+          onPress={() => setHelpVisible(true)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityLabel="月間脂肪燃焼量の説明"
+          accessibilityRole="button"
+        >
+          <View style={burningStyles.helpCircle} pointerEvents="none">
+            <Text style={burningStyles.helpCircleText}>?</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* プレビュー説明テキスト */}
+      <Text style={burningStyles.previewHint}>解放するとこんな表示に ↓</Text>
+
+      {/* SAMPLEプレビューカード */}
+      <View style={burningStyles.sampleCard}>
+        <View style={burningStyles.sampleBadge}>
+          <Text style={burningStyles.sampleBadgeText}>SAMPLE</Text>
         </View>
+        <View style={burningStyles.sampleValueRow}>
+          <Text style={burningStyles.samplePrefix}>脂肪</Text>
+          <Text style={burningStyles.sampleNumber}>0.8</Text>
+          <Text style={burningStyles.sampleUnit}>kg</Text>
+          <Text style={burningStyles.sampleSuffix}>相当</Text>
+        </View>
+        <View style={burningStyles.sampleDetailRow}>
+          <Text style={burningStyles.sampleDetail}>累計 -5,600kcal</Text>
+          <Text style={burningStyles.sampleDetailSeparator}>  </Text>
+          <Text style={burningStyles.sampleDetail}>ペース 順調✓</Text>
+        </View>
+      </View>
+
+      {/* 区切り線 */}
+      <View style={burningStyles.dividerRow}>
+        <View style={burningStyles.dividerLine} />
+        <Text style={burningStyles.dividerText}>🔒 プレミアム限定</Text>
+        <View style={burningStyles.dividerLine} />
       </View>
 
       {/* CTAボタン */}
       <TouchableOpacity
-        style={burningStyles.ctaButton}
+        style={burningStyles.ctaButtonNew}
         onPress={onUpgrade}
         activeOpacity={0.8}
       >
-        <Text style={burningStyles.ctaLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.9}>
-          プレミアムで解放
-        </Text>
+        <Text style={burningStyles.ctaLabelNew}>✨ プレミアムで解放</Text>
       </TouchableOpacity>
 
-      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} />
+      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="locked" />
     </View>
   );
 }
@@ -691,11 +660,10 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
 interface MonthlyDeficitHelpModalProps {
   visible: boolean;
   onClose: () => void;
+  mode?: 'locked' | 'unlocked';
 }
 
-function MonthlyDeficitHelpModal({ visible, onClose }: MonthlyDeficitHelpModalProps) {
-  const exampleBarHeights = [6, 9, 8, 11, 10, 13, 12, 15, 14, 17, 16, 18] as const;
-
+function MonthlyDeficitHelpModal({ visible, onClose, mode = 'unlocked' }: MonthlyDeficitHelpModalProps) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={burningStyles.modalBackdrop} activeOpacity={1} onPress={onClose}>
@@ -724,73 +692,58 @@ function MonthlyDeficitHelpModal({ visible, onClose }: MonthlyDeficitHelpModalPr
                 <Text style={burningStyles.highlightText}>7,200kcal</Text> 貯まるごとに
                 <Text style={burningStyles.highlightText}>脂肪1kg</Text>の減少に相当します。
               </Text>
+              {mode === 'locked' ? (
+                <Text style={burningStyles.descriptionNoteText}>
+                  <Text style={burningStyles.highlightText}>※PREMIUM</Text>であなたの数値・推移が表示されます。
+                </Text>
+              ) : null}
             </View>
-		            {/* Compact Diagram */}
-		            <View style={burningStyles.diagramBox}>
-		              <Text style={burningStyles.diagramTitle}>計算イメージ（例）</Text>
+            {/* Compact Diagram */}
+            <View style={burningStyles.diagramBox}>
+              <Text style={burningStyles.diagramTitle}>計算イメージ</Text>
 
-                  <View style={burningStyles.exampleChart} pointerEvents="none">
-                    <View style={burningStyles.exampleBars}>
-                      {exampleBarHeights.map((height, index) => (
-                        <View
-                          key={`bar-${index}`}
-                          style={[
-                            burningStyles.exampleBar,
-                            { height },
-                            index === exampleBarHeights.length - 1 ? burningStyles.exampleBarHighlight : null,
-                          ]}
-                        />
-                      ))}
-                    </View>
-                    <Image
-                      source={require('../../assets/illustrations/fat_character.png')}
-                      style={burningStyles.exampleChartMascot}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-	              <View style={burningStyles.calculationRow}>
-	                <View style={burningStyles.calcBox}>
-	                  <Text style={burningStyles.calcLabel}>目標</Text>
+              <View style={burningStyles.calculationRow}>
+                <View style={burningStyles.calcBox}>
+                  <Text style={burningStyles.calcLabel}>目標</Text>
                   <Text
                     style={burningStyles.calcValue}
-	                    numberOfLines={1}
-	                    adjustsFontSizeToFit
-	                    minimumFontScale={0.85}
-		                  >
-		                    2,000kcal
-		                  </Text>
-		                </View>
-		                <Text style={burningStyles.calcOperator}>−</Text>
-		                <View style={burningStyles.calcBox}>
-	                  <Text style={burningStyles.calcLabel}>摂取</Text>
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
+                    ◯◯◯◯
+                  </Text>
+                </View>
+                <Text style={burningStyles.calcOperator}>−</Text>
+                <View style={burningStyles.calcBox}>
+                  <Text style={burningStyles.calcLabel}>摂取</Text>
                   <Text
                     style={burningStyles.calcValue}
-	                    numberOfLines={1}
-	                    adjustsFontSizeToFit
-	                    minimumFontScale={0.85}
-		                  >
-		                    1,760kcal
-		                  </Text>
-		                </View>
-		                <Text style={burningStyles.calcOperator}>=</Text>
-		                <View style={burningStyles.calcBox}>
-	                  <Text style={burningStyles.calcLabel}>燃焼</Text>
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
+                    ◯◯◯◯
+                  </Text>
+                </View>
+                <Text style={burningStyles.calcOperator}>=</Text>
+                <View style={burningStyles.calcBox}>
+                  <Text style={burningStyles.calcLabel}>燃焼</Text>
                   <Text
                     style={burningStyles.calcValue}
-	                    numberOfLines={1}
-	                    adjustsFontSizeToFit
-	                    minimumFontScale={0.85}
-		                  >
-		                    240kcal
-		                  </Text>
-		                </View>
-		              </View>
-		              <View style={burningStyles.monthlyResultBox}>
-		                <Text style={burningStyles.monthlyResultText}>月間合計 = 7,200kcal 🔥</Text>
-		              </View>
-		              <Text style={burningStyles.noteText}>※上の例を1ヶ月分積み上げたイメージ</Text>
-		            </View>
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
+                    ◯◯◯
+                  </Text>
+                </View>
+              </View>
+              <View style={burningStyles.monthlyResultBox}>
+                <Text style={burningStyles.monthlyResultText}>月間合計 = ◯◯◯◯ kcal 🔥</Text>
+              </View>
+              <Text style={burningStyles.noteText}>※一ヶ月分を積み上げたイメージ</Text>
+            </View>
 
             <TouchableOpacity style={burningStyles.modalCloseBtn} onPress={onClose}>
               <Text style={burningStyles.modalCloseBtnText}>閉じる</Text>
@@ -822,27 +775,23 @@ const burningStyles = StyleSheet.create({
     paddingBottom: 2,
   },
   premiumBadge: {
-    backgroundColor: 'rgba(232,93,4,0.12)',
-    borderColor: 'rgba(232,93,4,0.28)',
-    borderWidth: 1,
+    backgroundColor: '#FF7043',
     borderRadius: 999,
-    height: 30,
     paddingHorizontal: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 6,
   },
   premiumBadgeText: {
-    color: '#E85D04',
+    color: '#FFFFFF',
     fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   helpCircle: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.72)',
-    borderColor: 'rgba(232,93,4,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.65)',
+    borderColor: 'rgba(0,0,0,0.08)',
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -850,7 +799,7 @@ const burningStyles = StyleSheet.create({
   helpCircleText: {
     fontSize: 15,
     fontWeight: '800',
-    color: 'rgba(232,93,4,0.62)',
+    color: 'rgba(0,0,0,0.55)',
   },
   title: {
     fontSize: 13,
@@ -865,13 +814,11 @@ const burningStyles = StyleSheet.create({
     height: 42,
     marginTop: 6,
   },
-  fireIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(255,255,255,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  fireEmoji: {
+    fontSize: 34,
+    textShadowColor: 'rgba(255,120,60,0.3)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 8,
   },
   resultCard: {
     backgroundColor: 'rgba(255,255,255,0.9)',
@@ -900,39 +847,28 @@ const burningStyles = StyleSheet.create({
   },
   lockedResultRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
     justifyContent: 'center',
   },
   resultPrefix: {
     fontSize: 12,
     fontWeight: '600',
     color: '#2C2C2E',
-    marginRight: 8,
+    marginRight: 6,
   },
-  valuePill: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    backgroundColor: 'rgba(232,93,4,0.10)',
-    borderColor: 'rgba(232,93,4,0.18)',
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    marginRight: 8,
-  },
-  valuePillValue: {
-    fontSize: 18,
+  blurredValue: {
+    fontSize: 20,
     fontWeight: '800',
-    color: '#E85D04',
-    opacity: 0.55,
-    letterSpacing: 0,
+    color: '#FF6B35',
+    opacity: 0.75,
+    marginRight: 6,
+    letterSpacing: 1.5,
   },
-  valuePillUnit: {
+  resultUnit: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#E85D04',
-    opacity: 0.7,
-    marginLeft: 0,
+    fontWeight: '600',
+    color: '#2C2C2E',
+    marginRight: 4,
   },
   resultHighlight: {
     fontSize: 12,
@@ -946,19 +882,25 @@ const burningStyles = StyleSheet.create({
   },
   previewRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'center',
     marginTop: 10,
     opacity: 0.55,
   },
-  previewBar: {
-    width: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(232,93,4,0.38)',
-    marginHorizontal: 3,
+  previewPill: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,107,53,0.35)',
+    marginHorizontal: 4,
   },
-  previewBarHighlight: {
-    backgroundColor: 'rgba(232,93,4,0.55)',
+  previewPillSm: {
+    width: 10,
+  },
+  previewPillMd: {
+    width: 16,
+  },
+  previewPillLg: {
+    width: 22,
   },
   ctaButton: {
     flexDirection: 'row',
@@ -984,6 +926,159 @@ const burningStyles = StyleSheet.create({
     color: '#E85D04',
     fontSize: 13,
     fontWeight: '800',
+  },
+  // 案F: Header with title
+  headerTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerTitleText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#2C2C2E',
+  },
+  fireIconContainer: {
+    width: 28,
+    height: 28,
+    backgroundColor: 'rgba(255, 240, 230, 0.9)',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fireIconSmall: {
+    fontSize: 16,
+  },
+  // 案F: Preview hint text
+  previewHint: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  // 案F: Sample preview card
+  sampleCard: {
+    backgroundColor: 'rgba(255, 248, 244, 0.95)',
+    borderColor: 'rgba(255, 140, 100, 0.2)',
+    borderWidth: 1,
+    borderRadius: 14,
+    marginHorizontal: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  sampleBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 10,
+    backgroundColor: 'rgba(255, 112, 67, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  sampleBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#FF7043',
+    letterSpacing: 0.5,
+  },
+  sampleValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  samplePrefix: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#666',
+    marginRight: 6,
+  },
+  sampleNumber: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FF7043',
+  },
+  sampleUnit: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#444',
+    marginLeft: 2,
+  },
+  sampleSuffix: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#666',
+    marginLeft: 4,
+  },
+  sampleDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sampleDetail: {
+    fontSize: 11,
+    color: '#888',
+  },
+  sampleDetailSeparator: {
+    fontSize: 11,
+    color: '#CCC',
+    marginHorizontal: 6,
+  },
+  // 案F: Divider with lock
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.08)',
+  },
+  dividerText: {
+    fontSize: 11,
+    color: '#AAA',
+    marginHorizontal: 10,
+  },
+  // 案F: New CTA button
+  ctaButtonNew: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF7043',
+    borderRadius: 14,
+    marginHorizontal: 12,
+    marginBottom: 12,
+    paddingVertical: 14,
+    shadowColor: '#FF7043',
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  ctaLabelNew: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  // 案F: Premium card content area
+  premiumCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 14,
+    marginHorizontal: 12,
+    marginTop: 12,
+    marginBottom: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   // モーダル
   modalBackdrop: {
@@ -1033,6 +1128,12 @@ const burningStyles = StyleSheet.create({
     color: '#2C2C2E',
     lineHeight: 21,
   },
+  descriptionNoteText: {
+    marginTop: 10,
+    fontSize: 12,
+    color: '#2C2C2E',
+    lineHeight: 18,
+  },
   highlightText: {
     color: '#FF7043',
     fontWeight: '700',
@@ -1049,35 +1150,6 @@ const burningStyles = StyleSheet.create({
     marginBottom: 10,
     textAlign: 'center',
     fontWeight: '600',
-  },
-  exampleChart: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,112,67,0.10)',
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-  },
-  exampleBars: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    marginRight: 10,
-  },
-  exampleBar: {
-    width: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,112,67,0.55)',
-  },
-  exampleBarHighlight: {
-    backgroundColor: '#FF7043',
-  },
-  exampleChartMascot: {
-    width: 26,
-    height: 26,
-    opacity: 0.92,
   },
   calculationRow: {
     flexDirection: 'row',
@@ -1138,56 +1210,7 @@ const burningStyles = StyleSheet.create({
   },
 });
 
-interface MonthlyProgressMeterProps {
-  progress: number;
-  isLoading: boolean;
-}
-
-function MonthlyProgressMeter({ progress, isLoading }: MonthlyProgressMeterProps) {
-  const clampedProgress = Math.max(0, Math.min(progress, 1));
-  const fillPercent = `${(clampedProgress * 100).toFixed(1)}%`;
-  const isComplete = clampedProgress >= 0.995;
-
-  return (
-    <View style={styles.monthlyProgressContainer}>
-      <Svg style={styles.monthlyProgressSvg} pointerEvents="none">
-        <Defs>
-          <Pattern id="monthlyProgressStripes" patternUnits="userSpaceOnUse" width={12} height={40}>
-            <Rect width={6} height={40} fill="rgba(255,255,255,0.45)" />
-          </Pattern>
-        </Defs>
-        <Rect x={0} y={0} width="100%" height="100%" rx={22} ry={22} fill="rgba(255,255,255,0.6)" />
-        <Rect x={0} y={0} width="100%" height="100%" rx={22} ry={22} fill="url(#monthlyProgressStripes)" />
-      </Svg>
-      {clampedProgress > 0 ? (
-        <LinearGradient
-          colors={[colors.success, '#30d158']}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={[
-            styles.monthlyProgressFill,
-            {
-              width: fillPercent,
-              borderTopRightRadius: isComplete ? (styles.monthlyProgressContainer.borderRadius ?? 22) : 0,
-              borderBottomRightRadius: isComplete ? (styles.monthlyProgressContainer.borderRadius ?? 22) : 0,
-            },
-          ]}
-        />
-      ) : null}
-      {isLoading ? <ActivityIndicator style={styles.monthlyProgressLoader} size="small" color={colors.success} /> : null}
-    </View>
-  );
-}
-
-function formatDelta(value: number) {
-  const rounded = Math.round(value);
-  if (rounded === 0) {
-    return '0 kcal';
-  }
-  const absValue = Math.abs(rounded).toLocaleString();
-  const sign = rounded > 0 ? '+' : '-';
-  return `${sign}${absValue} kcal`;
-}
+// MonthlyProgressMeter and formatDelta removed - no longer used in new design
 
 const LARGE_RING_SIZE = 132;
 const LARGE_STROKE_WIDTH = 10;
