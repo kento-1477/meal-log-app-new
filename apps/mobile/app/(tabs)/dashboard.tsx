@@ -649,7 +649,7 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
         onPress={onUpgrade}
         activeOpacity={0.8}
       >
-        <Text style={burningStyles.ctaLabelNew}>✨ プレミアムで解放</Text>
+        <Text style={burningStyles.ctaLabelNew} numberOfLines={1}>プレミアムで解放 ✨</Text>
       </TouchableOpacity>
 
       <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="locked" />
@@ -1017,15 +1017,17 @@ const burningStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    flexWrap: 'nowrap',
+    paddingHorizontal: 8,
   },
   sampleDetail: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#888',
   },
   sampleDetailSeparator: {
-    fontSize: 11,
-    color: '#CCC',
-    marginHorizontal: 6,
+    fontSize: 12,
+    color: '#DDD',
+    marginHorizontal: 12,
   },
   // 案F: Divider with lock
   dividerRow: {
@@ -1051,19 +1053,21 @@ const burningStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FF7043',
-    borderRadius: 14,
+    borderRadius: 12,
     marginHorizontal: 12,
     marginBottom: 12,
-    paddingVertical: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     shadowColor: '#FF7043',
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
   },
   ctaLabelNew: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
+    textAlign: 'center',
   },
   // 案F: Premium card content area
   premiumCard: {
