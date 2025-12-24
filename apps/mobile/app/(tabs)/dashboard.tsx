@@ -565,9 +565,9 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
               <Text style={burningStyles.sampleSuffix}>相当</Text>
             </View>
             <View style={burningStyles.sampleDetailRow}>
-              <Text style={burningStyles.sampleDetail}>累計 {displayKcal}kcal</Text>
-              <Text style={burningStyles.sampleDetailSeparator}>  </Text>
-              <Text style={burningStyles.sampleDetail}>ペース {paceStatus}</Text>
+              <Text style={burningStyles.sampleDetail} numberOfLines={1}>累計 {displayKcal}kcal</Text>
+              <Text style={burningStyles.sampleDetailSeparator}>|</Text>
+              <Text style={burningStyles.sampleDetail} numberOfLines={1}>ペース {paceStatus}</Text>
             </View>
           </>
         )}
@@ -630,9 +630,9 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
           <Text style={burningStyles.sampleSuffix}>相当</Text>
         </View>
         <View style={burningStyles.sampleDetailRow}>
-          <Text style={burningStyles.sampleDetail}>累計 -5,600kcal</Text>
-          <Text style={burningStyles.sampleDetailSeparator}>  </Text>
-          <Text style={burningStyles.sampleDetail}>ペース 順調✓</Text>
+          <Text style={burningStyles.sampleDetail} numberOfLines={1}>累計 -5,600kcal</Text>
+          <Text style={burningStyles.sampleDetailSeparator}>|</Text>
+          <Text style={burningStyles.sampleDetail} numberOfLines={1}>ペース 順調✓</Text>
         </View>
       </View>
 
@@ -649,7 +649,7 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
         onPress={onUpgrade}
         activeOpacity={0.8}
       >
-        <Text style={burningStyles.ctaLabelNew} numberOfLines={1}>プレミアムで解放 ✨</Text>
+        <Text style={burningStyles.ctaLabelNew} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>解放する ✨</Text>
       </TouchableOpacity>
 
       <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="locked" />
