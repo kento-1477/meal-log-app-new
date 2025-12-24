@@ -30,6 +30,9 @@ export default function OnboardingWelcomeScreen() {
       step="welcome"
       title={t('onboarding.welcome.title')}
       subtitle={t('onboarding.welcome.subtitle')}
+      titleStyle={styles.welcomeTitle}
+      subtitleStyle={styles.welcomeSubtitle}
+      showProgress={false}
       onNext={() => router.push('/(onboarding)/goals')}
       nextLabel={t('common.continue')}
       scrollEnabled={false}
@@ -54,6 +57,14 @@ export default function OnboardingWelcomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  welcomeTitle: {
+    fontSize: 30,
+    lineHeight: 36,
+    letterSpacing: -0.2,
+  },
+  welcomeSubtitle: {
+    marginTop: 2,
+  },
   hero: {
     width: '100%',
     paddingTop: 4,

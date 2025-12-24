@@ -186,10 +186,6 @@ export default function OnboardingPlanModeScreen() {
         ? t('onboarding.summary.deltaLoss', { value: absTargetDelta })
         : t('onboarding.summary.deltaGain', { value: absTargetDelta })
       : null;
-  const targetDeltaLabel =
-    draft.currentWeightKg && draft.targetWeightKg
-      ? `${roundTo(draft.currentWeightKg, 1)} → ${roundTo(draft.targetWeightKg, 1)} ${t('onboarding.weight.kg')}`
-      : null;
 
   const paceIconMap: Record<PlanIntensity, 'feather' | 'wind' | 'target'> = {
     GENTLE: 'feather',
@@ -278,7 +274,7 @@ export default function OnboardingPlanModeScreen() {
               </View>
             </View>
             {error ? <Text style={styles.error}>{error}</Text> : null}
-            {targetDelta != null && targetDeltaLabel && targetDeltaText ? (
+            {targetDelta != null && targetDeltaText ? (
               <View style={styles.deltaRow}>
                 <View
                   style={[
@@ -300,9 +296,6 @@ export default function OnboardingPlanModeScreen() {
                     {targetDeltaText}
                   </Text>
                 </View>
-                <Text style={styles.deltaNote} numberOfLines={1}>
-                  {targetDeltaLabel}
-                </Text>
               </View>
             ) : null}
           </View>
@@ -501,8 +494,7 @@ const styles = StyleSheet.create({
   deltaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
+    justifyContent: 'flex-start',
   },
   deltaChip: {
     flexDirection: 'row',
@@ -515,12 +507,6 @@ const styles = StyleSheet.create({
   deltaText: {
     ...textStyles.caption,
     fontWeight: '600',
-  },
-  deltaNote: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    flex: 1,
-    textAlign: 'right',
   },
   paceSection: {
     gap: 10,

@@ -565,9 +565,9 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
               <Text style={burningStyles.sampleSuffix}>相当</Text>
             </View>
             <View style={burningStyles.sampleDetailRow}>
-              <Text style={burningStyles.sampleDetail}>累計 {displayKcal}kcal</Text>
-              <Text style={burningStyles.sampleDetailSeparator}>  </Text>
-              <Text style={burningStyles.sampleDetail}>ペース {paceStatus}</Text>
+              <Text style={burningStyles.sampleDetail} numberOfLines={1}>累計 {displayKcal}kcal</Text>
+              <Text style={burningStyles.sampleDetailSeparator}>|</Text>
+              <Text style={burningStyles.sampleDetail} numberOfLines={1}>ペース {paceStatus}</Text>
             </View>
           </>
         )}
@@ -630,9 +630,9 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
           <Text style={burningStyles.sampleSuffix}>相当</Text>
         </View>
         <View style={burningStyles.sampleDetailRow}>
-          <Text style={burningStyles.sampleDetail}>累計 -5,600kcal</Text>
-          <Text style={burningStyles.sampleDetailSeparator}>  </Text>
-          <Text style={burningStyles.sampleDetail}>ペース 順調✓</Text>
+          <Text style={burningStyles.sampleDetail} numberOfLines={1}>累計 -5,600kcal</Text>
+          <Text style={burningStyles.sampleDetailSeparator}>|</Text>
+          <Text style={burningStyles.sampleDetail} numberOfLines={1}>ペース 順調✓</Text>
         </View>
       </View>
 
@@ -649,7 +649,7 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
         onPress={onUpgrade}
         activeOpacity={0.8}
       >
-        <Text style={burningStyles.ctaLabelNew}>✨ プレミアムで解放</Text>
+        <Text style={burningStyles.ctaLabelNew} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>解放する ✨</Text>
       </TouchableOpacity>
 
       <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="locked" />
@@ -963,7 +963,7 @@ const burningStyles = StyleSheet.create({
     borderColor: 'rgba(255, 140, 100, 0.2)',
     borderWidth: 1,
     borderRadius: 14,
-    marginHorizontal: 12,
+    marginHorizontal: 8,
     paddingVertical: 14,
     paddingHorizontal: 16,
     alignItems: 'center',
@@ -1017,21 +1017,23 @@ const burningStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    flexWrap: 'nowrap',
+    paddingHorizontal: 8,
   },
   sampleDetail: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#888',
   },
   sampleDetailSeparator: {
-    fontSize: 11,
-    color: '#CCC',
-    marginHorizontal: 6,
+    fontSize: 12,
+    color: '#DDD',
+    marginHorizontal: 12,
   },
   // 案F: Divider with lock
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 16,
+    marginHorizontal: 10,
     marginTop: 12,
     marginBottom: 10,
   },
@@ -1051,25 +1053,27 @@ const burningStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FF7043',
-    borderRadius: 14,
-    marginHorizontal: 12,
+    borderRadius: 12,
+    marginHorizontal: 8,
     marginBottom: 12,
-    paddingVertical: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     shadowColor: '#FF7043',
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
   },
   ctaLabelNew: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
+    textAlign: 'center',
   },
   // 案F: Premium card content area
   premiumCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 14,
-    marginHorizontal: 12,
+    marginHorizontal: 8,
     marginTop: 12,
     marginBottom: 12,
     paddingVertical: 16,

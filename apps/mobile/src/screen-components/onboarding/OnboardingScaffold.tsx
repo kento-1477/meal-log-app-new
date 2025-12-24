@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleProp,
+  StyleSheet,
+  Text,
+  TextStyle,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { AuroraBackground } from '@/components/AuroraBackground';
 import { colors } from '@/theme/colors';
 import { fontFamilies, textStyles } from '@/theme/typography';
@@ -29,6 +40,9 @@ interface Props {
   footer?: ReactNode;
   accent?: ReactNode;
   scrollEnabled?: boolean;
+  titleStyle?: StyleProp<TextStyle>;
+  subtitleStyle?: StyleProp<TextStyle>;
+  showProgress?: boolean;
 }
 
 export function OnboardingScaffold({
@@ -47,10 +61,14 @@ export function OnboardingScaffold({
   footer,
   accent,
   scrollEnabled = true,
+  titleStyle,
+  subtitleStyle,
+  showProgress = true,
 }: Props) {
-  const index = Math.max(0, ONBOARDING_STEPS.indexOf(step));
-  const total = ONBOARDING_STEPS.length;
-  const progress = (index + 1) / total;
+  const progressSteps = ONBOARDING_STEPS.filter((item) => item !== 'welcome');
+  const index = Math.max(0, progressSteps.indexOf(step));
+  const total = progressSteps.length;
+  const progress = total > 0 ? (index + 1) / total : 0;
   const insets = useSafeAreaInsets();
   const { locale, t } = useTranslation();
   const isJapanese = isJapaneseLocale(locale);
@@ -130,7 +148,7 @@ export function OnboardingScaffold({
       >
         <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top || 12 }]} edges={['top', 'left', 'right']}>
           <View style={styles.wrapper}>
-            <View style={styles.headerContainer}>
+            <View style={[styles.headerContainer, !showProgress ? styles.headerContainerCompact : null]}>
               {showTopAction ? <View style={styles.headerTopRow}>{renderHeaderAction('top')}</View> : null}
 
               <View style={styles.headerRow}>
@@ -148,20 +166,24 @@ export function OnboardingScaffold({
                   <View style={styles.backChipPlaceholder} />
                 )}
 
-                <View style={styles.progressArea}>
-                  <View style={styles.progressColumn}>
-                    <View style={styles.progressTrack}>
-                      <View
-                        style={[styles.progressFill, { width: `${Math.min(1, Math.max(0, progress)) * 100}%` }]}
-                        accessible
-                        accessibilityRole="progressbar"
-                        accessibilityValue={{ min: 0, max: 1, now: Math.min(1, Math.max(0, progress)) }}
-                      />
+                {showProgress ? (
+                  <View style={styles.progressArea}>
+                    <View style={styles.progressColumn}>
+                      <View style={styles.progressTrack}>
+                        <View
+                          style={[styles.progressFill, { width: `${Math.min(1, Math.max(0, progress)) * 100}%` }]}
+                          accessible
+                          accessibilityRole="progressbar"
+                          accessibilityValue={{ min: 0, max: 1, now: Math.min(1, Math.max(0, progress)) }}
+                        />
+                      </View>
+                      <Text style={styles.progressHint}>{progressHint}</Text>
                     </View>
-                    <Text style={styles.progressHint}>{progressHint}</Text>
+                    <Text style={styles.stepText}>{`${index + 1}/${total}`}</Text>
                   </View>
-                  <Text style={styles.stepText}>{`${index + 1}/${total}`}</Text>
-                </View>
+                ) : (
+                  <View style={styles.progressPlaceholder} />
+                )}
 
                 {showRightAction ? (
                   renderHeaderAction('right')
@@ -179,9 +201,13 @@ export function OnboardingScaffold({
                   keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
                 >
                   <View style={styles.titleBlock}>
-                    <Text style={[onboardingTypography.title, isJapanese && onboardingJapaneseTypography.title]}>{title}</Text>
+                    <Text style={[onboardingTypography.title, isJapanese && onboardingJapaneseTypography.title, titleStyle]}>
+                      {title}
+                    </Text>
                     {subtitle ? (
-                      <Text style={[onboardingTypography.subtitle, isJapanese && onboardingJapaneseTypography.subtitle]}>
+                      <Text
+                        style={[onboardingTypography.subtitle, isJapanese && onboardingJapaneseTypography.subtitle, subtitleStyle]}
+                      >
                         {subtitle}
                       </Text>
                     ) : null}
@@ -192,9 +218,13 @@ export function OnboardingScaffold({
               ) : (
                 <View style={[styles.staticContent, { paddingBottom: Math.max(48, insets.bottom + 32) }]}>
                   <View style={styles.titleBlock}>
-                    <Text style={[onboardingTypography.title, isJapanese && onboardingJapaneseTypography.title]}>{title}</Text>
+                    <Text style={[onboardingTypography.title, isJapanese && onboardingJapaneseTypography.title, titleStyle]}>
+                      {title}
+                    </Text>
                     {subtitle ? (
-                      <Text style={[onboardingTypography.subtitle, isJapanese && onboardingJapaneseTypography.subtitle]}>
+                      <Text
+                        style={[onboardingTypography.subtitle, isJapanese && onboardingJapaneseTypography.subtitle, subtitleStyle]}
+                      >
                         {subtitle}
                       </Text>
                     ) : null}
@@ -239,6 +269,9 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingTop: 12,
     paddingBottom: 20,
+  },
+  headerContainerCompact: {
+    paddingBottom: 8,
   },
   headerTopRow: {
     alignItems: 'flex-end',
@@ -299,6 +332,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  progressPlaceholder: {
+    flex: 1,
+    minHeight: 20,
   },
   progressColumn: {
     flex: 1,
