@@ -44,7 +44,7 @@ import { buildFavoriteDraftFromDetail, buildFavoriteDraftFromSummary } from '@/u
 import { DateTime } from 'luxon';
 import { usePremiumStore } from '@/store/premium';
 import { useRouter } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+// Feather icon removed - now using emoji icons
 import { LinearGradient } from 'expo-linear-gradient';
 import { AuroraBackground } from '@/components/AuroraBackground';
 import { useCalorieTrend, type CalorieChartMode } from '@/features/dashboard/useCalorieTrend';
@@ -462,7 +462,7 @@ interface MonthlyDeficitCardProps {
   locale: string;
 }
 
-function MonthlyDeficitCard({ summary, targets, t, locale }: MonthlyDeficitCardProps) {
+function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProps) {
   const [helpVisible, setHelpVisible] = useState(false);
   const timezone = summary.range.timezone ?? null;
 
@@ -1210,56 +1210,7 @@ const burningStyles = StyleSheet.create({
   },
 });
 
-interface MonthlyProgressMeterProps {
-  progress: number;
-  isLoading: boolean;
-}
-
-function MonthlyProgressMeter({ progress, isLoading }: MonthlyProgressMeterProps) {
-  const clampedProgress = Math.max(0, Math.min(progress, 1));
-  const fillPercent = `${(clampedProgress * 100).toFixed(1)}%`;
-  const isComplete = clampedProgress >= 0.995;
-
-  return (
-    <View style={styles.monthlyProgressContainer}>
-      <Svg style={styles.monthlyProgressSvg} pointerEvents="none">
-        <Defs>
-          <Pattern id="monthlyProgressStripes" patternUnits="userSpaceOnUse" width={12} height={40}>
-            <Rect width={6} height={40} fill="rgba(255,255,255,0.45)" />
-          </Pattern>
-        </Defs>
-        <Rect x={0} y={0} width="100%" height="100%" rx={22} ry={22} fill="rgba(255,255,255,0.6)" />
-        <Rect x={0} y={0} width="100%" height="100%" rx={22} ry={22} fill="url(#monthlyProgressStripes)" />
-      </Svg>
-      {clampedProgress > 0 ? (
-        <LinearGradient
-          colors={[colors.success, '#30d158']}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={[
-            styles.monthlyProgressFill,
-            {
-              width: fillPercent,
-              borderTopRightRadius: isComplete ? (styles.monthlyProgressContainer.borderRadius ?? 22) : 0,
-              borderBottomRightRadius: isComplete ? (styles.monthlyProgressContainer.borderRadius ?? 22) : 0,
-            },
-          ]}
-        />
-      ) : null}
-      {isLoading ? <ActivityIndicator style={styles.monthlyProgressLoader} size="small" color={colors.success} /> : null}
-    </View>
-  );
-}
-
-function formatDelta(value: number) {
-  const rounded = Math.round(value);
-  if (rounded === 0) {
-    return '0 kcal';
-  }
-  const absValue = Math.abs(rounded).toLocaleString();
-  const sign = rounded > 0 ? '+' : '-';
-  return `${sign}${absValue} kcal`;
-}
+// MonthlyProgressMeter and formatDelta removed - no longer used in new design
 
 const LARGE_RING_SIZE = 132;
 const LARGE_STROKE_WIDTH = 10;
