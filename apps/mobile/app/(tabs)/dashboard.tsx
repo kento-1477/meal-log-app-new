@@ -25,7 +25,7 @@ import { EmptyStateCard } from '@/features/dashboard/components/EmptyStateCard';
 
 import { type MacroRingProps, type RingColorToken } from '@/features/dashboard/components/RemainingRings';
 import { buildRingState } from '@/features/dashboard/components/ringMath';
-import Svg, { Circle, Defs, Pattern, Rect } from 'react-native-svg';
+import Svg, { Circle } from 'react-native-svg';
 import { RecentLogsList } from '@/features/dashboard/components/RecentLogsList';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
