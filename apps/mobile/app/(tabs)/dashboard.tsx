@@ -565,9 +565,9 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
               <Text style={burningStyles.sampleSuffix}>相当</Text>
             </View>
             <View style={burningStyles.sampleDetailRow}>
-              <Text style={burningStyles.sampleDetail} numberOfLines={1}>累計 {displayKcal}kcal</Text>
+              <Text style={burningStyles.sampleDetail} numberOfLines={1}>{displayKcal}kcal</Text>
               <Text style={burningStyles.sampleDetailSeparator}>|</Text>
-              <Text style={burningStyles.sampleDetail} numberOfLines={1}>ペース {paceStatus}</Text>
+              <Text style={burningStyles.sampleDetail} numberOfLines={1}>{paceStatus}</Text>
             </View>
           </>
         )}
@@ -630,9 +630,9 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
           <Text style={burningStyles.sampleSuffix}>相当</Text>
         </View>
         <View style={burningStyles.sampleDetailRow}>
-          <Text style={burningStyles.sampleDetail} numberOfLines={1}>累計 -5,600kcal</Text>
+          <Text style={burningStyles.sampleDetail} numberOfLines={1}>-5,600kcal</Text>
           <Text style={burningStyles.sampleDetailSeparator}>|</Text>
-          <Text style={burningStyles.sampleDetail} numberOfLines={1}>ペース 順調✓</Text>
+          <Text style={burningStyles.sampleDetail} numberOfLines={1}>順調✓</Text>
         </View>
       </View>
 
@@ -955,7 +955,7 @@ const burningStyles = StyleSheet.create({
     color: '#999',
     textAlign: 'center',
     marginTop: 12,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   // 案F: Sample preview card
   sampleCard: {
@@ -1034,8 +1034,8 @@ const burningStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 10,
-    marginTop: 12,
-    marginBottom: 10,
+    marginTop: 8,
+    marginBottom: 6,
   },
   dividerLine: {
     flex: 1,
@@ -1053,10 +1053,10 @@ const burningStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FF7043',
-    borderRadius: 12,
+    borderRadius: 10,
     marginHorizontal: 8,
-    marginBottom: 12,
-    paddingVertical: 12,
+    marginBottom: 8,
+    paddingVertical: 10,
     paddingHorizontal: 16,
     shadowColor: '#FF7043',
     shadowOpacity: 0.25,
