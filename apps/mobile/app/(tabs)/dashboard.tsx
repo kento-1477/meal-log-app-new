@@ -601,7 +601,7 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
           <View style={burningStyles.fireIconContainer}>
             <Text style={burningStyles.fireIconSmall}>🔥</Text>
           </View>
-          <Text style={burningStyles.headerTitleText}>月間脂肪燃焼量</Text>
+          <Text style={burningStyles.headerTitleText}>月間脂肪燃焼</Text>
         </View>
         <TouchableOpacity
           onPress={() => setHelpVisible(true)}
@@ -615,33 +615,11 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
         </TouchableOpacity>
       </View>
 
-      {/* プレビュー説明テキスト */}
-      <Text style={burningStyles.previewHint}>解放するとこんな表示に ↓</Text>
+      {/* 質問テキスト */}
+      <Text style={burningStyles.questionText}>今月は何キロの{'\n'}脂肪落とした？</Text>
 
-      {/* SAMPLEプレビューカード */}
-      <View style={burningStyles.sampleCard}>
-        <View style={burningStyles.sampleBadge}>
-          <Text style={burningStyles.sampleBadgeText}>SAMPLE</Text>
-        </View>
-        <View style={burningStyles.sampleValueRow}>
-          <Text style={burningStyles.samplePrefix}>脂肪</Text>
-          <Text style={burningStyles.sampleNumber}>0.8</Text>
-          <Text style={burningStyles.sampleUnit}>kg</Text>
-          <Text style={burningStyles.sampleSuffix}>相当</Text>
-        </View>
-        <View style={burningStyles.sampleDetailRow}>
-          <Text style={burningStyles.sampleDetail} numberOfLines={1}>-5,600kcal</Text>
-          <Text style={burningStyles.sampleDetailSeparator}>|</Text>
-          <Text style={burningStyles.sampleDetail} numberOfLines={1}>順調✓</Text>
-        </View>
-      </View>
-
-      {/* 区切り線 */}
-      <View style={burningStyles.dividerRow}>
-        <View style={burningStyles.dividerLine} />
-        <Text style={burningStyles.dividerText}>🔒 プレミアム限定</Text>
-        <View style={burningStyles.dividerLine} />
-      </View>
+      {/* 大きな炎アイコン */}
+      <Text style={burningStyles.fireBig}>🔥</Text>
 
       {/* CTAボタン */}
       <TouchableOpacity
@@ -649,7 +627,7 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
         onPress={onUpgrade}
         activeOpacity={0.8}
       >
-        <Text style={burningStyles.ctaLabelNew} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>解放する ✨</Text>
+        <Text style={burningStyles.ctaLabelNew}>確認する →</Text>
       </TouchableOpacity>
 
       <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="locked" />
@@ -949,13 +927,21 @@ const burningStyles = StyleSheet.create({
   fireIconSmall: {
     fontSize: 16,
   },
-  // 案F: Preview hint text
-  previewHint: {
-    fontSize: 12,
-    color: '#999',
+  // 案M: Question text
+  questionText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333',
     textAlign: 'center',
-    marginTop: 12,
-    marginBottom: 4,
+    lineHeight: 22,
+    marginTop: 16,
+    marginBottom: 12,
+  },
+  // 案M: Big fire icon
+  fireBig: {
+    fontSize: 52,
+    textAlign: 'center',
+    marginBottom: 16,
   },
   // 案F: Sample preview card
   sampleCard: {
