@@ -564,14 +564,18 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
               <Text style={burningStyles.sampleUnit}>kg</Text>
               <Text style={burningStyles.sampleSuffix}>相当</Text>
             </View>
-            <View style={burningStyles.sampleDetailRow}>
-              <Text style={burningStyles.sampleDetail} numberOfLines={1}>{displayKcal}kcal</Text>
-              <Text style={burningStyles.sampleDetailSeparator}>|</Text>
-              <Text style={burningStyles.sampleDetail} numberOfLines={1}>{paceStatus}</Text>
-            </View>
+            <Text style={burningStyles.paceLabel}>{paceStatus}</Text>
           </>
         )}
       </View>
+
+      {/* 累計kcal表示 */}
+      {!isLoading && (
+        <View style={burningStyles.cumulativeSection}>
+          <Text style={burningStyles.cumulativeLabel}>今月の累計</Text>
+          <Text style={burningStyles.cumulativeValue}>{displayKcal}kcal</Text>
+        </View>
+      )}
 
       <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="unlocked" />
     </View>
@@ -1069,6 +1073,29 @@ const burningStyles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
+  },
+  // ペースラベル
+  paceLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#888',
+    marginTop: 6,
+  },
+  // 累計kcalセクション
+  cumulativeSection: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  cumulativeLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#999',
+    marginBottom: 2,
+  },
+  cumulativeValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FF7043',
   },
   // モーダル
   modalBackdrop: {
