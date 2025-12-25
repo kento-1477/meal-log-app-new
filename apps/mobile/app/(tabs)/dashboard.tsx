@@ -538,7 +538,7 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
           <View style={burningStyles.fireIconContainer}>
             <Text style={burningStyles.fireIconSmall}>🔥</Text>
           </View>
-          <Text style={burningStyles.headerTitleText}>月間脂肪燃焼量</Text>
+          <Text style={burningStyles.headerTitleText}>月間脂肪燃焼</Text>
         </View>
         <TouchableOpacity
           onPress={() => setHelpVisible(true)}
@@ -748,7 +748,7 @@ const burningStyles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 2,
   },
