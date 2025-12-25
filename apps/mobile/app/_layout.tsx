@@ -27,15 +27,39 @@ export default function RootLayout() {
             <Stack.Screen name="(onboarding)" />
             <Stack.Screen name="invite" options={{ presentation: 'transparentModal', headerShown: false }} />
             <Stack.Screen name="login" options={{ presentation: 'modal' }} />
-            <Stack.Screen name="log/[id]" options={{ headerShown: true, title: '食事ログの編集' }} />
-            <Stack.Screen name="settings/account" options={{ headerShown: true, title: 'アカウント管理' }} />
-            <Stack.Screen name="settings/nutrition" options={{ headerShown: true, title: '栄養目標' }} />
-            <Stack.Screen name="settings/profile" options={{ headerShown: true, title: '目標と現在の体重' }} />
-            <Stack.Screen name="settings/notifications" options={{ headerShown: true, title: '通知設定' }} />
-            <Stack.Screen name="settings/language" options={{ headerShown: true, title: '表示言語' }} />
+            <Stack.Screen
+              name="log/[id]"
+              options={{ headerShown: true, title: '食事ログの編集', headerBackTitleVisible: false, headerBackTitle: '' }}
+            />
+            <Stack.Screen
+              name="settings/account"
+              options={{ headerShown: true, title: 'アカウント管理', headerBackTitleVisible: false, headerBackTitle: '' }}
+            />
+            <Stack.Screen
+              name="settings/nutrition"
+              options={{ headerShown: true, title: '栄養目標', headerBackTitleVisible: false, headerBackTitle: '' }}
+            />
+            <Stack.Screen
+              name="settings/profile"
+              options={{ headerShown: true, title: '目標と現在の体重', headerBackTitleVisible: false, headerBackTitle: '' }}
+            />
+            <Stack.Screen
+              name="settings/notifications"
+              options={{ headerShown: true, title: '通知設定', headerBackTitleVisible: false, headerBackTitle: '' }}
+            />
+            <Stack.Screen
+              name="settings/language"
+              options={{ headerShown: true, title: '表示言語', headerBackTitleVisible: false, headerBackTitle: '' }}
+            />
             <Stack.Screen
               name="paywall"
-              options={{ headerShown: true, title: t('paywall.headerTitle'), presentation: 'modal' }}
+              options={{
+                headerShown: true,
+                title: t('paywall.headerTitle'),
+                presentation: 'modal',
+                headerBackTitleVisible: false,
+                headerBackTitle: '',
+              }}
             />
           </Stack>
         </QueryClientProvider>
