@@ -538,7 +538,7 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
           <View style={burningStyles.fireIconContainer}>
             <Text style={burningStyles.fireIconSmall}>🔥</Text>
           </View>
-          <Text style={burningStyles.headerTitleText}>月間脂肪燃焼</Text>
+          <Text style={burningStyles.headerTitleText}>月間脂肪燃焼量</Text>
         </View>
         <TouchableOpacity
           onPress={() => setHelpVisible(true)}
@@ -605,7 +605,7 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
           <View style={burningStyles.fireIconContainer}>
             <Text style={burningStyles.fireIconSmall}>🔥</Text>
           </View>
-          <Text style={burningStyles.headerTitleText}>月間脂肪燃焼</Text>
+          <Text style={burningStyles.headerTitleText}>脂肪燃焼</Text>
         </View>
         <TouchableOpacity
           onPress={() => setHelpVisible(true)}
@@ -752,7 +752,7 @@ const burningStyles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 2,
   },
@@ -769,9 +769,9 @@ const burningStyles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   helpCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: 'rgba(255,255,255,0.65)',
     borderColor: 'rgba(0,0,0,0.08)',
     borderWidth: 1,
@@ -779,7 +779,7 @@ const burningStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   helpCircleText: {
-    fontSize: 15,
+    fontSize: 12,
     fontWeight: '800',
     color: 'rgba(0,0,0,0.55)',
   },
@@ -913,23 +913,23 @@ const burningStyles = StyleSheet.create({
   headerTitle: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 5,
   },
   headerTitleText: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700',
     color: '#2C2C2E',
   },
   fireIconContainer: {
-    width: 28,
-    height: 28,
+    width: 20,
+    height: 20,
     backgroundColor: 'rgba(255, 240, 230, 0.9)',
-    borderRadius: 8,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   fireIconSmall: {
-    fontSize: 16,
+    fontSize: 12,
   },
   // 案M: Question text
   questionText: {
