@@ -528,24 +528,30 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
         style={burningStyles.gradientBg}
       />
 
-      <TouchableOpacity
-        style={burningStyles.helpButton}
-        onPress={() => setHelpVisible(true)}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        accessibilityLabel="月間脂肪燃焼量の説明"
-        accessibilityRole="button"
-      >
-        <View style={burningStyles.helpCircle} pointerEvents="none">
-          <Text style={burningStyles.helpCircleText}>?</Text>
-        </View>
-      </TouchableOpacity>
-
       <View style={burningStyles.content}>
-        <View style={burningStyles.header}>
+        <View style={burningStyles.headerRow}>
+          <View style={burningStyles.headerSpacer} />
           <View style={burningStyles.headerTitle}>
             <Text style={burningStyles.headerIcon}>🔥</Text>
-            <Text style={burningStyles.headerTitleText}>月間脂肪燃焼量</Text>
+            <Text
+              style={burningStyles.headerTitleText}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+            >
+              月間脂肪燃焼量
+            </Text>
           </View>
+          <TouchableOpacity
+            onPress={() => setHelpVisible(true)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="月間脂肪燃焼量の説明"
+            accessibilityRole="button"
+          >
+            <View style={burningStyles.helpCircle} pointerEvents="none">
+              <Text style={burningStyles.helpCircleText}>?</Text>
+            </View>
+          </TouchableOpacity>
         </View>
 
         <View style={burningStyles.premiumCard}>
@@ -583,7 +589,7 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
   const [helpVisible, setHelpVisible] = useState(false);
 
   return (
-    <TouchableOpacity style={burningStyles.container} onPress={onUpgrade} activeOpacity={0.9} accessibilityRole="button">
+    <View style={burningStyles.container}>
       {/* 背景グラデーション */}
       <LinearGradient
         colors={['#FFF8F0', '#FFF4EC', '#FFEFE4']}
@@ -592,47 +598,39 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
         style={burningStyles.gradientBg}
       />
 
-      <TouchableOpacity
-        style={burningStyles.helpButton}
-        onPress={(event) => {
-          event.stopPropagation();
-          setHelpVisible(true);
-        }}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        accessibilityLabel="月間脂肪燃焼量の説明"
-        accessibilityRole="button"
-      >
-        <View style={burningStyles.helpCircle} pointerEvents="none">
-          <Text style={burningStyles.helpCircleText}>?</Text>
+      {/* ヘッダー: タイトル + ヘルプアイコン */}
+      <View style={burningStyles.lockedHeader}>
+        <View style={burningStyles.headerTitle}>
+          <View style={burningStyles.fireIconContainer}>
+            <Text style={burningStyles.fireIconSmall}>🔥</Text>
+          </View>
+          <Text style={burningStyles.headerTitleText}>脂肪燃焼</Text>
         </View>
+        <TouchableOpacity
+          onPress={() => setHelpVisible(true)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityLabel="月間脂肪燃焼量の説明"
+          accessibilityRole="button"
+        >
+          <View style={burningStyles.helpCircle} pointerEvents="none">
+            <Text style={burningStyles.helpCircleText}>?</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* 質問テキスト */}
+      <Text style={burningStyles.questionText}>今月は何キロの{'\n'}脂肪落とした？</Text>
+
+      {/* 大きな炎アイコン */}
+      <Text style={burningStyles.fireBig}>🔥</Text>
+
+      {/* CTAボタン */}
+      <TouchableOpacity style={burningStyles.ctaButtonNew} onPress={onUpgrade} activeOpacity={0.8}>
+        <Text style={burningStyles.ctaLabelNew}>確認する →</Text>
       </TouchableOpacity>
 
-      <View style={burningStyles.content}>
-        <View style={burningStyles.header}>
-          <View style={burningStyles.headerTitle}>
-            <Text style={burningStyles.headerIcon}>🔥</Text>
-            <Text style={burningStyles.headerTitleText}>月間脂肪燃焼量</Text>
-          </View>
-        </View>
-
-        <View style={burningStyles.premiumCard}>
-          <View style={burningStyles.heroStack}>
-            <Text style={burningStyles.heroLabel}>脂肪</Text>
-            <Text style={burningStyles.heroValue}>--</Text>
-            <Text style={burningStyles.heroUnit}>kg相当</Text>
-          </View>
-        </View>
-
-        <View style={burningStyles.cumulativeSection}>
-          <Text style={burningStyles.cumulativeLabel} numberOfLines={2}>
-            今月の累計マイナスカロリー
-          </Text>
-          <Text style={burningStyles.cumulativeValue}>--</Text>
-        </View>
-
-        <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="locked" />
-      </View>
-    </TouchableOpacity>
+      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="locked" />
+    </View>
   );
 }
 
@@ -747,20 +745,28 @@ const burningStyles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'flex-start',
   },
-  helpButton: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    zIndex: 2,
-  },
-  header: {
+  headerRow: {
     width: '100%',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+  },
+  headerSpacer: {
+    width: 22,
+    height: 22,
+  },
+  lockedHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 2,
   },
   premiumBadge: {
     backgroundColor: '#FF7043',
@@ -775,9 +781,9 @@ const burningStyles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   helpCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: 'rgba(255,255,255,0.7)',
     borderColor: 'rgba(0,0,0,0.08)',
     borderWidth: 1,
@@ -785,7 +791,7 @@ const burningStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   helpCircleText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     color: 'rgba(0,0,0,0.55)',
   },
@@ -920,13 +926,15 @@ const burningStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
+    flexShrink: 1,
+    minWidth: 0,
   },
   headerIcon: {
-    fontSize: 15,
+    fontSize: 14,
   },
   headerTitleText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: '#2C2C2E',
     textAlign: 'center',
@@ -1074,11 +1082,11 @@ const burningStyles = StyleSheet.create({
   premiumCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 14,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     alignItems: 'center',
     width: '100%',
-    marginTop: 16,
+    marginTop: 12,
     shadowColor: '#000',
     shadowOpacity: 0.04,
     shadowRadius: 8,
@@ -1087,7 +1095,7 @@ const burningStyles = StyleSheet.create({
   heroStack: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
   },
   heroLabel: {
     fontSize: 14,
@@ -1096,14 +1104,14 @@ const burningStyles = StyleSheet.create({
     textAlign: 'center',
   },
   heroValue: {
-    fontSize: 42,
+    fontSize: 36,
     fontWeight: '800',
     color: '#FF7043',
     textAlign: 'center',
-    lineHeight: 46,
+    lineHeight: 40,
   },
   heroUnit: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#444',
     textAlign: 'center',
@@ -1112,18 +1120,18 @@ const burningStyles = StyleSheet.create({
   cumulativeSection: {
     width: '100%',
     alignItems: 'center',
-    marginTop: 16,
-    gap: 8,
+    marginTop: 12,
+    gap: 6,
   },
   cumulativeLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
     color: '#666',
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 17,
   },
   cumulativeValue: {
-    fontSize: 30,
+    fontSize: 26,
     fontWeight: '800',
     color: '#FF7043',
     textAlign: 'center',
