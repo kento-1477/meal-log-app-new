@@ -22,7 +22,7 @@ module.exports = {
   ],
   settings: {
     react: {
-      version: "detect"
+      version: "19.0"
     },
     "import/resolver": {
       typescript: {

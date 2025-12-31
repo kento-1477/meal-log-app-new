@@ -52,14 +52,17 @@ export default function OnboardingAnalysisScreen() {
     });
   }, [draft]);
 
-  const displayPlan = computedPlan
-    ? {
-        targetCalories: computedPlan.targetCalories,
-        proteinGrams: computedPlan.proteinGrams,
-        fatGrams: computedPlan.fatGrams,
-        carbGrams: computedPlan.carbGrams,
-      }
-    : null;
+  const displayPlan = useMemo(() => {
+    if (!computedPlan) {
+      return null;
+    }
+    return {
+      targetCalories: computedPlan.targetCalories,
+      proteinGrams: computedPlan.proteinGrams,
+      fatGrams: computedPlan.fatGrams,
+      carbGrams: computedPlan.carbGrams,
+    };
+  }, [computedPlan]);
 
   type FixStep = 'basic-info' | 'activity' | 'plan-mode';
 
