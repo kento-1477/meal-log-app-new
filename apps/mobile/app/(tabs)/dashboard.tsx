@@ -14,16 +14,31 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { DashboardPeriod, MealLogSummary, MealLogRange, DashboardSummary, DashboardTargets } from '@meal-log/shared';
+import type {
+  DashboardPeriod,
+  MealLogSummary,
+  MealLogRange,
+  DashboardSummary,
+  DashboardTargets,
+} from '@meal-log/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useDashboardSummary, type MacroComparison } from '@/features/dashboard/useDashboardSummary';
-import { CalorieBarChart, defaultCalorieChartConfig } from '@/features/dashboard/components/CalorieBarChart';
+import {
+  useDashboardSummary,
+  type MacroComparison,
+} from '@/features/dashboard/useDashboardSummary';
+import {
+  CalorieBarChart,
+  defaultCalorieChartConfig,
+} from '@/features/dashboard/components/CalorieBarChart';
 import { MonthlyCalorieChart } from '@/features/dashboard/components/MonthlyCalorieChart';
 import { MealPeriodBreakdown } from '@/features/dashboard/components/MealPeriodBreakdown';
 
 import { EmptyStateCard } from '@/features/dashboard/components/EmptyStateCard';
 
-import { type MacroRingProps, type RingColorToken } from '@/features/dashboard/components/RemainingRings';
+import {
+  type MacroRingProps,
+  type RingColorToken,
+} from '@/features/dashboard/components/RemainingRings';
 import { buildRingState } from '@/features/dashboard/components/ringMath';
 import Svg, { Circle } from 'react-native-svg';
 import { RecentLogsList } from '@/features/dashboard/components/RecentLogsList';
@@ -112,7 +127,10 @@ export default function DashboardScreen() {
     }
     const gap = 4;
     const horizontalPadding = 8; // segmentGroup padding (left+right)
-    return (segmentGroupWidth - horizontalPadding - gap * (segmentOptions.length - 1)) / segmentOptions.length;
+    return (
+      (segmentGroupWidth - horizontalPadding - gap * (segmentOptions.length - 1)) /
+      segmentOptions.length
+    );
   }, [segmentGroupWidth, segmentOptions.length]);
 
   useEffect(() => {
@@ -152,11 +170,15 @@ export default function DashboardScreen() {
     }
   };
 
-  const { data, isLoading, isFetching, error, refetch, isStaleFromCache } = useDashboardSummary(period, {
-    enabled: isAuthenticated,
-    range: customRange ?? undefined,
-  });
-  const chartMode: CalorieChartMode = segmentKey === 'monthly' ? 'monthly' : segmentKey === 'weekly' ? 'weekly' : 'daily';
+  const { data, isLoading, isFetching, error, refetch, isStaleFromCache } = useDashboardSummary(
+    period,
+    {
+      enabled: isAuthenticated,
+      range: customRange ?? undefined,
+    },
+  );
+  const chartMode: CalorieChartMode =
+    segmentKey === 'monthly' ? 'monthly' : segmentKey === 'weekly' ? 'weekly' : 'daily';
   const calorieTrend = useCalorieTrend(chartMode, { enabled: isAuthenticated });
   const monthlySummary = useMemo(() => {
     if (chartMode !== 'monthly' || !calorieTrend.points.length) {
@@ -200,7 +222,8 @@ export default function DashboardScreen() {
   });
 
   const showEmpty = data ? !data.calories.hasData : false;
-  const emptyMessage = period === 'thisWeek' ? t('dashboard.empty.week') : t('dashboard.empty.generic');
+  const emptyMessage =
+    period === 'thisWeek' ? t('dashboard.empty.week') : t('dashboard.empty.generic');
   const chartEmptyLabel = t('dashboard.chart.empty');
   const refreshing = isFetching || calorieTrend.isFetching || logsQuery.isFetching;
   const handleRefresh = () => {
@@ -218,12 +241,12 @@ export default function DashboardScreen() {
         const draft = log.ai_raw
           ? buildFavoriteDraftFromSummary(log)
           : await (async () => {
-            try {
-              return buildFavoriteDraftFromDetail((await getMealLogDetail(log.id)).item);
-            } catch (_error) {
-              return buildFavoriteDraftFromSummary(log);
-            }
-          })();
+              try {
+                return buildFavoriteDraftFromDetail((await getMealLogDetail(log.id)).item);
+              } catch (_error) {
+                return buildFavoriteDraftFromSummary(log);
+              }
+            })();
         await createFavoriteMeal(draft);
       } else if (log.favorite_meal_id) {
         await deleteFavoriteMeal(log.favorite_meal_id);
@@ -300,7 +323,11 @@ export default function DashboardScreen() {
           style={styles.container}
           contentContainerStyle={styles.content}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.accent}
+            />
           }
           showsVerticalScrollIndicator={false}
         >
@@ -347,7 +374,9 @@ export default function DashboardScreen() {
                     accessibilityRole="tab"
                     accessibilityState={{ selected: active }}
                   >
-                    <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>{option.label}</Text>
+                    <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
+                      {option.label}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -383,7 +412,12 @@ export default function DashboardScreen() {
                           </View>
                           <View style={[styles.metricCardShell, styles.metricCardTall]}>
                             {isPremium ? (
-                              <MonthlyDeficitCard summary={data.summary} targets={data.targets} t={t} locale={locale} />
+                              <MonthlyDeficitCard
+                                summary={data.summary}
+                                targets={data.targets}
+                                t={t}
+                                locale={locale}
+                              />
                             ) : (
                               <MonthlyDeficitLockedCard onUpgrade={() => router.push('/paywall')} />
                             )}
@@ -394,7 +428,10 @@ export default function DashboardScreen() {
                     return (
                       <View style={styles.macroRow} key="macro">
                         {ringData.macros.map((macro) => (
-                          <View style={styles.macroCardShell} key={`${macro.label}-${macro.colorToken}`}>
+                          <View
+                            style={styles.macroCardShell}
+                            key={`${macro.label}-${macro.colorToken}`}
+                          >
                             <MacroRing data={macro} t={t} />
                           </View>
                         ))}
@@ -403,8 +440,6 @@ export default function DashboardScreen() {
                   })}
                 </>
               ) : null}
-
-
 
               <View style={styles.section}>
                 <View style={styles.card}>
@@ -473,7 +508,10 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
 
   let monthStart = today.startOf('month');
   if (timezone) {
-    const explicitStart = DateTime.fromObject({ year: today.year, month: today.month, day: 1 }, { zone: timezone });
+    const explicitStart = DateTime.fromObject(
+      { year: today.year, month: today.month, day: 1 },
+      { zone: timezone },
+    );
     if (explicitStart.isValid) {
       monthStart = explicitStart.startOf('day');
     }
@@ -494,7 +532,7 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
   });
 
   const monthlySummary = monthlySummaryQuery.data ?? null;
-  const dailyEntries = monthlySummary?.calories.daily ?? [];
+  const dailyEntries = useMemo(() => monthlySummary?.calories.daily ?? [], [monthlySummary]);
 
   const targetDaily = typeof targets.calories === 'number' ? targets.calories : 0;
 
@@ -518,6 +556,36 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
     : '--';
 
   const isLoading = monthlySummaryQuery.isLoading && !monthlySummary;
+  const modalExample = useMemo<MonthlyDeficitHelpExample | undefined>(() => {
+    const targetKcal =
+      Number.isFinite(targetDaily) && targetDaily > 0 ? Math.round(targetDaily) : null;
+    if (!hasMonthlyData || !targetKcal) {
+      return undefined;
+    }
+
+    const entriesWithTotal = dailyEntries.filter(
+      (entry) => typeof entry.total === 'number' && Number.isFinite(entry.total) && entry.total > 0,
+    );
+    if (entriesWithTotal.length === 0) {
+      return undefined;
+    }
+
+    const underTarget = entriesWithTotal.filter((entry) => entry.total <= targetKcal);
+    const chosen = (
+      underTarget.length
+        ? underTarget[underTarget.length - 1]
+        : entriesWithTotal[entriesWithTotal.length - 1]
+    )!;
+    const intakeKcal = Math.round(chosen.total);
+    const burnKcal = Math.max(0, targetKcal - intakeKcal);
+
+    return {
+      targetKcal,
+      intakeKcal,
+      burnKcal,
+      monthlyTotalKcalText: displayDeficitKcal,
+    };
+  }, [dailyEntries, displayDeficitKcal, hasMonthlyData, targetDaily]);
 
   return (
     <View style={burningStyles.container}>
@@ -528,30 +596,31 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
         style={burningStyles.gradientBg}
       />
 
+      <TouchableOpacity
+        style={burningStyles.helpButtonAbsolute}
+        onPress={() => setHelpVisible(true)}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        accessibilityLabel="月間脂肪燃焼量の説明"
+        accessibilityRole="button"
+      >
+        <View style={burningStyles.helpCircle} pointerEvents="none">
+          <Text style={burningStyles.helpCircleText}>?</Text>
+        </View>
+      </TouchableOpacity>
+
       <View style={burningStyles.content}>
         <View style={burningStyles.headerRow}>
-          <View style={burningStyles.headerSpacer} />
           <View style={burningStyles.headerTitle}>
             <Text style={burningStyles.headerIcon}>🔥</Text>
             <Text
               style={burningStyles.headerTitleText}
               numberOfLines={1}
               adjustsFontSizeToFit
-              minimumFontScale={0.85}
+              minimumFontScale={0.8}
             >
               月間脂肪燃焼量
             </Text>
           </View>
-          <TouchableOpacity
-            onPress={() => setHelpVisible(true)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            accessibilityLabel="月間脂肪燃焼量の説明"
-            accessibilityRole="button"
-          >
-            <View style={burningStyles.helpCircle} pointerEvents="none">
-              <Text style={burningStyles.helpCircleText}>?</Text>
-            </View>
-          </TouchableOpacity>
         </View>
 
         <View style={burningStyles.premiumCard}>
@@ -575,7 +644,13 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
           </View>
         )}
 
-        <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="unlocked" />
+        <MonthlyDeficitHelpModal
+          visible={helpVisible}
+          onClose={() => setHelpVisible(false)}
+          mode="unlocked"
+          example={modalExample}
+          locale={locale}
+        />
       </View>
     </View>
   );
@@ -629,7 +704,11 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
         <Text style={burningStyles.ctaLabelNew}>確認する →</Text>
       </TouchableOpacity>
 
-      <MonthlyDeficitHelpModal visible={helpVisible} onClose={() => setHelpVisible(false)} mode="locked" />
+      <MonthlyDeficitHelpModal
+        visible={helpVisible}
+        onClose={() => setHelpVisible(false)}
+        mode="locked"
+      />
     </View>
   );
 }
@@ -638,9 +717,37 @@ interface MonthlyDeficitHelpModalProps {
   visible: boolean;
   onClose: () => void;
   mode?: 'locked' | 'unlocked';
+  example?: MonthlyDeficitHelpExample;
+  locale?: string;
 }
 
-function MonthlyDeficitHelpModal({ visible, onClose, mode = 'unlocked' }: MonthlyDeficitHelpModalProps) {
+interface MonthlyDeficitHelpExample {
+  targetKcal: number;
+  intakeKcal: number;
+  burnKcal: number;
+  monthlyTotalKcalText: string;
+}
+
+function MonthlyDeficitHelpModal({
+  visible,
+  onClose,
+  mode = 'unlocked',
+  example,
+  locale,
+}: MonthlyDeficitHelpModalProps) {
+  const resolvedExample: MonthlyDeficitHelpExample = example ?? {
+    targetKcal: 2000,
+    intakeKcal: 1700,
+    burnKcal: 300,
+    monthlyTotalKcalText: '-5,600 kcal',
+  };
+
+  const formatNumber = (value: number) => Math.round(value).toLocaleString(locale);
+  const targetText = formatNumber(resolvedExample.targetKcal);
+  const intakeText = formatNumber(resolvedExample.intakeKcal);
+  const burnText = formatNumber(resolvedExample.burnKcal);
+  const monthlyText = resolvedExample.monthlyTotalKcalText;
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={burningStyles.modalBackdrop} activeOpacity={1} onPress={onClose}>
@@ -671,7 +778,8 @@ function MonthlyDeficitHelpModal({ visible, onClose, mode = 'unlocked' }: Monthl
               </Text>
               {mode === 'locked' ? (
                 <Text style={burningStyles.descriptionNoteText}>
-                  <Text style={burningStyles.highlightText}>※PREMIUM</Text>であなたの数値・推移が表示されます。
+                  <Text style={burningStyles.highlightText}>※PREMIUM</Text>
+                  であなたの数値・推移が表示されます。
                 </Text>
               ) : null}
             </View>
@@ -688,7 +796,7 @@ function MonthlyDeficitHelpModal({ visible, onClose, mode = 'unlocked' }: Monthl
                     adjustsFontSizeToFit
                     minimumFontScale={0.85}
                   >
-                    ◯◯◯◯
+                    {targetText}
                   </Text>
                 </View>
                 <Text style={burningStyles.calcOperator}>−</Text>
@@ -700,7 +808,7 @@ function MonthlyDeficitHelpModal({ visible, onClose, mode = 'unlocked' }: Monthl
                     adjustsFontSizeToFit
                     minimumFontScale={0.85}
                   >
-                    ◯◯◯◯
+                    {intakeText}
                   </Text>
                 </View>
                 <Text style={burningStyles.calcOperator}>=</Text>
@@ -712,12 +820,12 @@ function MonthlyDeficitHelpModal({ visible, onClose, mode = 'unlocked' }: Monthl
                     adjustsFontSizeToFit
                     minimumFontScale={0.85}
                   >
-                    ◯◯◯
+                    {burnText}
                   </Text>
                 </View>
               </View>
               <View style={burningStyles.monthlyResultBox}>
-                <Text style={burningStyles.monthlyResultText}>月間合計 = ◯◯◯◯ kcal 🔥</Text>
+                <Text style={burningStyles.monthlyResultText}>月間合計 = {monthlyText} 🔥</Text>
               </View>
               <Text style={burningStyles.noteText}>※一ヶ月分を積み上げたイメージ</Text>
             </View>
@@ -737,11 +845,12 @@ const burningStyles = StyleSheet.create({
   container: {
     flex: 1,
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: 'visible',
     position: 'relative',
   },
   gradientBg: {
     ...StyleSheet.absoluteFillObject,
+    borderRadius: 16,
   },
   content: {
     flex: 1,
@@ -754,11 +863,13 @@ const burningStyles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
   },
-  headerSpacer: {
-    width: 22,
-    height: 22,
+  helpButtonAbsolute: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    zIndex: 2,
   },
   lockedHeader: {
     flexDirection: 'row',
@@ -931,10 +1042,10 @@ const burningStyles = StyleSheet.create({
     minWidth: 0,
   },
   headerIcon: {
-    fontSize: 14,
+    fontSize: 16,
   },
   headerTitleText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
     color: '#2C2C2E',
     textAlign: 'center',
@@ -1301,12 +1412,7 @@ function CalorieRing({ data, t }: CalorieRingProps) {
         <Text style={styles.ratioValueLarge}>
           {state.currentText} / {state.targetText}
         </Text>
-        <Text
-          style={[
-            styles.deltaText,
-            state.status === 'over' && styles.deltaTextOver,
-          ]}
-        >
+        <Text style={[styles.deltaText, state.status === 'over' && styles.deltaTextOver]}>
           {state.deltaText}
         </Text>
       </View>
@@ -1342,12 +1448,7 @@ function MacroRing({ data, t }: MacroRingComponentProps) {
         <Text style={styles.ratioValue}>
           {state.currentText} / {state.targetText}
         </Text>
-        <Text
-          style={[
-            styles.deltaText,
-            state.status === 'over' && styles.deltaTextOver,
-          ]}
-        >
+        <Text style={[styles.deltaText, state.status === 'over' && styles.deltaTextOver]}>
           {state.deltaText}
         </Text>
       </View>
@@ -1371,7 +1472,14 @@ function Ring({ size, strokeWidth, progress, color, trackColor }: RingProps) {
 
   return (
     <Svg width={size} height={size}>
-      <Circle cx={size / 2} cy={size / 2} r={radius} stroke={trackColor} strokeWidth={strokeWidth} fill="none" />
+      <Circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        stroke={trackColor}
+        strokeWidth={strokeWidth}
+        fill="none"
+      />
       {clamped > 0 && (
         <Circle
           cx={size / 2}
