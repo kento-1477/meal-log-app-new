@@ -2,6 +2,7 @@ import '../test-env.ts';
 
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
+import { install } from '@sinonjs/fake-timers';
 import { prisma } from '../../src/db/prisma.ts';
 import { createApp } from '../../src/app.ts';
 
@@ -10,6 +11,7 @@ const server = app.listen(0);
 const address = server.address();
 const baseUrl = typeof address === 'object' && address ? `http://127.0.0.1:${address.port}` : 'http://127.0.0.1:4100';
 let sessionCookie = '';
+let clock: ReturnType<typeof install> | null = null;
 
 async function fetchWithSession(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers ?? {});
@@ -35,6 +37,7 @@ async function fetchWithSession(path: string, init: RequestInit = {}) {
 }
 
 before(async () => {
+  clock = install({ now: new Date('2025-06-01T12:00:00.000Z'), toFake: ['Date'] });
   await prisma.$executeRawUnsafe('TRUNCATE "UserProfile" CASCADE');
   await prisma.$executeRawUnsafe('TRUNCATE "User" CASCADE');
 
@@ -53,6 +56,7 @@ before(async () => {
 });
 
 after(async () => {
+  clock?.uninstall();
   server.close();
   await prisma.$disconnect();
 });

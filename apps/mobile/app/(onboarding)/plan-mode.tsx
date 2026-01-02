@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import {
@@ -152,14 +152,6 @@ export default function OnboardingPlanModeScreen() {
 
   const bmi = calculateBmi(draft.currentWeightKg ?? null, draft.heightCm ?? null);
   const idealRange = calculateIdealWeightRange(draft.heightCm ?? null);
-
-  const targetDateIsoMemo = summary?.targetDate?.toISOString() ?? null;
-
-  useEffect(() => {
-    if (targetDateIsoMemo !== draft.targetDate) {
-      updateDraft({ targetDate: targetDateIsoMemo });
-    }
-  }, [draft.targetDate, targetDateIsoMemo, updateDraft]);
 
   const weeklyRate = summary ? roundTo(Math.abs(summary.difference / Math.max(summary.weeks, 1)), 2) : null;
   const weeklyDirection = summary ? (summary.difference >= 0 ? -1 : 1) : 1;
