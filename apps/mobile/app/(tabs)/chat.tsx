@@ -632,6 +632,11 @@ export default function ChatScreen() {
         }
         setError('本日の利用回数が上限に達しました。');
         setMessageText(assistantPlaceholder.id, t('chat.usageLimitBubble'));
+      } else if (apiError.code === 'AI_UPSTREAM_QUOTA' || apiError.code === 'AI_IMAGE_QUOTA') {
+        updateMessageStatus(userMessage.id, 'error');
+        updateMessageStatus(assistantPlaceholder.id, 'error');
+        setError(apiError.message);
+        setMessageText(assistantPlaceholder.id, apiError.message);
       } else if (apiError.status === 401) {
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');

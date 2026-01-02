@@ -2971,11 +2971,81 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
     return { response: mock, attemptReports: [{ model: 'mock', ok: true, latencyMs: meta.latencyMs, attempt: 1 }], meta };
   }
 
+  const parseModelList = (raw: string | undefined) =>
+    (raw ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+  const uniqueModels = (entries: string[]) => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const entry of entries) {
+      if (!seen.has(entry)) {
+        seen.add(entry);
+        result.push(entry);
+      }
+    }
+    return result;
+  };
+
   const primaryModel = (Deno.env.get('GEMINI_PRIMARY_MODEL') ?? 'models/gemini-2.5-flash').trim();
-  const fallbackModelRaw = (Deno.env.get('GEMINI_FALLBACK_MODEL') ?? '').trim();
-  const fallbackModel = fallbackModelRaw && fallbackModelRaw !== primaryModel ? fallbackModelRaw : null;
+  const legacyFallbackModelRaw = (Deno.env.get('GEMINI_FALLBACK_MODEL') ?? '').trim();
+  const legacyFallbackModel = legacyFallbackModelRaw && legacyFallbackModelRaw !== primaryModel ? legacyFallbackModelRaw : null;
+  const fallbackModels = parseModelList(Deno.env.get('GEMINI_FALLBACK_MODELS'));
+  const chainModels = parseModelList(Deno.env.get('GEMINI_MODEL_CHAIN'));
+  const models = uniqueModels(
+    chainModels.length ? chainModels : [primaryModel, ...fallbackModels, ...(legacyFallbackModel ? [legacyFallbackModel] : [])],
+  );
+
+  const fallbackStrategy = (Deno.env.get('GEMINI_FALLBACK_STRATEGY') ?? 'any').trim().toLowerCase();
+  const textOnlyModels = new Set(parseModelList(Deno.env.get('GEMINI_TEXT_ONLY_MODELS')));
   const timeoutMsCandidate = Number(Deno.env.get('GEMINI_TIMEOUT_MS') ?? '25000');
   const timeoutMs = Number.isFinite(timeoutMsCandidate) ? Math.max(1_000, timeoutMsCandidate) : 25_000;
+
+  const isQuotaErrorMessage = (message: string) => {
+    const lower = message.toLowerCase();
+    return (
+      message.includes('Gemini error 429') ||
+      lower.includes('resource_exhausted') ||
+      lower.includes('quota exceeded') ||
+      lower.includes('rate limit')
+    );
+  };
+
+  const isTimeoutError = (error: unknown) => {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+    const name = typeof (error as any).name === 'string' ? String((error as any).name).toLowerCase() : '';
+    const message = typeof (error as any).message === 'string' ? String((error as any).message).toLowerCase() : '';
+    return name.includes('abort') || message.includes('timeout') || message.includes('gemini_timeout') || message.includes('ai_attempt_timeout');
+  };
+
+  const shouldTryNextModel = (error: unknown) => {
+    if (fallbackStrategy === 'any') {
+      return true;
+    }
+    const message = error instanceof Error ? error.message : String(error ?? '');
+    if (fallbackStrategy === 'quota') {
+      return isQuotaErrorMessage(message);
+    }
+    if (fallbackStrategy === 'quota_or_timeout') {
+      return isQuotaErrorMessage(message) || isTimeoutError(error);
+    }
+    return true;
+  };
+
+  const isTextOnlyModel = (model: string) => {
+    if (textOnlyModels.has(model)) {
+      return true;
+    }
+    const lower = model.trim().toLowerCase();
+    return lower.includes('gemma');
+  };
+
+  const hadImage = Boolean(params.imageBase64 && params.imageMimeType);
+  const userMessage = (params.message ?? '').trim();
 
   const coerceNumberLike = (value: unknown) => {
     if (typeof value === 'number') {
@@ -3086,16 +3156,16 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
     return err;
   };
 
-  const attempt = async (model: string, attemptNumber: number) => {
+  const attempt = async (model: string, attemptNumber: number, promptMessage: string, includeImage: boolean) => {
     const url = new URL(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent`);
     url.searchParams.set('key', apiKey);
-    const prompt = buildPrompt(params.message, params.locale ?? DEFAULT_LOCALE);
+    const prompt = buildPrompt(promptMessage, params.locale ?? DEFAULT_LOCALE);
 
     const requestBody: Record<string, unknown> = {
       contents: [
         {
           parts: [
-            ...(params.imageBase64 && params.imageMimeType
+            ...(includeImage && params.imageBase64 && params.imageMimeType
               ? [
                   {
                     inline_data: {
@@ -3164,14 +3234,36 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
     }
   };
 
-  const models: string[] = fallbackModel ? [primaryModel, fallbackModel] : [primaryModel];
   const attemptReports: HedgeAttemptReport[] = [];
   let firstError: Error | null = null;
+
+  if (!models.length) {
+    throw new Error('No Gemini models configured');
+  }
+
   for (let i = 0; i < models.length; i += 1) {
     const model = models[i];
     const attemptNumber = i + 1;
+    const includeImage = hadImage && !isTextOnlyModel(model);
+
+    if (!includeImage && hadImage && !userMessage) {
+      const remainingVisionModel = models.slice(i + 1).some((candidate) => hadImage && !isTextOnlyModel(candidate));
+      if (remainingVisionModel) {
+        continue;
+      }
+      throw new HttpError('画像解析の無料枠が上限に達しました。食事内容を文章で入力して再度お試しください。', {
+        status: HTTP_STATUS.TOO_MANY_REQUESTS,
+        code: 'AI_IMAGE_QUOTA',
+        expose: true,
+      });
+    }
+
+    const promptMessage =
+      !includeImage && hadImage
+        ? `${userMessage}\n\n(You cannot see the attached image. Respond using only the text description.)`
+        : userMessage;
     try {
-      const result = await attempt(model, attemptNumber);
+      const result = await attempt(model, attemptNumber, promptMessage, includeImage);
       attemptReports.push(result.report);
       if (attemptNumber > 1) {
         result.response.meta = { ...(result.response.meta ?? {}), fallback_model_used: true };
@@ -3185,13 +3277,29 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
       if ((err as any).report) {
         attemptReports.push((err as any).report);
       }
-      if (attemptNumber === 1 && fallbackModel) {
+      if (attemptNumber === 1 && models.length > 1) {
         console.error('analyzeMeal: primary model failed', err);
       }
-      if (attemptNumber === models.length) {
+      const shouldFallback = attemptNumber < models.length && shouldTryNextModel(err);
+      if (!shouldFallback) {
+        if (isQuotaErrorMessage(err.message)) {
+          throw new HttpError('AIの無料枠が上限に達しました。時間をおいて再度お試しください。', {
+            status: HTTP_STATUS.TOO_MANY_REQUESTS,
+            code: 'AI_UPSTREAM_QUOTA',
+            expose: true,
+          });
+        }
         throw err;
       }
     }
+  }
+
+  if (firstError && isQuotaErrorMessage(firstError.message)) {
+    throw new HttpError('AIの無料枠が上限に達しました。時間をおいて再度お試しください。', {
+      status: HTTP_STATUS.TOO_MANY_REQUESTS,
+      code: 'AI_UPSTREAM_QUOTA',
+      expose: true,
+    });
   }
 
   throw firstError ?? new Error('Gemini request failed');
