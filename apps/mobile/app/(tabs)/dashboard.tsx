@@ -533,10 +533,17 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
 
   const monthlySummary = monthlySummaryQuery.data ?? null;
   const dailyEntries = useMemo(() => monthlySummary?.calories.daily ?? [], [monthlySummary]);
+  const todayIso = today.toISODate();
+  const completeDayEntries = useMemo(() => {
+    if (!todayIso) {
+      return dailyEntries;
+    }
+    return dailyEntries.filter((entry) => entry.date !== todayIso);
+  }, [dailyEntries, todayIso]);
 
   const targetDaily = typeof targets.calories === 'number' ? targets.calories : 0;
 
-  const deficitKcal = dailyEntries.reduce((sum, entry) => {
+  const deficitKcal = completeDayEntries.reduce((sum, entry) => {
     if (entry.total <= 0) {
       return sum;
     }
@@ -563,7 +570,8 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
       return undefined;
     }
 
-    const entriesWithTotal = dailyEntries.filter(
+    const entriesForExample = completeDayEntries.length > 0 ? completeDayEntries : dailyEntries;
+    const entriesWithTotal = entriesForExample.filter(
       (entry) => typeof entry.total === 'number' && Number.isFinite(entry.total) && entry.total > 0,
     );
     if (entriesWithTotal.length === 0) {
@@ -585,7 +593,7 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
       burnKcal,
       monthlyTotalKcalText: displayDeficitKcal,
     };
-  }, [dailyEntries, displayDeficitKcal, hasMonthlyData, targetDaily]);
+  }, [completeDayEntries, dailyEntries, displayDeficitKcal, hasMonthlyData, targetDaily]);
 
   return (
     <View style={burningStyles.container}>

@@ -1043,25 +1043,21 @@ export default function ChatScreen() {
                 <View
                   style={[styles.composerArea, styles.composerDocked, { paddingBottom: Math.max(12, inset.bottom) }]}
                 >
-                  <View style={styles.inputRow}>
-                    <TextInput
-                      style={styles.textInput}
-                      placeholder={t('chat.placeholder')}
-                      value={input}
-                      onChangeText={setInput}
-                      multiline={false}
-                      blurOnSubmit={false}
-                      returnKeyType="send"
-                      onSubmitEditing={() => {
-                        if (!sendButtonDisabled) {
-                          void handleSend();
-                        }
-                      }}
-                    />
-                    <TouchableOpacity
-                      onPress={() => {
-                        if (!sendButtonDisabled) {
-                          void handleSend();
+	                  <View style={styles.inputRow}>
+	                    <TextInput
+	                      style={styles.textInput}
+	                      placeholder={t('chat.placeholder')}
+	                      value={input}
+	                      onChangeText={setInput}
+	                      multiline
+	                      submitBehavior="newline"
+	                      blurOnSubmit={false}
+	                      returnKeyType="default"
+	                    />
+	                    <TouchableOpacity
+	                      onPress={() => {
+	                        if (!sendButtonDisabled) {
+	                          void handleSend();
                         }
                       }}
                       disabled={sendButtonDisabled}
