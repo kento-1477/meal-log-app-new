@@ -14,6 +14,7 @@ interface ChatBubbleProps {
 export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
   const isUser = message.role === 'user';
   const isProcessing = !isUser && message.status === 'processing';
+  const hasImage = typeof message.imageUri === 'string' && message.imageUri.length > 0;
   const shimmer = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -33,7 +34,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
   }, [isProcessing, shimmer]);
 
   const content = (message.text ?? '').trim();
-  if (!content.length && !isProcessing) {
+  if (!content.length && !isProcessing && !hasImage) {
     return null;
   }
   const textStyle = [styles.text, isUser ? styles.userText : styles.assistantText];
@@ -45,21 +46,31 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
 
   return (
     <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
-      {isUser ? null : (
-        <Image source={AI_AVATAR} style={styles.avatar} resizeMode="contain" />
-      )}
+      {isUser ? null : <Image source={AI_AVATAR} style={styles.avatar} resizeMode="contain" />}
       {isUser ? (
         <LinearGradient
           colors={[colors.accent, '#FFD36A']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={[styles.bubble, styles.userBubble]}
+          style={[styles.bubble, styles.userBubble, hasImage && styles.userBubbleWithImage]}
         >
-          <Text style={textStyle}>{message.text}</Text>
+          {hasImage ? (
+            <Image
+              source={{ uri: message.imageUri! }}
+              style={styles.messageImage}
+              resizeMode="cover"
+              accessibilityIgnoresInvertColors
+            />
+          ) : null}
+          {content.length ? (
+            <Text style={[textStyle, hasImage && styles.textWithImage]}>{message.text}</Text>
+          ) : null}
           {message.status === 'error' && <Text style={styles.error}>⚠️ 再度お試しください。</Text>}
         </LinearGradient>
       ) : (
-        <View style={[styles.bubble, styles.assistantBubble, isProcessing && styles.processingBubble]}>
+        <View
+          style={[styles.bubble, styles.assistantBubble, isProcessing && styles.processingBubble]}
+        >
           {isProcessing ? (
             <View style={styles.processingBody}>
               <View style={styles.processingLabelRow}>
@@ -73,7 +84,9 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
           ) : (
             <>
               <Text style={textStyle}>{message.text}</Text>
-              {message.status === 'error' && <Text style={styles.error}>⚠️ 再度お試しください。</Text>}
+              {message.status === 'error' && (
+                <Text style={styles.error}>⚠️ 再度お試しください。</Text>
+              )}
             </>
           )}
         </View>
@@ -112,12 +125,24 @@ const styles = StyleSheet.create({
   userBubble: {
     borderBottomRightRadius: 6,
   },
+  userBubbleWithImage: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
   assistantBubble: {
     backgroundColor: colors.surfaceStrong,
     borderBottomLeftRadius: 4,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     shadowOpacity: 0.08,
+  },
+  messageImage: {
+    width: '100%',
+    aspectRatio: 4 / 3,
+    borderRadius: 16,
+  },
+  textWithImage: {
+    marginTop: 10,
   },
   processingBubble: {
     borderColor: 'rgba(17,19,24,0.08)',

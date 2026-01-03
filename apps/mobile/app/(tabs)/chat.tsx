@@ -71,7 +71,11 @@ const composeTimeline = (messages: ReturnType<typeof useChatStore.getState>['mes
   messages.flatMap((message) => {
     const base: TimelineItemMessage = { type: 'message', id: message.id, payload: message };
     if (message.card) {
-      const card: TimelineItemCard = { type: 'card', id: `${message.id}-card`, payload: message.card };
+      const card: TimelineItemCard = {
+        type: 'card',
+        id: `${message.id}-card`,
+        payload: message.card,
+      };
       return [base, card];
     }
     return [base];
@@ -94,19 +98,26 @@ function isLikelyNetworkError(error: unknown): boolean {
   if (!error) {
     return false;
   }
-  const code = typeof (error as { code?: unknown }).code === 'string' ? (error as { code: string }).code : '';
+  const code =
+    typeof (error as { code?: unknown }).code === 'string' ? (error as { code: string }).code : '';
   if (code.startsWith('network.')) {
     return true;
   }
-  const name = typeof (error as { name?: unknown }).name === 'string' ? (error as { name: string }).name : '';
+  const name =
+    typeof (error as { name?: unknown }).name === 'string' ? (error as { name: string }).name : '';
   if (name === 'AbortError') {
     return true;
   }
   if (error instanceof TypeError) {
     return true;
   }
-  const message = typeof (error as { message?: unknown }).message === 'string' ? (error as { message: string }).message : '';
-  return NETWORK_ERROR_PATTERNS.some((pattern) => message.toLowerCase().includes(pattern.toLowerCase()));
+  const message =
+    typeof (error as { message?: unknown }).message === 'string'
+      ? (error as { message: string }).message
+      : '';
+  return NETWORK_ERROR_PATTERNS.some((pattern) =>
+    message.toLowerCase().includes(pattern.toLowerCase()),
+  );
 }
 
 // ... (rest of the imports)
@@ -160,7 +171,10 @@ export default function ChatScreen() {
 
   const renderMealLogResult = useCallback(
     (response: MealLogResponse, placeholderId: string) => {
-      const meta = (response.meta ?? {}) as { mealPeriod?: string | null; timezone?: string | null };
+      const meta = (response.meta ?? {}) as {
+        mealPeriod?: string | null;
+        timezone?: string | null;
+      };
       const rawMealPeriod = meta.mealPeriod ?? response.meal_period ?? null;
       const mealPeriod = typeof rawMealPeriod === 'string' ? rawMealPeriod.toLowerCase() : null;
       const timezone = meta.timezone ?? null;
@@ -189,7 +203,10 @@ export default function ChatScreen() {
   const [cameraPermission, requestCameraPermission] = ImagePicker.useCameraPermissions();
 
   const prevMessagesRef = useRef<ChatMessage[] | null>(null);
-  const [enhancedExchange, setEnhancedExchange] = useState<{ user: ChatMessage; assistant: ChatMessage | null } | null>(null);
+  const [enhancedExchange, setEnhancedExchange] = useState<{
+    user: ChatMessage;
+    assistant: ChatMessage | null;
+  } | null>(null);
 
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
@@ -239,7 +256,10 @@ export default function ChatScreen() {
         try {
           const status = await getIngestStatus(ingest.requestKey);
           if (__DEV__) {
-            console.log('[chat] ingest status', { requestKey: ingest.requestKey, status: status.status });
+            console.log('[chat] ingest status', {
+              requestKey: ingest.requestKey,
+              status: status.status,
+            });
           }
           if (status.ok && status.status === 'done') {
             updateMessageStatus(ingest.userMessageId, 'delivered');
@@ -265,7 +285,10 @@ export default function ChatScreen() {
           }
         } catch (error) {
           if (__DEV__) {
-            console.warn('[chat] ingest status fetch failed', { requestKey: ingest.requestKey, error });
+            console.warn('[chat] ingest status fetch failed', {
+              requestKey: ingest.requestKey,
+              error,
+            });
           }
           const apiError = error as ApiError;
           const tooOld = Date.now() - ingest.createdAt > 1000 * 60 * 2;
@@ -308,7 +331,6 @@ export default function ChatScreen() {
     const poll = setInterval(() => void refreshPendingIngests(), 5000);
     return () => clearInterval(poll);
   }, [pendingIngests.length, refreshPendingIngests]);
-
 
   const favoritesQuery = useQuery({
     queryKey: ['favorites'],
@@ -470,11 +492,20 @@ export default function ChatScreen() {
 
     const lastUser = lastUserIndex >= 0 ? messages[lastUserIndex] : null;
     const assistantAfterUser =
-      lastUserIndex >= 0 ? messages.slice(lastUserIndex + 1).find((message) => message.role === 'assistant') ?? null : null;
+      lastUserIndex >= 0
+        ? (messages.slice(lastUserIndex + 1).find((message) => message.role === 'assistant') ??
+          null)
+        : null;
 
     const shouldUpdateOnNewUser = userCount > prevUserCount && lastUser !== null;
-    const isDifferentUser = lastUser && enhancedExchange && enhancedExchange.user.id !== lastUser.id;
-    const assistantNowPresent = lastUser && enhancedExchange && enhancedExchange.user.id === lastUser.id && !enhancedExchange.assistant && assistantAfterUser;
+    const isDifferentUser =
+      lastUser && enhancedExchange && enhancedExchange.user.id !== lastUser.id;
+    const assistantNowPresent =
+      lastUser &&
+      enhancedExchange &&
+      enhancedExchange.user.id === lastUser.id &&
+      !enhancedExchange.assistant &&
+      assistantAfterUser;
     const assistantUpdated =
       lastUser &&
       enhancedExchange &&
@@ -493,7 +524,10 @@ export default function ChatScreen() {
     prevMessagesRef.current = messages;
   }, [messages, enhancedExchange, scrollToEnd]);
 
-  const timeline = useMemo<Array<TimelineItemMessage | TimelineItemCard>>(() => composeTimeline(messages), [messages]);
+  const timeline = useMemo<Array<TimelineItemMessage | TimelineItemCard>>(
+    () => composeTimeline(messages),
+    [messages],
+  );
 
   const filteredTimeline = useMemo(() => {
     if (!enhancedExchange) {
@@ -573,9 +607,9 @@ export default function ChatScreen() {
     setSending(true);
     setError(null);
 
-    const displayMessage = trimmedMessage || (hasImage ? t('chat.sentPhoto') : rawMessage);
+    const displayMessage = trimmedMessage || (hasImage ? '' : rawMessage);
 
-    const userMessage = addUserMessage(displayMessage);
+    const userMessage = addUserMessage(displayMessage, { imageUri: options.imageUri ?? undefined });
     const processingText = t('chat.processing');
     const requestKey = options.request ? null : `ingest_${Date.now()}_${nanoid(10)}`;
     if (__DEV__) {
@@ -699,7 +733,9 @@ export default function ChatScreen() {
 
     const message = buildMessageFromFavorite(favorite);
     const userMessage = addUserMessage(message);
-    const assistantPlaceholder = addAssistantMessage('お気に入りを記録しています…', { status: 'sending' });
+    const assistantPlaceholder = addAssistantMessage('お気に入りを記録しています…', {
+      status: 'sending',
+    });
     scrollToEnd();
 
     try {
@@ -719,7 +755,8 @@ export default function ChatScreen() {
     } catch (error) {
       updateMessageStatus(userMessage.id, 'error');
       updateMessageStatus(assistantPlaceholder.id, 'error');
-      const messageText = error instanceof Error ? error.message : 'お気に入りからの記録に失敗しました';
+      const messageText =
+        error instanceof Error ? error.message : 'お気に入りからの記録に失敗しました';
       setError(messageText);
       Alert.alert('記録に失敗しました', messageText);
     } finally {
@@ -774,7 +811,10 @@ export default function ChatScreen() {
       if (!permission?.granted) {
         setError('写真ライブラリへのアクセスを許可してください。設定アプリから変更できます。');
         if (permission && !permission.canAskAgain) {
-          Alert.alert('ライブラリにアクセスできません', '設定アプリで Meal Log の写真アクセスを許可してください。');
+          Alert.alert(
+            'ライブラリにアクセスできません',
+            '設定アプリで Meal Log の写真アクセスを許可してください。',
+          );
         }
         return;
       }
@@ -805,7 +845,10 @@ export default function ChatScreen() {
       if (!permission?.granted) {
         setError('カメラへのアクセスを許可してください。設定アプリから変更できます。');
         if (permission && !permission.canAskAgain) {
-          Alert.alert('カメラにアクセスできません', '設定アプリで Meal Log のカメラアクセスを許可してください。');
+          Alert.alert(
+            'カメラにアクセスできません',
+            '設定アプリで Meal Log のカメラアクセスを許可してください。',
+          );
         }
         return;
       }
@@ -864,8 +907,18 @@ export default function ChatScreen() {
 
   const quickActions = useMemo<QuickAction[]>(
     () => [
-      { key: 'photo', icon: 'camera', label: t('chat.quickActions.photo'), onPress: handlePhotoQuickAction },
-      { key: 'favorite', icon: 'star', label: t('chat.quickActions.favorite'), onPress: () => setFavoritesVisible(true) },
+      {
+        key: 'photo',
+        icon: 'camera',
+        label: t('chat.quickActions.photo'),
+        onPress: handlePhotoQuickAction,
+      },
+      {
+        key: 'favorite',
+        icon: 'star',
+        label: t('chat.quickActions.favorite'),
+        onPress: () => setFavoritesVisible(true),
+      },
     ],
     [handlePhotoQuickAction, t],
   );
@@ -900,7 +953,9 @@ export default function ChatScreen() {
     }
 
     const assistantCard = enhancedExchange.assistant?.card ?? null;
-    const assistantCardId = enhancedExchange.assistant ? `${enhancedExchange.assistant.id}-card` : null;
+    const assistantCardId = enhancedExchange.assistant
+      ? `${enhancedExchange.assistant.id}-card`
+      : null;
 
     const assistantHasCard = Boolean(enhancedExchange.assistant?.card);
     const assistantBubbleMessage =
@@ -910,7 +965,8 @@ export default function ChatScreen() {
     const shouldShowUserBubble = !assistantHasCard;
 
     return (
-      <View style={[styles.enhancedContainer, { minHeight: enhancedContainerMinHeight }]}
+      <View
+        style={[styles.enhancedContainer, { minHeight: enhancedContainerMinHeight }]}
         key={enhancedExchange.user.id}
       >
         {shouldShowUserBubble ? <ChatBubble message={enhancedExchange.user} /> : null}
@@ -962,11 +1018,18 @@ export default function ChatScreen() {
                 </View>
                 <View style={styles.statusPillRow}>
                   <View style={styles.statusPill}>
-                    <Text style={styles.statusLabel}>{t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}</Text>
+                    <Text style={styles.statusLabel}>
+                      {t('usage.banner.remaining', {
+                        remaining: usage.remaining,
+                        limit: usage.limit,
+                      })}
+                    </Text>
                   </View>
                   {usage.credits > 0 ? (
                     <View style={styles.statusPill}>
-                      <Text style={styles.statusLabel}>{t('usage.banner.credits', { credits: usage.credits })}</Text>
+                      <Text style={styles.statusLabel}>
+                        {t('usage.banner.credits', { credits: usage.credits })}
+                      </Text>
                     </View>
                   ) : null}
                 </View>
@@ -994,13 +1057,20 @@ export default function ChatScreen() {
                   payload={item.payload}
                   onShare={() => handleShareCard(item.payload, item.id)}
                   sharing={sharingId === item.id}
-                  onAddFavorite={item.payload.favoriteCandidate ? (draft) => handleAddFavoriteFromCard(item.id, draft) : undefined}
+                  onAddFavorite={
+                    item.payload.favoriteCandidate
+                      ? (draft) => handleAddFavoriteFromCard(item.id, draft)
+                      : undefined
+                  }
                   addingFavorite={addingFavoriteId === item.id}
                   onEdit={item.payload.logId ? () => handleEditLog(item.payload.logId) : undefined}
                 />
               )
             }
-            contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(bottomSectionHeight, 120) }]}
+            contentContainerStyle={[
+              styles.listContent,
+              { paddingBottom: Math.max(bottomSectionHeight, 120) },
+            ]}
             ListFooterComponent={renderEnhancedFooter}
             onContentSizeChange={scrollToEnd}
             showsVerticalScrollIndicator={false}
@@ -1027,43 +1097,58 @@ export default function ChatScreen() {
                 {composingImageUri ? (
                   <View style={styles.previewContainer}>
                     <Image source={{ uri: composingImageUri }} style={styles.preview} />
-                    <TouchableOpacity onPress={() => setComposingImage(null)} style={styles.removeImage}>
+                    <TouchableOpacity
+                      onPress={() => setComposingImage(null)}
+                      style={styles.removeImage}
+                    >
                       <Text style={{ color: '#fff' }}>✕</Text>
                     </TouchableOpacity>
                   </View>
                 ) : null}
                 <View style={styles.quickActionsRow}>
                   {quickActions.map((action) => (
-                    <TouchableOpacity key={action.key} style={styles.quickAction} onPress={action.onPress}>
+                    <TouchableOpacity
+                      key={action.key}
+                      style={styles.quickAction}
+                      onPress={action.onPress}
+                    >
                       <Feather name={action.icon} size={14} color={colors.textPrimary} />
                       <Text style={styles.quickActionLabel}>{action.label}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
                 <View
-                  style={[styles.composerArea, styles.composerDocked, { paddingBottom: Math.max(12, inset.bottom) }]}
+                  style={[
+                    styles.composerArea,
+                    styles.composerDocked,
+                    { paddingBottom: Math.max(12, inset.bottom) },
+                  ]}
                 >
-	                  <View style={styles.inputRow}>
-	                    <TextInput
-	                      style={styles.textInput}
-	                      placeholder={t('chat.placeholder')}
-	                      value={input}
-	                      onChangeText={setInput}
-	                      multiline
-	                      submitBehavior="newline"
-	                      blurOnSubmit={false}
-	                      returnKeyType="default"
-	                    />
-	                    <TouchableOpacity
-	                      onPress={() => {
-	                        if (!sendButtonDisabled) {
-	                          void handleSend();
+                  <View style={styles.inputRow}>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder={t('chat.placeholder')}
+                      value={input}
+                      onChangeText={setInput}
+                      multiline
+                      submitBehavior="newline"
+                      blurOnSubmit={false}
+                      returnKeyType="default"
+                    />
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (!sendButtonDisabled) {
+                          void handleSend();
                         }
                       }}
                       disabled={sendButtonDisabled}
                       style={[styles.sendButton, sendButtonDisabled && styles.sendButtonDisabled]}
                     >
-                      {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>{sendLabel}</Text>}
+                      {sending ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={styles.sendLabel}>{sendLabel}</Text>
+                      )}
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1119,8 +1204,10 @@ export default function ChatScreen() {
                   >
                     <Text style={styles.favoritesItemName}>{favorite.name}</Text>
                     <Text style={styles.favoritesItemMeta}>
-                      {Math.round(favorite.totals.kcal)} kcal ／ P {formatMacro(favorite.totals.protein_g)}g ／ F {formatMacro(favorite.totals.fat_g)}g ／
-                      C {formatMacro(favorite.totals.carbs_g)}g
+                      {Math.round(favorite.totals.kcal)} kcal ／ P{' '}
+                      {formatMacro(favorite.totals.protein_g)}g ／ F{' '}
+                      {formatMacro(favorite.totals.fat_g)}g ／ C{' '}
+                      {formatMacro(favorite.totals.carbs_g)}g
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -1152,7 +1239,9 @@ export default function ChatScreen() {
                     handleOpenPaywall();
                   }}
                 >
-                  <Text style={styles.usageModalPrimaryLabel}>{t('usage.limitModal.purchase')}</Text>
+                  <Text style={styles.usageModalPrimaryLabel}>
+                    {t('usage.limitModal.purchase')}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setLimitModalVisible(false)}>
                   <Text style={styles.usageModalSecondary}>{t('usage.limitModal.close')}</Text>
@@ -1179,7 +1268,9 @@ export default function ChatScreen() {
                     handleOpenPaywall();
                   }}
                 >
-                  <Text style={styles.usageModalPrimaryLabel}>{t('usage.streakModal.upgrade')}</Text>
+                  <Text style={styles.usageModalPrimaryLabel}>
+                    {t('usage.streakModal.upgrade')}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setStreakModalVisible(false)}>
                   <Text style={styles.usageModalSecondary}>{t('usage.streakModal.close')}</Text>
@@ -1230,7 +1321,12 @@ function buildShareMessage(payload: NutritionCardPayload) {
     });
   }
 
-  if (payload.fallbackApplied && payload.requestedLocale && payload.locale && payload.requestedLocale !== payload.locale) {
+  if (
+    payload.fallbackApplied &&
+    payload.requestedLocale &&
+    payload.locale &&
+    payload.requestedLocale !== payload.locale
+  ) {
     lines.push(
       `※ ${describeLocale(payload.requestedLocale)} の翻訳が未対応のため ${describeLocale(payload.locale)} で表示しています`,
     );

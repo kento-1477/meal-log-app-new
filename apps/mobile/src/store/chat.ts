@@ -7,10 +7,14 @@ import type { ChatMessage, NutritionCardPayload } from '@/types/chat';
 export interface ChatState {
   messages: ChatMessage[];
   composingImageUri?: string | null;
-  addUserMessage: (text: string) => ChatMessage;
+  addUserMessage: (text: string, options?: { imageUri?: string | null }) => ChatMessage;
   addAssistantMessage: (
     text: string,
-    options?: { card?: NutritionCardPayload; status?: ChatMessage['status']; ingest?: ChatMessage['ingest'] },
+    options?: {
+      card?: NutritionCardPayload;
+      status?: ChatMessage['status'];
+      ingest?: ChatMessage['ingest'];
+    },
   ) => ChatMessage;
   setMessageText: (id: string, text: string) => void;
   updateMessageStatus: (id: string, status: ChatMessage['status']) => void;
@@ -36,11 +40,12 @@ export const useChatStore = create<ChatState>()(
     (set, get) => ({
       messages: buildInitialMessages(),
       composingImageUri: null,
-      addUserMessage: (text) => {
+      addUserMessage: (text, options) => {
         const message: ChatMessage = {
           id: nanoid(),
           role: 'user',
           text,
+          imageUri: options?.imageUri ?? undefined,
           createdAt: Date.now(),
           status: 'sending',
         };
@@ -69,7 +74,9 @@ export const useChatStore = create<ChatState>()(
       },
       updateMessageStatus: (id, status) => {
         set({
-          messages: get().messages.map((message) => (message.id === id ? { ...message, status } : message)),
+          messages: get().messages.map((message) =>
+            message.id === id ? { ...message, status } : message,
+          ),
         });
       },
       attachCardToMessage: (id, card) => {
@@ -120,7 +127,10 @@ export const useChatStore = create<ChatState>()(
           const messages = Array.isArray(state.messages) ? (state.messages as ChatMessage[]) : [];
           const pending = Array.isArray(state.pendingIngests) ? state.pendingIngests : [];
           if (pending.length && messages.length) {
-            const ingestByAssistantId = new Map<string, { requestKey: string; userMessageId: string }>();
+            const ingestByAssistantId = new Map<
+              string,
+              { requestKey: string; userMessageId: string }
+            >();
             for (const entry of pending) {
               if (!entry) continue;
               if (typeof entry.assistantMessageId !== 'string') continue;
@@ -135,7 +145,10 @@ export const useChatStore = create<ChatState>()(
               if (!message || typeof message !== 'object') return message;
               const ingest = ingestByAssistantId.get((message as ChatMessage).id);
               if (!ingest) return message;
-              return { ...(message as ChatMessage), ingest: (message as ChatMessage).ingest ?? ingest };
+              return {
+                ...(message as ChatMessage),
+                ingest: (message as ChatMessage).ingest ?? ingest,
+              };
             });
             state.messages = migratedMessages;
           }

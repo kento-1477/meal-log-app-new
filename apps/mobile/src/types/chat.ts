@@ -6,6 +6,7 @@ export interface ChatMessage {
   id: string;
   role: ChatRole;
   text: string;
+  imageUri?: string | null;
   createdAt: number;
   card?: NutritionCardPayload;
   status?: 'sending' | 'delivered' | 'error' | 'processing';
