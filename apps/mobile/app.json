@@ -22,6 +22,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.meallog.app",
+      "appStoreId": 6754909859,
       "buildNumber": "11",
       "usesAppleSignIn": true,
       "infoPlist": {
