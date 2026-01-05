@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, SafeAreaView, StyleSheet, Text, View, Platform, Image, Linking } from 'react-native';
+import { Alert, StyleSheet, Text, View, Platform, Image, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';

@@ -17,7 +17,14 @@ interface NutritionCardProps {
   onEdit?: () => void;
 }
 
-export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, sharing, onAddFavorite, addingFavorite, onEdit }) => {
+export const NutritionCard = React.memo<NutritionCardProps>(function NutritionCard({
+  payload,
+  onShare,
+  sharing,
+  onAddFavorite,
+  addingFavorite,
+  onEdit,
+}) {
   const { t } = useTranslation();
   const baseWarnings = (payload.warnings ?? []).map((warning) =>
     warning.startsWith('zeroFloored') ? t('card.warnings.zeroFloored') : warning,
@@ -135,7 +142,7 @@ export const NutritionCard: React.FC<NutritionCardProps> = ({ payload, onShare, 
       ) : null}
     </GlassCard>
   );
-};
+});
 
 const MacroPill: React.FC<{ label: string; value: number; unit: string; color: string }> = ({
   label,

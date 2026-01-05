@@ -50,10 +50,19 @@ import {
   type ApiError,
 } from '@/services/api';
 import { hasDialogBeenSeen, markDialogSeen } from '@/services/dialog-tracker';
+import { requestStoreReview } from '@/services/review';
+import {
+  FREE_REVIEW_TRIGGER_COUNT,
+  getReviewTrackerState,
+  markReviewPrompted,
+  recordChatLogSuccess,
+  REVIEW_TRIGGER_COUNT,
+} from '@/services/review-tracker';
 import { describeLocale } from '@/utils/locale';
 import type { ChatMessage, NutritionCardPayload } from '@/types/chat';
 import type { AiUsageSummary, FavoriteMeal, FavoriteMealDraft } from '@meal-log/shared';
 import { useTranslation } from '@/i18n';
+import { trackEvent } from '@/analytics/track';
 
 interface TimelineItemMessage {
   type: 'message';
@@ -138,11 +147,16 @@ export default function ChatScreen() {
   const [addingFavoriteId, setAddingFavoriteId] = useState<string | null>(null);
   const [limitModalVisible, setLimitModalVisible] = useState(false);
   const [streakModalVisible, setStreakModalVisible] = useState(false);
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [reviewPromptPending, setReviewPromptPending] = useState(false);
+  const [reviewPromptCount, setReviewPromptCount] = useState<number | null>(null);
   const [bottomSectionHeight, setBottomSectionHeight] = useState(0);
   const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reviewPromptQueueRef = useRef(Promise.resolve());
   const usageRefreshInFlight = useRef(false);
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
+  const userId = useSessionStore((state) => state.user?.id ?? null);
 
   const clearNetworkHintTimer = useCallback(() => {
     if (networkHintTimerRef.current) {
@@ -168,6 +182,29 @@ export default function ChatScreen() {
   const hasUsage = Boolean(usage);
   const usagePlan = usage?.plan;
   const usageRemaining = usage?.remaining;
+  const reviewTriggerCount =
+    userPlan === 'FREE' ? FREE_REVIEW_TRIGGER_COUNT : REVIEW_TRIGGER_COUNT;
+
+  const maybeQueueReviewPrompt = useCallback(
+    async (logId: string) => {
+      reviewPromptQueueRef.current = reviewPromptQueueRef.current.then(async () => {
+        try {
+          const decision = await recordChatLogSuccess({
+            logId,
+            userId,
+            triggerCount: reviewTriggerCount,
+          });
+          if (decision.shouldPrompt) {
+            setReviewPromptCount(decision.state.count);
+            setReviewPromptPending(true);
+          }
+        } catch (error) {
+          console.warn('Failed to update review prompt tracker', error);
+        }
+      });
+    },
+    [reviewTriggerCount, userId],
+  );
 
   const renderMealLogResult = useCallback(
     (response: MealLogResponse, placeholderId: string) => {
@@ -195,8 +232,9 @@ export default function ChatScreen() {
         timezone,
       });
       setMessageText(placeholderId, buildAssistantSummary(response));
+      void maybeQueueReviewPrompt(response.logId);
     },
-    [attachCardToMessage, setMessageText],
+    [attachCardToMessage, maybeQueueReviewPrompt, setMessageText],
   );
 
   const [mediaPermission, requestMediaPermission] = ImagePicker.useMediaLibraryPermissions();
@@ -465,6 +503,26 @@ export default function ChatScreen() {
   }, [hasStreak, streakCurrent, streakLastLoggedAt, userPlan]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const state = await getReviewTrackerState(userId);
+      if (cancelled) return;
+      if (state.pending && !state.promptedAt) {
+        setReviewPromptCount(state.count);
+        setReviewPromptPending(true);
+      } else {
+        setReviewPromptCount(null);
+        setReviewPromptPending(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  useEffect(() => {
     const prev = prevMessagesRef.current;
     const userCount = messages.filter((message) => message.role === 'user').length;
 
@@ -572,6 +630,34 @@ export default function ChatScreen() {
   const canSubmitMessage = hasTypedInput || hasAttachment;
   const sendButtonDisabled = sending || !canSend || !canSubmitMessage;
 
+  const reviewPromptBlocked =
+    reviewModalVisible ||
+    limitModalVisible ||
+    streakModalVisible ||
+    favoritesVisible ||
+    sending ||
+    isLimitReached;
+
+  useEffect(() => {
+    if (!reviewPromptPending || reviewPromptBlocked) {
+      return;
+    }
+    setReviewModalVisible(true);
+    setReviewPromptPending(false);
+    void markReviewPrompted(userId).catch((error) => {
+      console.warn('Failed to mark review prompt as shown', error);
+    });
+    trackEvent('review.prompt_shown', {
+      count: reviewPromptCount ?? reviewTriggerCount,
+    });
+  }, [
+    reviewPromptBlocked,
+    reviewPromptCount,
+    reviewPromptPending,
+    reviewTriggerCount,
+    userId,
+  ]);
+
   const favoritesList = favoritesQuery.data ?? [];
   const sendLabel = canSend ? t('chat.send') : t('chat.send.limit');
 
@@ -580,9 +666,12 @@ export default function ChatScreen() {
     setComposingImage(null);
   };
 
-  const handleEditLog = (logId: string) => {
-    router.push(`/log/${logId}`);
-  };
+  const handleEditLog = useCallback(
+    (logId: string) => {
+      router.push(`/log/${logId}`);
+    },
+    [router],
+  );
 
   const submitMeal = async (
     rawMessage: string,
@@ -698,18 +787,21 @@ export default function ChatScreen() {
     }
   };
 
-  const handleAddFavoriteFromCard = async (cardId: string, draft: FavoriteMealDraft) => {
-    try {
-      setAddingFavoriteId(cardId);
-      await createFavoriteMutation.mutateAsync(draft);
-      Alert.alert('お気に入りに追加しました');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'お気に入りの保存に失敗しました';
-      Alert.alert('お気に入りの保存に失敗しました', message);
-    } finally {
-      setAddingFavoriteId(null);
-    }
-  };
+  const handleAddFavoriteFromCard = useCallback(
+    async (cardId: string, draft: FavoriteMealDraft) => {
+      try {
+        setAddingFavoriteId(cardId);
+        await createFavoriteMutation.mutateAsync(draft);
+        Alert.alert('お気に入りに追加しました');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'お気に入りの保存に失敗しました';
+        Alert.alert('お気に入りの保存に失敗しました', message);
+      } finally {
+        setAddingFavoriteId(null);
+      }
+    },
+    [createFavoriteMutation],
+  );
 
   const buildMessageFromFavorite = (favorite: FavoriteMeal) => {
     const lines = [favorite.name];
@@ -820,7 +912,7 @@ export default function ChatScreen() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: false,
         quality: 0.8,
         exif: false,
@@ -854,7 +946,7 @@ export default function ChatScreen() {
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: false,
         quality: 0.8,
         exif: false,
@@ -923,29 +1015,79 @@ export default function ChatScreen() {
     [handlePhotoQuickAction, t],
   );
 
-  const handleShareCard = async (payload: NutritionCardPayload, cardKey: string) => {
-    try {
-      setSharingId(cardKey);
-      let message = buildShareMessage(payload);
-      if (payload.logId) {
-        try {
-          const response = await getMealLogShare(payload.logId);
-          message = response.share.text;
-        } catch (shareError) {
-          console.warn('Failed to fetch share payload, fallback to local data', shareError);
+  const handleShareCard = useCallback(
+    async (payload: NutritionCardPayload, cardKey: string) => {
+      try {
+        setSharingId(cardKey);
+        let message = buildShareMessage(payload);
+        if (payload.logId) {
+          try {
+            const response = await getMealLogShare(payload.logId);
+            message = response.share.text;
+          } catch (shareError) {
+            console.warn('Failed to fetch share payload, fallback to local data', shareError);
+          }
         }
+        await Share.share({ message });
+      } catch (_error) {
+        Alert.alert('共有に失敗しました', '時間をおいて再度お試しください。');
+      } finally {
+        setSharingId(null);
       }
-      await Share.share({ message });
-    } catch (_error) {
-      Alert.alert('共有に失敗しました', '時間をおいて再度お試しください。');
-    } finally {
-      setSharingId(null);
-    }
-  };
+    },
+    [],
+  );
 
   const handleOpenPaywall = useCallback(() => {
     router.push('/paywall');
   }, [router]);
+
+  const handleReviewRequest = useCallback(() => {
+    setReviewModalVisible(false);
+    trackEvent('review.prompt_accept', {
+      count: reviewPromptCount ?? reviewTriggerCount,
+    });
+    void requestStoreReview();
+  }, [reviewPromptCount, reviewTriggerCount]);
+
+  const handleReviewDismiss = useCallback(() => {
+    setReviewModalVisible(false);
+    trackEvent('review.prompt_dismiss', {
+      count: reviewPromptCount ?? reviewTriggerCount,
+    });
+  }, [reviewPromptCount, reviewTriggerCount]);
+
+  const keyExtractor = useCallback(
+    (item: TimelineItemMessage | TimelineItemCard) => item.id,
+    [],
+  );
+
+  const renderTimelineItem = useCallback(
+    ({ item }: { item: TimelineItemMessage | TimelineItemCard }) =>
+      item.type === 'message' ? (
+        <ChatBubble
+          message={
+            item.payload.card && item.payload.role === 'assistant'
+              ? { ...item.payload, text: t('chat.recordComplete') }
+              : item.payload
+          }
+        />
+      ) : (
+        <NutritionCard
+          payload={item.payload}
+          onShare={() => handleShareCard(item.payload, item.id)}
+          sharing={sharingId === item.id}
+          onAddFavorite={
+            item.payload.favoriteCandidate
+              ? (draft) => handleAddFavoriteFromCard(item.id, draft)
+              : undefined
+          }
+          addingFavorite={addingFavoriteId === item.id}
+          onEdit={item.payload.logId ? () => handleEditLog(item.payload.logId) : undefined}
+        />
+      ),
+    [addingFavoriteId, handleAddFavoriteFromCard, handleEditLog, handleShareCard, sharingId, t],
+  );
 
   const renderEnhancedFooter = () => {
     if (!enhancedExchange || !enhancedContainerMinHeight) {
@@ -1041,32 +1183,9 @@ export default function ChatScreen() {
             style={styles.flex}
             ref={listRef}
             data={filteredTimeline}
-            keyExtractor={(item) => item.id}
+            keyExtractor={keyExtractor}
             contentInsetAdjustmentBehavior="never"
-            renderItem={({ item }) =>
-              item.type === 'message' ? (
-                <ChatBubble
-                  message={
-                    item.payload.card && item.payload.role === 'assistant'
-                      ? { ...item.payload, text: t('chat.recordComplete') }
-                      : item.payload
-                  }
-                />
-              ) : (
-                <NutritionCard
-                  payload={item.payload}
-                  onShare={() => handleShareCard(item.payload, item.id)}
-                  sharing={sharingId === item.id}
-                  onAddFavorite={
-                    item.payload.favoriteCandidate
-                      ? (draft) => handleAddFavoriteFromCard(item.id, draft)
-                      : undefined
-                  }
-                  addingFavorite={addingFavoriteId === item.id}
-                  onEdit={item.payload.logId ? () => handleEditLog(item.payload.logId) : undefined}
-                />
-              )
-            }
+            renderItem={renderTimelineItem}
             contentContainerStyle={[
               styles.listContent,
               { paddingBottom: Math.max(bottomSectionHeight, 120) },
@@ -1274,6 +1393,31 @@ export default function ChatScreen() {
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setStreakModalVisible(false)}>
                   <Text style={styles.usageModalSecondary}>{t('usage.streakModal.close')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+        <Modal
+          visible={reviewModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={handleReviewDismiss}
+        >
+          <View style={styles.usageModalBackdrop}>
+            <View style={styles.usageModalCard}>
+              <Text style={styles.usageModalTitle}>{t('review.prompt.title')}</Text>
+              <Text style={styles.usageModalMessage}>
+                {t('review.prompt.message', {
+                  count: reviewPromptCount ?? reviewTriggerCount,
+                })}
+              </Text>
+              <View style={styles.usageModalActions}>
+                <TouchableOpacity style={styles.usageModalPrimary} onPress={handleReviewRequest}>
+                  <Text style={styles.usageModalPrimaryLabel}>{t('review.prompt.primary')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleReviewDismiss}>
+                  <Text style={styles.usageModalSecondary}>{t('review.prompt.secondary')}</Text>
                 </TouchableOpacity>
               </View>
             </View>

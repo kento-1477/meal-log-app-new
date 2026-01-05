@@ -11,7 +11,7 @@ interface ChatBubbleProps {
   message: ChatMessage;
 }
 
-export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
+export const ChatBubble = React.memo<ChatBubbleProps>(function ChatBubble({ message }) {
   const isUser = message.role === 'user';
   const isProcessing = !isUser && message.status === 'processing';
   const hasImage = typeof message.imageUri === 'string' && message.imageUri.length > 0;
@@ -93,7 +93,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
       )}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   row: {
