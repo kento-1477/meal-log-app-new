@@ -23,6 +23,10 @@ import type {
   UserProfile,
   UpdateUserProfileRequest,
   OnboardingStatus,
+  NotificationSettings,
+  NotificationSettingsUpdateRequest,
+  PushTokenRegisterRequest,
+  PushTokenDisableRequest,
 } from '@meal-log/shared';
 import {
   DashboardSummarySchema,
@@ -31,6 +35,10 @@ import {
   UserProfileResponseSchema,
   UpdateUserProfileRequestSchema,
   CalorieTrendResponseSchema,
+  NotificationSettingsResponseSchema,
+  NotificationSettingsUpdateRequestSchema,
+  PushTokenRegisterRequestSchema,
+  PushTokenDisableRequestSchema,
 } from '@meal-log/shared';
 
 const HTTP_STATUS = {
@@ -72,9 +80,13 @@ function resolveFunctionPrefix(path: string): string {
   return '/meal-log';
 }
 
+function shouldUseFunctionPrefix(baseUrl: string): boolean {
+  return baseUrl.includes('.functions.supabase.co') || baseUrl.includes('/functions/');
+}
+
 function buildApiUrl(path: string): string {
   const base = API_BASE_URL.replace(/\/+$/, '');
-  const prefix = resolveFunctionPrefix(path);
+  const prefix = shouldUseFunctionPrefix(base) ? resolveFunctionPrefix(path) : '';
   return `${base}${prefix}${path}`;
 }
 
@@ -396,6 +408,40 @@ export async function getMealLogs(options: { range?: MealLogRange; limit?: numbe
   const raw = await apiFetch<unknown>(appendLocale(path, locale), { method: 'GET' });
   const parsed = MealLogListResponseSchema.parse(raw);
   return parsed as MealLogListResponse;
+}
+
+export async function getNotificationSettings(): Promise<NotificationSettings> {
+  const raw = await apiFetch<unknown>('/api/notifications/settings', { method: 'GET' });
+  const parsed = NotificationSettingsResponseSchema.parse(raw);
+  return parsed.settings;
+}
+
+export async function updateNotificationSettings(
+  payload: NotificationSettingsUpdateRequest,
+): Promise<NotificationSettings> {
+  NotificationSettingsUpdateRequestSchema.parse(payload);
+  const raw = await apiFetch<unknown>('/api/notifications/settings', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+  const parsed = NotificationSettingsResponseSchema.parse(raw);
+  return parsed.settings;
+}
+
+export async function registerPushToken(payload: PushTokenRegisterRequest) {
+  PushTokenRegisterRequestSchema.parse(payload);
+  return apiFetch<{ ok: true }>('/api/notifications/token', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function disablePushToken(payload: PushTokenDisableRequest) {
+  PushTokenDisableRequestSchema.parse(payload);
+  return apiFetch<{ ok: true }>('/api/notifications/token', {
+    method: 'DELETE',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function getRecentLogs() {

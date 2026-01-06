@@ -16,6 +16,8 @@ import { accountRouter } from './routes/account.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { iapRouter } from './routes/iap.js';
 import referralRouter from './routes/referral.js';
+import { notificationsRouter } from './routes/notifications.js';
+import { onboardingRouter } from './routes/onboarding.js';
 import { prisma } from './db/prisma.js';
 import { PrismaSessionStore } from './db/prisma-session-store.js';
 import { debugRouter } from './routes/debug.js';
@@ -74,6 +76,7 @@ export function createApp() {
   app.get('/healthz', (_req, res) => res.status(200).send('ok'));
 
   app.use('/api', authRouter);
+  app.use('/api', onboardingRouter);
   app.use('/', logRouter);
   app.use('/api', logsRouter);
   app.use('/api', foodsRouter);
@@ -84,6 +87,7 @@ export function createApp() {
   app.use('/api/user', accountRouter);
   app.use('/api', iapRouter);
   app.use('/api/referral', referralRouter);
+  app.use('/api/notifications', notificationsRouter);
   if (env.NODE_ENV !== 'production') {
     app.use('/debug', debugRouter);
   }

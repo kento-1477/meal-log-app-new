@@ -6,6 +6,7 @@ import { scheduleDailyLogCleanup } from './jobs/log-cleanup.js';
 import { scheduleReferralCompletionCheck } from './jobs/check-referral-completion.js';
 import { scheduleReferralFraudDetection } from './jobs/detect-referral-fraud.js';
 import { scheduleSessionCleanup } from './jobs/session-cleanup.js';
+import { scheduleNotificationDispatch } from './jobs/notification-dispatcher.js';
 
 const app = createApp();
 const server = createServer(app);
@@ -28,4 +29,8 @@ if (process.env.DISABLE_REFERRAL_FRAUD_CHECK !== 'true' && env.NODE_ENV !== 'tes
 
 if (process.env.DISABLE_SESSION_CLEANUP !== 'true' && env.NODE_ENV !== 'test') {
   scheduleSessionCleanup();
+}
+
+if (process.env.DISABLE_NOTIFICATION_DISPATCH !== 'true' && env.NODE_ENV !== 'test') {
+  scheduleNotificationDispatch();
 }

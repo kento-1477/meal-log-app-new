@@ -43,13 +43,16 @@ import {
   getFavorites,
   getMealLogShare,
   getIngestStatus,
+  getNotificationSettings,
   getStreak,
   getSession,
   postMealLog,
+  updateNotificationSettings,
   type MealLogResponse,
   type ApiError,
 } from '@/services/api';
 import { hasDialogBeenSeen, markDialogSeen } from '@/services/dialog-tracker';
+import { registerPushTokenIfNeeded, requestPushPermissionIfNeeded } from '@/services/notifications';
 import { requestStoreReview } from '@/services/review';
 import {
   FREE_REVIEW_TRIGGER_COUNT,
@@ -148,6 +151,9 @@ export default function ChatScreen() {
   const [limitModalVisible, setLimitModalVisible] = useState(false);
   const [streakModalVisible, setStreakModalVisible] = useState(false);
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [notificationPromptVisible, setNotificationPromptVisible] = useState(false);
+  const [notificationPromptPending, setNotificationPromptPending] = useState(false);
+  const [notificationPromptBusy, setNotificationPromptBusy] = useState(false);
   const [reviewPromptPending, setReviewPromptPending] = useState(false);
   const [reviewPromptCount, setReviewPromptCount] = useState<number | null>(null);
   const [bottomSectionHeight, setBottomSectionHeight] = useState(0);
@@ -184,6 +190,7 @@ export default function ChatScreen() {
   const usageRemaining = usage?.remaining;
   const reviewTriggerCount =
     userPlan === 'FREE' ? FREE_REVIEW_TRIGGER_COUNT : REVIEW_TRIGGER_COUNT;
+  const notificationPromptToken = String(userId ?? 'anon');
 
   const maybeQueueReviewPrompt = useCallback(
     async (logId: string) => {
@@ -204,6 +211,37 @@ export default function ChatScreen() {
       });
     },
     [reviewTriggerCount, userId],
+  );
+
+  const maybePromptNotifications = useCallback(
+    async (_logId: string) => {
+      if (!isAuthenticated) {
+        return;
+      }
+      if (notificationPromptPending || notificationPromptVisible) {
+        return;
+      }
+      const seen = await hasDialogBeenSeen('notifications-first-log', notificationPromptToken);
+      if (seen) {
+        return;
+      }
+      try {
+        const settings = await getNotificationSettings();
+        if (settings.reminder_enabled || settings.important_enabled) {
+          await markDialogSeen('notifications-first-log', notificationPromptToken);
+          return;
+        }
+      } catch (error) {
+        console.warn('[notifications] Failed to load settings for prompt', error);
+      }
+      setNotificationPromptPending(true);
+    },
+    [
+      isAuthenticated,
+      notificationPromptPending,
+      notificationPromptToken,
+      notificationPromptVisible,
+    ],
   );
 
   const renderMealLogResult = useCallback(
@@ -233,8 +271,9 @@ export default function ChatScreen() {
       });
       setMessageText(placeholderId, buildAssistantSummary(response));
       void maybeQueueReviewPrompt(response.logId);
+      void maybePromptNotifications(response.logId);
     },
-    [attachCardToMessage, maybeQueueReviewPrompt, setMessageText],
+    [attachCardToMessage, maybePromptNotifications, maybeQueueReviewPrompt, setMessageText],
   );
 
   const [mediaPermission, requestMediaPermission] = ImagePicker.useMediaLibraryPermissions();
@@ -634,6 +673,8 @@ export default function ChatScreen() {
     reviewModalVisible ||
     limitModalVisible ||
     streakModalVisible ||
+    notificationPromptVisible ||
+    notificationPromptPending ||
     favoritesVisible ||
     sending ||
     isLimitReached;
@@ -657,6 +698,64 @@ export default function ChatScreen() {
     reviewTriggerCount,
     userId,
   ]);
+
+  const notificationPromptBlocked =
+    reviewModalVisible ||
+    limitModalVisible ||
+    streakModalVisible ||
+    favoritesVisible ||
+    sending ||
+    isLimitReached;
+
+  useEffect(() => {
+    if (!notificationPromptPending || notificationPromptBlocked) {
+      return;
+    }
+    setNotificationPromptVisible(true);
+    setNotificationPromptPending(false);
+    void markDialogSeen('notifications-first-log', notificationPromptToken).catch((error) => {
+      console.warn('Failed to mark notification prompt as seen', error);
+    });
+  }, [notificationPromptBlocked, notificationPromptPending, notificationPromptToken]);
+
+  const handleNotificationPromptEnable = useCallback(async () => {
+    if (notificationPromptBusy) {
+      return;
+    }
+    setNotificationPromptBusy(true);
+    try {
+      const granted = await requestPushPermissionIfNeeded();
+      if (!granted) {
+        Alert.alert(
+          t('settings.notifications.permissionTitle'),
+          t('settings.notifications.permissionMessage'),
+        );
+        setNotificationPromptVisible(false);
+        return;
+      }
+      await updateNotificationSettings({ reminder_enabled: true, important_enabled: true });
+      const registered = await registerPushTokenIfNeeded({ prompt: false });
+      if (!registered) {
+        Alert.alert(
+          t('settings.notifications.errorTitle'),
+          t('settings.notifications.permissionMessage'),
+        );
+      }
+      setNotificationPromptVisible(false);
+    } catch (error) {
+      console.warn('[notifications] Failed to enable notifications', error);
+      Alert.alert(
+        t('settings.notifications.errorTitle'),
+        t('settings.notifications.errorMessage'),
+      );
+    } finally {
+      setNotificationPromptBusy(false);
+    }
+  }, [notificationPromptBusy, t]);
+
+  const handleNotificationPromptDismiss = useCallback(() => {
+    setNotificationPromptVisible(false);
+  }, []);
 
   const favoritesList = favoritesQuery.data ?? [];
   const sendLabel = canSend ? t('chat.send') : t('chat.send.limit');
@@ -1418,6 +1517,35 @@ export default function ChatScreen() {
                 </TouchableOpacity>
                 <TouchableOpacity onPress={handleReviewDismiss}>
                   <Text style={styles.usageModalSecondary}>{t('review.prompt.secondary')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+        <Modal
+          visible={notificationPromptVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={handleNotificationPromptDismiss}
+        >
+          <View style={styles.usageModalBackdrop}>
+            <View style={styles.usageModalCard}>
+              <Text style={styles.usageModalTitle}>{t('notifications.prompt.title')}</Text>
+              <Text style={styles.usageModalMessage}>{t('notifications.prompt.message')}</Text>
+              <View style={styles.usageModalActions}>
+                <TouchableOpacity
+                  style={styles.usageModalPrimary}
+                  onPress={() => void handleNotificationPromptEnable()}
+                  disabled={notificationPromptBusy}
+                >
+                  <Text style={styles.usageModalPrimaryLabel}>
+                    {t('notifications.prompt.primary')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleNotificationPromptDismiss}>
+                  <Text style={styles.usageModalSecondary}>
+                    {t('notifications.prompt.secondary')}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>

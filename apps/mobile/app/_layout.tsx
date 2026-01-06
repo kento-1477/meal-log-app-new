@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useSessionBootstrap } from '@/hooks/useSessionBootstrap';
 import { useLocaleBootstrap } from '@/hooks/useLocaleBootstrap';
 import { useReferralDeepLink } from '@/hooks/useReferralDeepLink';
+import { useNotificationBootstrap } from '@/hooks/useNotificationBootstrap';
 import { useTranslation } from '@/i18n';
 import { colors } from '@/theme/colors';
 
@@ -15,6 +16,7 @@ export default function RootLayout() {
   useSessionBootstrap();
   useLocaleBootstrap();
   useReferralDeepLink();
+  useNotificationBootstrap();
   const { t } = useTranslation();
 
   return (

@@ -32,6 +32,7 @@
     "expo-image-picker": "~17.0.8",
     "expo-in-app-purchases": "~14.6.0",
     "expo-linear-gradient": "~15.0.7",
+    "expo-notifications": "~0.31.0",
     "expo-linking": "~8.0.8",
     "expo-print": "~15.0.7",
     "expo-router": "~6.0.11",
