@@ -9,6 +9,7 @@ import type {
   GeminiNutritionResponse,
   FavoriteMeal,
   UpdateUserProfileRequest,
+  NotificationSettings,
   UserProfile,
   SlotSelectionRequest,
   NutritionPlanInput,
@@ -28,6 +29,10 @@ import {
   UpdateUserProfileRequestSchema,
   SlotSelectionRequestSchema,
   UserProfileSchema,
+  NotificationSettingsResponseSchema,
+  NotificationSettingsUpdateRequestSchema,
+  PushTokenRegisterRequestSchema,
+  PushTokenDisableRequestSchema,
   computeNutritionPlan,
 } from '@shared/index.js';
 import type { Context } from 'hono';
@@ -73,6 +78,10 @@ const DASHBOARD_TARGETS = {
   fat_g: { unit: 'g', value: 70, decimals: 1 },
   carbs_g: { unit: 'g', value: 260, decimals: 1 },
 } as const;
+
+const DEFAULT_QUIET_START = 22 * 60;
+const DEFAULT_QUIET_END = 7 * 60;
+const DEFAULT_DAILY_CAP = 1;
 
 const SHARE_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 const FOOD_CATALOGUE = [
@@ -263,6 +272,54 @@ app.post('/api/onboarding/events', async (c) => {
   }
 
   return c.json({ ok: true }, HTTP_STATUS.CREATED);
+});
+
+app.get('/api/notifications/settings', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const timezone = resolveRequestTimezone(c.req.raw);
+  const settings = await getOrCreateNotificationSettings(user.id, { timezone });
+  const payload = { ok: true, settings: serializeNotificationSettings(settings) };
+  NotificationSettingsResponseSchema.parse(payload);
+  return c.json(payload);
+});
+
+app.put('/api/notifications/settings', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const body = NotificationSettingsUpdateRequestSchema.parse(await c.req.json());
+  const settings = await updateNotificationSettings(user.id, {
+    reminderEnabled: body.reminder_enabled,
+    importantEnabled: body.important_enabled,
+    quietHoursStart: body.quiet_hours_start,
+    quietHoursEnd: body.quiet_hours_end,
+    dailyCap: body.daily_cap,
+    timezone: body.timezone,
+  });
+  const payload = { ok: true, settings: serializeNotificationSettings(settings) };
+  NotificationSettingsResponseSchema.parse(payload);
+  return c.json(payload);
+});
+
+app.post('/api/notifications/token', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const body = PushTokenRegisterRequestSchema.parse(await c.req.json());
+  const timezone = body.timezone ?? resolveRequestTimezone(c.req.raw);
+  await upsertPushDevice({
+    userId: user.id,
+    deviceId: body.device_id,
+    expoToken: body.expo_token,
+    platform: body.platform,
+    locale: body.locale ?? null,
+    timezone,
+  });
+  await updateNotificationSettings(user.id, { timezone });
+  return c.json({ ok: true });
+});
+
+app.delete('/api/notifications/token', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const body = PushTokenDisableRequestSchema.parse(await c.req.json());
+  await disablePushDevice({ userId: user.id, deviceId: body.device_id });
+  return c.json({ ok: true });
 });
 
 app.put('/api/profile', requireAuth, async (c) => {
@@ -1160,6 +1217,167 @@ function serializeProfile(profile: DbUserProfile): UserProfile {
 
   UserProfileSchema.parse(payload);
   return payload;
+}
+
+type DbNotificationSettings = {
+  id: number;
+  userId: number;
+  reminderEnabled: boolean;
+  importantEnabled: boolean;
+  quietHoursStart: number;
+  quietHoursEnd: number;
+  dailyCap: number;
+  timezone?: string | null;
+  createdAt?: string | Date | null;
+  updatedAt?: string | Date | null;
+};
+
+async function getOrCreateNotificationSettings(
+  userId: number,
+  options: { timezone?: string | null } = {},
+): Promise<DbNotificationSettings> {
+  const { data, error } = await supabaseAdmin
+    .from('NotificationSettings')
+    .select('*')
+    .eq('userId', userId)
+    .maybeSingle();
+  if (error) {
+    console.error('notification settings: fetch failed', error);
+    throw new HttpError('通知設定の取得に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+  if (data) return data;
+
+  const nowIso = new Date().toISOString();
+  const timezone = options.timezone ? normalizeTimezone(options.timezone) : null;
+  const { data: created, error: createError } = await supabaseAdmin
+    .from('NotificationSettings')
+    .insert({
+      userId,
+      reminderEnabled: false,
+      importantEnabled: false,
+      quietHoursStart: DEFAULT_QUIET_START,
+      quietHoursEnd: DEFAULT_QUIET_END,
+      dailyCap: DEFAULT_DAILY_CAP,
+      timezone,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    })
+    .select('*')
+    .single();
+
+  if (createError || !created) {
+    console.error('notification settings: create failed', createError);
+    throw new HttpError('通知設定の作成に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+  return created;
+}
+
+function serializeNotificationSettings(settings: DbNotificationSettings): NotificationSettings {
+  return {
+    reminder_enabled: Boolean(settings.reminderEnabled),
+    important_enabled: Boolean(settings.importantEnabled),
+    quiet_hours_start: clampMinutes(settings.quietHoursStart ?? DEFAULT_QUIET_START),
+    quiet_hours_end: clampMinutes(settings.quietHoursEnd ?? DEFAULT_QUIET_END),
+    daily_cap: clampDailyCap(settings.dailyCap ?? DEFAULT_DAILY_CAP),
+    timezone: normalizeTimezone(settings.timezone ?? undefined),
+  };
+}
+
+async function updateNotificationSettings(
+  userId: number,
+  updates: Partial<{
+    reminderEnabled: boolean;
+    importantEnabled: boolean;
+    quietHoursStart: number;
+    quietHoursEnd: number;
+    dailyCap: number;
+    timezone: string | null;
+  }>,
+): Promise<DbNotificationSettings> {
+  const existing = await getOrCreateNotificationSettings(userId, { timezone: updates.timezone ?? null });
+  const nowIso = new Date().toISOString();
+  const { data: updated, error } = await supabaseAdmin
+    .from('NotificationSettings')
+    .update({
+      reminderEnabled: updates.reminderEnabled ?? existing.reminderEnabled,
+      importantEnabled: updates.importantEnabled ?? existing.importantEnabled,
+      quietHoursStart: clampMinutes(updates.quietHoursStart ?? existing.quietHoursStart),
+      quietHoursEnd: clampMinutes(updates.quietHoursEnd ?? existing.quietHoursEnd),
+      dailyCap: clampDailyCap(updates.dailyCap ?? existing.dailyCap),
+      timezone: updates.timezone !== undefined ? normalizeTimezone(updates.timezone) : existing.timezone,
+      updatedAt: nowIso,
+    })
+    .eq('id', existing.id)
+    .select('*')
+    .single();
+
+  if (error || !updated) {
+    console.error('notification settings: update failed', error);
+    throw new HttpError('通知設定の更新に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+  return updated;
+}
+
+async function upsertPushDevice(params: {
+  userId: number;
+  deviceId: string;
+  expoToken: string;
+  platform: string;
+  locale?: string | null;
+  timezone?: string | null;
+}) {
+  const nowIso = new Date().toISOString();
+  const timezone = params.timezone ? normalizeTimezone(params.timezone) : null;
+  const { error } = await supabaseAdmin
+    .from('PushDevice')
+    .upsert(
+      {
+        userId: params.userId,
+        deviceId: params.deviceId,
+        expoToken: params.expoToken,
+        platform: params.platform,
+        locale: params.locale ?? null,
+        timezone,
+        lastSeenAt: nowIso,
+        disabledAt: null,
+        updatedAt: nowIso,
+      },
+      { onConflict: 'userId,deviceId' },
+    );
+
+  if (error) {
+    console.error('push device: upsert failed', error);
+    throw new HttpError('通知デバイスの登録に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+}
+
+async function disablePushDevice(params: { userId: number; deviceId: string }) {
+  const nowIso = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from('PushDevice')
+    .update({ disabledAt: nowIso, updatedAt: nowIso })
+    .eq('userId', params.userId)
+    .eq('deviceId', params.deviceId)
+    .is('disabledAt', null);
+
+  if (error) {
+    console.error('push device: disable failed', error);
+    throw new HttpError('通知デバイスの解除に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+}
+
+function clampMinutes(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_QUIET_START;
+  }
+  return Math.max(0, Math.min(1439, Math.round(value)));
+}
+
+function clampDailyCap(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_DAILY_CAP;
+  }
+  return Math.max(1, Math.min(5, Math.round(value)));
 }
 
 function mapProfileInput(input: UpdateUserProfileRequest) {

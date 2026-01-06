@@ -537,6 +537,49 @@ export const UpdateUserProfileRequestSchema = z
 
 export type UpdateUserProfileRequest = z.infer<typeof UpdateUserProfileRequestSchema>;
 
+export const NotificationSettingsSchema = z.object({
+  reminder_enabled: z.boolean(),
+  important_enabled: z.boolean(),
+  quiet_hours_start: z.number().int().min(0).max(1439),
+  quiet_hours_end: z.number().int().min(0).max(1439),
+  daily_cap: z.number().int().min(1).max(5),
+  timezone: z.string().min(1),
+});
+
+export type NotificationSettings = z.infer<typeof NotificationSettingsSchema>;
+
+export const NotificationSettingsResponseSchema = z.object({
+  ok: z.literal(true),
+  settings: NotificationSettingsSchema,
+});
+
+export type NotificationSettingsResponse = z.infer<typeof NotificationSettingsResponseSchema>;
+
+export const NotificationSettingsUpdateRequestSchema = NotificationSettingsSchema.partial().refine(
+  (data) => Object.keys(data).length > 0,
+  {
+    message: 'At least one field must be provided',
+  },
+);
+
+export type NotificationSettingsUpdateRequest = z.infer<typeof NotificationSettingsUpdateRequestSchema>;
+
+export const PushTokenRegisterRequestSchema = z.object({
+  expo_token: z.string().min(1),
+  device_id: z.string().min(1),
+  platform: z.enum(['IOS']),
+  locale: z.string().min(1).max(20).optional().nullable(),
+  timezone: z.string().min(1).max(60).optional().nullable(),
+});
+
+export type PushTokenRegisterRequest = z.infer<typeof PushTokenRegisterRequestSchema>;
+
+export const PushTokenDisableRequestSchema = z.object({
+  device_id: z.string().min(1),
+});
+
+export type PushTokenDisableRequest = z.infer<typeof PushTokenDisableRequestSchema>;
+
 export const OnboardingStatusSchema = z.object({
   completed: z.boolean(),
   completed_at: z.string().datetime().nullable().optional(),

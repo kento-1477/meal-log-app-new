@@ -21,7 +21,8 @@
         }
       ],
       "./apps/mobile/plugins/withRNScreensPod.js",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "expo-notifications"
     ],
     "ios": {
       "bundleIdentifier": "com.kento3372.meallogapp",
