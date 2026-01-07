@@ -1,7 +1,9 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { GlassCard } from './GlassCard';
 import { colors } from '@/theme/colors';
+import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import type { FavoriteMealDraft } from '@meal-log/shared';
 import type { NutritionCardPayload } from '@/types/chat';
@@ -26,99 +28,103 @@ export const NutritionCard = React.memo<NutritionCardProps>(function NutritionCa
   onEdit,
 }) {
   const { t } = useTranslation();
-  const baseWarnings = (payload.warnings ?? []).map((warning) =>
-    warning.startsWith('zeroFloored') ? t('card.warnings.zeroFloored') : warning,
+  const adviceMessages = Array.from(
+    new Set(
+      (payload.warnings ?? []).map((warning) =>
+        warning.startsWith('zeroFloored') ? t('card.warnings.zeroFloored') : warning,
+      ),
+    ),
   );
-
-  if (payload.fallbackApplied && payload.requestedLocale && payload.locale && payload.requestedLocale !== payload.locale) {
-    baseWarnings.push(
-      t('card.languageFallback', {
-        requested: describeLocale(payload.requestedLocale),
-        resolved: describeLocale(payload.locale),
-      }),
-    );
-  }
-
-  const warnings = Array.from(new Set(baseWarnings));
+  const fallbackMessage =
+    payload.fallbackApplied && payload.requestedLocale && payload.locale && payload.requestedLocale !== payload.locale
+      ? t('card.languageFallback', {
+          requested: describeLocale(payload.requestedLocale),
+          resolved: describeLocale(payload.locale),
+        })
+      : null;
 
   const canAddFavorite = Boolean(onAddFavorite && payload.favoriteCandidate);
 
   return (
-    <GlassCard intensity={30} style={styles.card}>
+    <GlassCard intensity={30} style={styles.card} contentStyle={styles.cardContent}>
       <View style={styles.headerRow}>
         <View style={styles.titleColumn}>
+          {payload.mealPeriod ? (
+            <View style={styles.mealChip}>
+              <Text style={styles.mealChipLabel}>{t(`meal.${payload.mealPeriod}`)}</Text>
+            </View>
+          ) : null}
           <Text style={styles.dish} numberOfLines={1} ellipsizeMode="tail">
             {payload.dish}
           </Text>
-          <View style={styles.metaBlock}>
-            <Text style={styles.confidence}>
-              {t('card.confidence', { value: Math.round(payload.confidence * 100) })}
+          {fallbackMessage ? (
+            <Text style={styles.fallbackNote} numberOfLines={2}>
+              {fallbackMessage}
             </Text>
-            {payload.mealPeriod ? (
-              <Text style={styles.meta} numberOfLines={2}>
-                {t(`meal.${payload.mealPeriod}`)}
-                {payload.timezone ? ` · ${payload.timezone}` : ''}
-              </Text>
-            ) : null}
-          </View>
+          ) : null}
         </View>
         <View style={styles.headerActions}>
-          <View style={styles.primaryActions}>
-            {onEdit ? (
-              <TouchableOpacity style={styles.editButton} onPress={onEdit}>
-                <Text style={styles.editLabel}>{t('card.edit')}</Text>
-              </TouchableOpacity>
-            ) : null}
-            <View style={styles.kcalBadge}>
-              <Text style={styles.kcalValue}>{Math.round(payload.totals.kcal)}</Text>
-              <Text style={styles.kcalLabel}>{t('unit.kcal')}</Text>
-            </View>
-          </View>
-          <View style={styles.secondaryActions}>
-            {canAddFavorite ? (
-              <TouchableOpacity
-                style={styles.favoriteButton}
-                onPress={() => payload.favoriteCandidate && onAddFavorite?.(payload.favoriteCandidate)}
-                disabled={addingFavorite}
-              >
-                {addingFavorite ? (
-                  <ActivityIndicator size="small" color={colors.accent} />
-                ) : (
-                  <Text style={styles.favoriteLabel}>★</Text>
-                )}
-              </TouchableOpacity>
-            ) : null}
-            {onShare ? (
-              <TouchableOpacity style={styles.shareButton} onPress={onShare} disabled={sharing}>
-                {sharing ? (
-                  <ActivityIndicator size="small" color={colors.accent} />
-                ) : (
-                  <Text style={styles.shareLabel}>{t('card.share')}</Text>
-                )}
-              </TouchableOpacity>
-            ) : null}
-          </View>
+          {onEdit ? (
+            <TouchableOpacity style={styles.editButton} onPress={onEdit}>
+              <Text style={styles.editLabel}>{t('card.edit')}</Text>
+            </TouchableOpacity>
+          ) : null}
+          {canAddFavorite ? (
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={() => payload.favoriteCandidate && onAddFavorite?.(payload.favoriteCandidate)}
+              disabled={addingFavorite}
+            >
+              {addingFavorite ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : (
+                <Text style={styles.iconLabel}>★</Text>
+              )}
+            </TouchableOpacity>
+          ) : null}
+          {onShare ? (
+            <TouchableOpacity style={styles.shareButton} onPress={onShare} disabled={sharing}>
+              {sharing ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : (
+                <Text style={styles.shareLabel}>{t('card.share')}</Text>
+              )}
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
-      <View style={styles.divider} />
-      <View style={styles.macroRow}>
+
+      <LinearGradient
+        colors={[colors.accentSoft, '#FFD089']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.kcalHero}
+      >
+        <Text style={styles.kcalLabel}>{t('tab.calories')}</Text>
+        <View style={styles.kcalRow}>
+          <Text style={styles.kcalValue}>{Math.round(payload.totals.kcal)}</Text>
+          <Text style={styles.kcalUnit}>{t('unit.kcal')}</Text>
+        </View>
+      </LinearGradient>
+
+      <View style={styles.macroGrid}>
         <MacroPill
           label={t('macro.protein')}
           value={payload.totals.protein_g}
           unit={t('unit.gram')}
-          color="#ff9f0a"
+          color={colors.ringProtein}
         />
         <MacroPill
           label={t('macro.fat')}
           value={payload.totals.fat_g}
           unit={t('unit.gram')}
-          color="#ff453a"
+          color={colors.ringFat}
         />
         <MacroPill
           label={t('macro.carbs')}
           value={payload.totals.carbs_g}
           unit={t('unit.gram')}
-          color="#bf5af2"
+          color={colors.ringCarb}
         />
       </View>
       {payload.items?.length ? (
@@ -131,13 +137,19 @@ export const NutritionCard = React.memo<NutritionCardProps>(function NutritionCa
           ))}
         </View>
       ) : null}
-      {warnings.length ? (
-        <View style={styles.warningBlock}>
-          {warnings.map((warning, index) => (
-            <Text key={`${warning}-${index}`} style={styles.warningText}>
-              ⚠️ {warning}
-            </Text>
-          ))}
+      {adviceMessages.length ? (
+        <View style={styles.adviceBlock}>
+          <View style={styles.adviceIcon}>
+            <Text style={styles.adviceIconText}>AI</Text>
+          </View>
+          <View style={styles.adviceContent}>
+            <Text style={styles.adviceTitle}>{t('card.adviceTitle')}</Text>
+            {adviceMessages.map((advice, index) => (
+              <Text key={`${advice}-${index}`} style={styles.adviceText}>
+                {advice}
+              </Text>
+            ))}
+          </View>
         </View>
       ) : null}
     </GlassCard>
@@ -150,11 +162,12 @@ const MacroPill: React.FC<{ label: string; value: number; unit: string; color: s
   unit,
   color,
 }) => (
-  <View style={[styles.macroPill, { backgroundColor: `${color}22`, borderColor: color }]}>
+  <View style={[styles.macroPill, { backgroundColor: `${color}1A`, borderColor: color }]}>
     <Text style={[styles.macroLabel, { color }]}>{label}</Text>
-    <Text style={[styles.macroValue, { color }]}>
-      {Math.round(value)} {unit}
-    </Text>
+    <View style={styles.macroValueRow}>
+      <Text style={[styles.macroValue, { color }]}>{Math.round(value)}</Text>
+      <Text style={[styles.macroUnit, { color }]}>{unit}</Text>
+    </View>
   </View>
 );
 
@@ -162,153 +175,206 @@ const styles = StyleSheet.create({
   card: {
     marginVertical: 12,
   },
+  cardContent: {
+    gap: spacing.lg,
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 12,
+    alignItems: 'flex-start',
+    gap: spacing.sm,
   },
   titleColumn: {
     flex: 1,
     minWidth: 0,
     gap: 6,
   },
-  headerActions: {
-    flexDirection: 'column',
-    alignItems: 'flex-end',
-    gap: 8,
+  mealChip: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: `${colors.accent}22`,
   },
-  primaryActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  secondaryActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  mealChipLabel: {
+    ...textStyles.caption,
+    color: colors.accent,
+    fontWeight: '600',
   },
   dish: {
     ...textStyles.titleMedium,
+    fontSize: 20,
     color: colors.textPrimary,
     flexShrink: 1,
   },
-  confidence: {
-    ...textStyles.caption,
-    color: colors.accent,
-  },
-  metaBlock: {
-    gap: 2,
-  },
-  meta: {
+  fallbackNote: {
     ...textStyles.caption,
     color: colors.textSecondary,
   },
-  kcalBadge: {
-    backgroundColor: colors.accent,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+  headerActions: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  kcalValue: {
-    color: 'white',
-    fontWeight: '700',
-    fontSize: 18,
-  },
-  kcalLabel: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 11,
-  },
-  shareButton: {
-    borderWidth: 1,
-    borderColor: colors.accent,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  favoriteButton: {
-    borderWidth: 1,
-    borderColor: colors.accent,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
+    gap: spacing.sm,
   },
   editButton: {
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 14,
-    paddingHorizontal: 12,
+    paddingHorizontal: spacing.md,
     paddingVertical: 6,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  shareLabel: {
-    ...textStyles.caption,
-    color: colors.accent,
-    fontWeight: '600',
-  },
-  favoriteLabel: {
-    ...textStyles.caption,
-    color: colors.accent,
-    fontWeight: '600',
+    backgroundColor: colors.surfaceStrong,
   },
   editLabel: {
     ...textStyles.caption,
     color: colors.textSecondary,
     fontWeight: '600',
   },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: 14,
+  iconButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    backgroundColor: colors.surfaceStrong,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  macroRow: {
+  iconLabel: {
+    ...textStyles.caption,
+    color: colors.accent,
+    fontWeight: '700',
+  },
+  shareButton: {
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: `${colors.accent}14`,
+  },
+  shareLabel: {
+    ...textStyles.caption,
+    color: colors.accent,
+    fontWeight: '600',
+  },
+  kcalHero: {
+    borderRadius: 22,
+    padding: spacing.lg,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 178, 37, 0.35)',
+    overflow: 'hidden',
+  },
+  kcalLabel: {
+    ...textStyles.overline,
+    color: '#9C5B1C',
+  },
+  kcalRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    alignItems: 'baseline',
+    gap: spacing.sm,
+  },
+  kcalValue: {
+    ...textStyles.display,
+    fontSize: 46,
+    color: colors.textPrimary,
+  },
+  kcalUnit: {
+    ...textStyles.titleMedium,
+    fontSize: 16,
+    color: colors.textSecondary,
+  },
+  macroGrid: {
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
   macroPill: {
     flex: 1,
     borderRadius: 16,
-    padding: 12,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
     borderWidth: 1,
-    marginHorizontal: 4,
+    alignItems: 'center',
+    gap: 4,
   },
   macroLabel: {
     fontSize: 12,
     fontWeight: '600',
   },
+  macroValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 2,
+  },
   macroValue: {
-    fontSize: 17,
+    fontSize: 20,
     fontWeight: '700',
-    marginTop: 4,
+  },
+  macroUnit: {
+    fontSize: 12,
+    fontWeight: '600',
+    opacity: 0.7,
   },
   itemsBlock: {
-    marginTop: 8,
-    gap: 6,
+    backgroundColor: colors.surfaceStrong,
+    borderRadius: 16,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.xs,
   },
   itemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
   itemName: {
     ...textStyles.body,
     color: colors.textPrimary,
   },
   itemAmount: {
-    ...textStyles.body,
+    ...textStyles.caption,
     color: colors.textSecondary,
   },
-  warningBlock: {
-    marginTop: 12,
+  adviceBlock: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 200, 148, 0.4)',
+    backgroundColor: 'rgba(59, 200, 148, 0.12)',
+    alignItems: 'flex-start',
   },
-  warningText: {
-    color: colors.error,
-    fontSize: 13,
+  adviceIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 12,
+    backgroundColor: 'rgba(59, 200, 148, 0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  adviceIconText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.success,
+    letterSpacing: 0.8,
+  },
+  adviceContent: {
+    flex: 1,
+    gap: 4,
+  },
+  adviceTitle: {
+    ...textStyles.caption,
+    color: colors.success,
+    fontWeight: '700',
+  },
+  adviceText: {
+    ...textStyles.caption,
+    color: colors.textPrimary,
   },
 });
