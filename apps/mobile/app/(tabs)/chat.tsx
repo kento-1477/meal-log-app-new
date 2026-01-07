@@ -1344,9 +1344,9 @@ const styles = StyleSheet.create({
   },
   bottomSection: {
     paddingHorizontal: 24,
-    paddingTop: 12,
-    paddingBottom: 12,
-    gap: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
+    gap: 8,
     backgroundColor: colors.surfaceMuted,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
@@ -1359,7 +1359,7 @@ const styles = StyleSheet.create({
   quickActionsRow: {
     flexDirection: 'row',
     gap: 12,
-    paddingTop: 12,
+    paddingTop: 8,
   },
   quickAction: {
     flex: 1,
@@ -1387,9 +1387,9 @@ const styles = StyleSheet.create({
   },
   composerArea: {
     borderRadius: 20,
-    paddingTop: 12,
+    paddingTop: 8,
     paddingHorizontal: 16,
-    gap: 8,
+    gap: 6,
   },
   composerDocked: {
     backgroundColor: 'rgba(247,247,250,0.95)',
@@ -1403,7 +1403,7 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    height: 50,
+    height: 44,
     borderRadius: 14,
     backgroundColor: '#fff',
     paddingHorizontal: 16,
@@ -1421,7 +1421,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   sendButton: {
-    height: 48,
+    height: 44,
     borderRadius: 14,
     paddingHorizontal: 20,
     backgroundColor: colors.accent,
