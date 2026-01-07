@@ -8,6 +8,7 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -54,6 +55,7 @@ import {
 import { hasDialogBeenSeen, markDialogSeen } from '@/services/dialog-tracker';
 import { registerPushTokenIfNeeded, requestPushPermissionIfNeeded } from '@/services/notifications';
 import { requestStoreReview } from '@/services/review';
+import { SUPPORT_EMAIL } from '@/config/legal';
 import {
   FREE_REVIEW_TRIGGER_COUNT,
   getReviewTrackerState,
@@ -1149,6 +1151,17 @@ export default function ChatScreen() {
     void requestStoreReview();
   }, [reviewPromptCount, reviewTriggerCount]);
 
+  const handleReviewFeedback = useCallback(() => {
+    setReviewModalVisible(false);
+    trackEvent('review.prompt_feedback', {
+      count: reviewPromptCount ?? reviewTriggerCount,
+    });
+    const url = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Meal Log feedback')}`;
+    void Linking.openURL(url).catch((error) => {
+      console.warn('Failed to open feedback mail', error);
+    });
+  }, [reviewPromptCount, reviewTriggerCount]);
+
   const handleReviewDismiss = useCallback(() => {
     setReviewModalVisible(false);
     trackEvent('review.prompt_dismiss', {
@@ -1515,8 +1528,16 @@ export default function ChatScreen() {
                 <TouchableOpacity style={styles.usageModalPrimary} onPress={handleReviewRequest}>
                   <Text style={styles.usageModalPrimaryLabel}>{t('review.prompt.primary')}</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.usageModalSecondaryButton}
+                  onPress={handleReviewFeedback}
+                >
+                  <Text style={styles.usageModalSecondaryButtonLabel}>
+                    {t('review.prompt.secondary')}
+                  </Text>
+                </TouchableOpacity>
                 <TouchableOpacity onPress={handleReviewDismiss}>
-                  <Text style={styles.usageModalSecondary}>{t('review.prompt.secondary')}</Text>
+                  <Text style={styles.usageModalSecondary}>{t('review.prompt.later')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1697,6 +1718,19 @@ const styles = StyleSheet.create({
     ...textStyles.body,
     color: colors.accent,
     textAlign: 'center',
+    fontWeight: '600',
+  },
+  usageModalSecondaryButton: {
+    borderRadius: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.accent,
+    backgroundColor: 'transparent',
+  },
+  usageModalSecondaryButtonLabel: {
+    ...textStyles.body,
+    color: colors.accent,
     fontWeight: '600',
   },
   flex: {
