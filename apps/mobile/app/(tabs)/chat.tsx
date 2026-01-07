@@ -567,7 +567,7 @@ export default function ChatScreen() {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [reviewTriggerCount, userId]);
 
   useEffect(() => {
     const prev = prevMessagesRef.current;
