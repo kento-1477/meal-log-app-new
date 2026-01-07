@@ -20,11 +20,11 @@ export interface MarketingOption {
 }
 
 export const MARKETING_OPTIONS: MarketingOption[] = [
+  { id: 'app_store', labelKey: 'onboarding.marketing.appStore' },
   { id: 'instagram', labelKey: 'onboarding.marketing.instagram' },
   { id: 'facebook', labelKey: 'onboarding.marketing.facebook' },
   { id: 'tiktok', labelKey: 'onboarding.marketing.tiktok' },
   { id: 'friend', labelKey: 'onboarding.marketing.friend' },
-  { id: 'app_store', labelKey: 'onboarding.marketing.appStore' },
   { id: 'other', labelKey: 'onboarding.marketing.other' },
 ];
 
