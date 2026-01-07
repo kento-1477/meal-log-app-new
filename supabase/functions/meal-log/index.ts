@@ -3220,6 +3220,10 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
   const textOnlyModels = new Set(parseModelList(Deno.env.get('GEMINI_TEXT_ONLY_MODELS')));
   const timeoutMsCandidate = Number(Deno.env.get('GEMINI_TIMEOUT_MS') ?? '25000');
   const timeoutMs = Number.isFinite(timeoutMsCandidate) ? Math.max(1_000, timeoutMsCandidate) : 25_000;
+  const overloadRetryDelaysMs = [500, 1000, 1500];
+  const overloadRetryJitterMs = 150;
+
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const isQuotaErrorMessage = (message: string) => {
     const lower = message.toLowerCase();
@@ -3229,6 +3233,11 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
       lower.includes('quota exceeded') ||
       lower.includes('rate limit')
     );
+  };
+
+  const isOverloadedErrorMessage = (message: string) => {
+    const lower = message.toLowerCase();
+    return message.includes('Gemini error 503') || lower.includes('overloaded') || lower.includes('unavailable');
   };
 
   const isTimeoutError = (error: unknown) => {
@@ -3455,6 +3464,39 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
   const attemptReports: HedgeAttemptReport[] = [];
   let firstError: Error | null = null;
 
+  const attemptWithRetry = async (model: string, attemptNumber: number, promptMessage: string, includeImage: boolean) => {
+    let lastError: Error | null = null;
+    for (let retryIndex = 0; retryIndex <= overloadRetryDelaysMs.length; retryIndex += 1) {
+      try {
+        const result = await attempt(model, attemptNumber, promptMessage, includeImage);
+        attemptReports.push(result.report);
+        return result;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error('Unknown AI error');
+        lastError = err;
+        if ((err as any).report) {
+          attemptReports.push((err as any).report);
+        }
+
+        const canRetry =
+          retryIndex < overloadRetryDelaysMs.length && isOverloadedErrorMessage(err.message);
+        if (!canRetry) {
+          throw err;
+        }
+        const delayMs =
+          overloadRetryDelaysMs[retryIndex] + Math.floor(Math.random() * overloadRetryJitterMs);
+        console.warn('analyzeMeal: retrying after overload', {
+          model,
+          attempt: attemptNumber,
+          retry: retryIndex + 1,
+          delayMs,
+        });
+        await sleep(delayMs);
+      }
+    }
+    throw lastError ?? new Error('Gemini request failed');
+  };
+
   if (!models.length) {
     throw new Error('No Gemini models configured');
   }
@@ -3481,8 +3523,7 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
         ? `${userMessage}\n\n(You cannot see the attached image. Respond using only the text description.)`
         : userMessage;
     try {
-      const result = await attempt(model, attemptNumber, promptMessage, includeImage);
-      attemptReports.push(result.report);
+      const result = await attemptWithRetry(model, attemptNumber, promptMessage, includeImage);
       if (attemptNumber > 1) {
         result.response.meta = { ...(result.response.meta ?? {}), fallback_model_used: true };
       }
@@ -3491,9 +3532,6 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
       const err = error instanceof Error ? error : new Error('Unknown AI error');
       if (!firstError) {
         firstError = err;
-      }
-      if ((err as any).report) {
-        attemptReports.push((err as any).report);
       }
       if (attemptNumber === 1 && models.length > 1) {
         console.error('analyzeMeal: primary model failed', err);

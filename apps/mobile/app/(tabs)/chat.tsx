@@ -57,11 +57,11 @@ import { registerPushTokenIfNeeded, requestPushPermissionIfNeeded } from '@/serv
 import { requestStoreReview } from '@/services/review';
 import { SUPPORT_EMAIL } from '@/config/legal';
 import {
-  FREE_REVIEW_TRIGGER_COUNT,
+  FREE_REVIEW_TRIGGER_COUNTS,
   getReviewTrackerState,
   markReviewPrompted,
   recordChatLogSuccess,
-  REVIEW_TRIGGER_COUNT,
+  REVIEW_TRIGGER_COUNTS,
 } from '@/services/review-tracker';
 import { describeLocale } from '@/utils/locale';
 import type { ChatMessage, NutritionCardPayload } from '@/types/chat';
@@ -158,6 +158,7 @@ export default function ChatScreen() {
   const [notificationPromptBusy, setNotificationPromptBusy] = useState(false);
   const [reviewPromptPending, setReviewPromptPending] = useState(false);
   const [reviewPromptCount, setReviewPromptCount] = useState<number | null>(null);
+  const [reviewPromptTarget, setReviewPromptTarget] = useState<number | null>(null);
   const [bottomSectionHeight, setBottomSectionHeight] = useState(0);
   const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reviewPromptQueueRef = useRef(Promise.resolve());
@@ -190,8 +191,9 @@ export default function ChatScreen() {
   const hasUsage = Boolean(usage);
   const usagePlan = usage?.plan;
   const usageRemaining = usage?.remaining;
-  const reviewTriggerCount =
-    userPlan === 'FREE' ? FREE_REVIEW_TRIGGER_COUNT : REVIEW_TRIGGER_COUNT;
+  const reviewTriggerCounts =
+    userPlan === 'FREE' ? FREE_REVIEW_TRIGGER_COUNTS : REVIEW_TRIGGER_COUNTS;
+  const reviewTriggerCount = reviewTriggerCounts[0] ?? 1;
   const notificationPromptToken = String(userId ?? 'anon');
 
   const maybeQueueReviewPrompt = useCallback(
@@ -201,10 +203,11 @@ export default function ChatScreen() {
           const decision = await recordChatLogSuccess({
             logId,
             userId,
-            triggerCount: reviewTriggerCount,
+            triggerCounts: reviewTriggerCounts,
           });
           if (decision.shouldPrompt) {
             setReviewPromptCount(decision.state.count);
+            setReviewPromptTarget(decision.state.pendingCount ?? reviewTriggerCount);
             setReviewPromptPending(true);
           }
         } catch (error) {
@@ -212,7 +215,7 @@ export default function ChatScreen() {
         }
       });
     },
-    [reviewTriggerCount, userId],
+    [reviewTriggerCount, reviewTriggerCounts, userId],
   );
 
   const maybePromptNotifications = useCallback(
@@ -549,11 +552,14 @@ export default function ChatScreen() {
     (async () => {
       const state = await getReviewTrackerState(userId);
       if (cancelled) return;
-      if (state.pending && !state.promptedAt) {
+      const pendingCount = state.pendingCount ?? (state.pending ? reviewTriggerCount : null);
+      if (pendingCount !== null) {
         setReviewPromptCount(state.count);
+        setReviewPromptTarget(pendingCount);
         setReviewPromptPending(true);
       } else {
         setReviewPromptCount(null);
+        setReviewPromptTarget(null);
         setReviewPromptPending(false);
       }
     })();
@@ -561,7 +567,7 @@ export default function ChatScreen() {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [reviewTriggerCount, userId]);
 
   useEffect(() => {
     const prev = prevMessagesRef.current;
@@ -687,7 +693,7 @@ export default function ChatScreen() {
     }
     setReviewModalVisible(true);
     setReviewPromptPending(false);
-    void markReviewPrompted(userId).catch((error) => {
+    void markReviewPrompted(userId, reviewPromptTarget).catch((error) => {
       console.warn('Failed to mark review prompt as shown', error);
     });
     trackEvent('review.prompt_shown', {
@@ -697,6 +703,7 @@ export default function ChatScreen() {
     reviewPromptBlocked,
     reviewPromptCount,
     reviewPromptPending,
+    reviewPromptTarget,
     reviewTriggerCount,
     userId,
   ]);
