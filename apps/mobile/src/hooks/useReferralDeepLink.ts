@@ -8,45 +8,10 @@ import { Alert } from 'react-native';
 import { useURL } from 'expo-linking';
 import { useSessionStore } from '@/store/session';
 import { trackReferralPremiumClaimedFriend } from '@/analytics/events';
-import { getSession } from '@/services/api';
-import { getDeviceFingerprintId } from '@/services/device-fingerprint';
-
-interface ClaimReferralResponse {
-  success: boolean;
-  premiumDays: number;
-  premiumUntil: string;
-  referrerUsername: string;
-}
+import { claimReferralCodeApi, getSession } from '@/services/api';
 
 interface ReferralError extends Error {
   status?: number;
-}
-
-async function claimReferralCode(code: string): Promise<ClaimReferralResponse> {
-  const { API_BASE_URL } = await import('@/services/config');
-  const { getDeviceTimezone } = await import('@/utils/timezone');
-  const fingerprint = await getDeviceFingerprintId();
-  
-  const response = await fetch(`${API_BASE_URL}/api/referral/claim`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Timezone': getDeviceTimezone(),
-      'X-Device-Id': fingerprint,
-    },
-    credentials: 'include',
-    body: JSON.stringify({ code }),
-  });
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    const message = data.message || data.error || 'Failed to claim referral code';
-    const error: ReferralError = new Error(message);
-    error.status = response.status;
-    throw error;
-  }
-
-  return response.json();
 }
 
 export function useReferralDeepLink() {
@@ -99,10 +64,10 @@ export function useReferralDeepLink() {
         if (user) {
           // ログイン済み：即座にclaim
           try {
-            const result = await claimReferralCode(code);
+            const result = await claimReferralCodeApi(code.trim());
             Alert.alert(
               '🎉 プレミアムを獲得しました！',
-              `${result.premiumDays}日間のプレミアムが付与されました。${result.referrerUsername}さんからの紹介ありがとうございます！`
+              `${result.premiumDays}日間のプレミアムが付与されました。${result.referrerUsername ?? ''}さんからの紹介ありがとうございます！`.trim(),
             );
             trackReferralPremiumClaimedFriend({ referrer: result.referrerUsername });
             await refreshSessionState();
