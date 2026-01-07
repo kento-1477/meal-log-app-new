@@ -25,6 +25,9 @@
       "appStoreId": 6754909859,
       "buildNumber": "11",
       "usesAppleSignIn": true,
+      "associatedDomains": [
+        "applinks:meal-log.app"
+      ],
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSExceptionDomains": {
@@ -58,6 +61,11 @@
             {
               "scheme": "meallog",
               "host": "invite"
+            },
+            {
+              "scheme": "https",
+              "host": "meal-log.app",
+              "pathPrefix": "/invite"
             }
           ],
           "category": [
