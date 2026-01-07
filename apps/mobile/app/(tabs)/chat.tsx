@@ -1785,14 +1785,13 @@ const styles = StyleSheet.create({
   },
   composerArea: {
     borderRadius: 20,
-    paddingTop: 12,
-    paddingHorizontal: 16,
-    gap: 8,
+    paddingTop: 0,
+    paddingHorizontal: 0,
+    gap: 0,
   },
   composerDocked: {
-    backgroundColor: 'rgba(247,247,250,0.95)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
   inputRow: {
     flexDirection: 'row',
