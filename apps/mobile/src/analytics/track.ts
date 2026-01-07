@@ -20,6 +20,7 @@ export type AnalyticsEventName =
   | 'paywall.restore_failure'
   | 'review.prompt_shown'
   | 'review.prompt_accept'
+  | 'review.prompt_feedback'
   | 'review.prompt_dismiss'
   | 'onboarding.step_viewed'
   | 'onboarding.step_completed'
