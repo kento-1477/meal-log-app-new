@@ -160,7 +160,7 @@ export default function ChatScreen() {
   const [reviewPromptCount, setReviewPromptCount] = useState<number | null>(null);
   const [reviewPromptTarget, setReviewPromptTarget] = useState<number | null>(null);
   const [bottomSectionHeight, setBottomSectionHeight] = useState(0);
-  const [usageResetTick, setUsageResetTick] = useState(0);
+  const [usageResetHasPassed, setUsageResetHasPassed] = useState(false);
   const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reviewPromptQueueRef = useRef(Promise.resolve());
   const usageRefreshInFlight = useRef(false);
@@ -458,32 +458,29 @@ export default function ChatScreen() {
     }
   }, [favoritesVisible, favoritesQuery]);
 
-  const usageResetHasPassed = useMemo(() => {
-    if (!usage?.resetsAt) return false;
-    const resetMs = Date.parse(usage.resetsAt);
-    return Number.isFinite(resetMs) && resetMs <= Date.now();
-  }, [usage?.resetsAt, usageResetTick]);
-
   useEffect(() => {
     if (usageResetTimerRef.current) {
       clearTimeout(usageResetTimerRef.current);
       usageResetTimerRef.current = null;
     }
     if (!usage?.resetsAt) {
+      setUsageResetHasPassed(false);
       return;
     }
     const resetMs = Date.parse(usage.resetsAt);
     if (!Number.isFinite(resetMs)) {
+      setUsageResetHasPassed(false);
       return;
     }
     const delayMs = resetMs - Date.now();
     if (delayMs <= 0) {
-      setUsageResetTick((value) => value + 1);
+      setUsageResetHasPassed(true);
       return;
     }
+    setUsageResetHasPassed(false);
     usageResetTimerRef.current = setTimeout(() => {
       usageResetTimerRef.current = null;
-      setUsageResetTick((value) => value + 1);
+      setUsageResetHasPassed(true);
     }, delayMs + 250);
     return () => {
       if (usageResetTimerRef.current) {
@@ -503,7 +500,7 @@ export default function ChatScreen() {
       }
       const resetMs = Date.parse(usage.resetsAt);
       if (Number.isFinite(resetMs) && resetMs <= Date.now()) {
-        setUsageResetTick((value) => value + 1);
+        setUsageResetHasPassed(true);
       }
     });
     return () => sub.remove();
