@@ -160,9 +160,11 @@ export default function ChatScreen() {
   const [reviewPromptCount, setReviewPromptCount] = useState<number | null>(null);
   const [reviewPromptTarget, setReviewPromptTarget] = useState<number | null>(null);
   const [bottomSectionHeight, setBottomSectionHeight] = useState(0);
+  const [usageResetTick, setUsageResetTick] = useState(0);
   const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reviewPromptQueueRef = useRef(Promise.resolve());
   const usageRefreshInFlight = useRef(false);
+  const usageResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
   const userId = useSessionStore((state) => state.user?.id ?? null);
@@ -460,6 +462,51 @@ export default function ChatScreen() {
     if (!usage?.resetsAt) return false;
     const resetMs = Date.parse(usage.resetsAt);
     return Number.isFinite(resetMs) && resetMs <= Date.now();
+  }, [usage?.resetsAt, usageResetTick]);
+
+  useEffect(() => {
+    if (usageResetTimerRef.current) {
+      clearTimeout(usageResetTimerRef.current);
+      usageResetTimerRef.current = null;
+    }
+    if (!usage?.resetsAt) {
+      return;
+    }
+    const resetMs = Date.parse(usage.resetsAt);
+    if (!Number.isFinite(resetMs)) {
+      return;
+    }
+    const delayMs = resetMs - Date.now();
+    if (delayMs <= 0) {
+      setUsageResetTick((value) => value + 1);
+      return;
+    }
+    usageResetTimerRef.current = setTimeout(() => {
+      usageResetTimerRef.current = null;
+      setUsageResetTick((value) => value + 1);
+    }, delayMs + 250);
+    return () => {
+      if (usageResetTimerRef.current) {
+        clearTimeout(usageResetTimerRef.current);
+        usageResetTimerRef.current = null;
+      }
+    };
+  }, [usage?.resetsAt]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') {
+        return;
+      }
+      if (!usage?.resetsAt) {
+        return;
+      }
+      const resetMs = Date.parse(usage.resetsAt);
+      if (Number.isFinite(resetMs) && resetMs <= Date.now()) {
+        setUsageResetTick((value) => value + 1);
+      }
+    });
+    return () => sub.remove();
   }, [usage?.resetsAt]);
 
   useEffect(() => {
