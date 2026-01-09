@@ -16,8 +16,11 @@ interface ProcessPurchaseParams extends IapPurchaseRequest {
 interface ReceiptVerificationResult {
   transactionId: string;
   productId: string;
+  originalTransactionId?: string | null;
   quantity: number;
   purchaseDate: Date;
+  expiresDate?: Date | null;
+  isTrial?: boolean;
   environment: string;
   raw: unknown;
 }
@@ -68,7 +71,10 @@ export async function processIapPurchase(params: ProcessPurchaseParams): Promise
 
   const quantity = verification.quantity || DEFAULT_QUANTITY;
   const creditsGranted = (creditsPerUnit ?? 0) * quantity;
-  const premiumDaysGranted = (premiumDaysPerUnit ?? 0) * quantity;
+  const premiumGrant = resolvePremiumGrant(verification, premiumDaysPerUnit, quantity);
+  const premiumDaysGranted = premiumGrant?.days ?? 0;
+  const originalTransactionId =
+    verification.originalTransactionId ?? (premiumDaysPerUnit ? verification.transactionId : null);
 
   if (creditsGranted <= 0 && premiumDaysGranted <= 0) {
     const error = new Error('付与内容が計算できませんでした');
@@ -83,6 +89,7 @@ export async function processIapPurchase(params: ProcessPurchaseParams): Promise
         platform,
         productId: verification.productId,
         transactionId: verification.transactionId,
+        originalTransactionId: originalTransactionId ?? undefined,
         environment: verification.environment,
         quantity: verification.quantity,
         creditsGranted,
@@ -99,16 +106,14 @@ export async function processIapPurchase(params: ProcessPurchaseParams): Promise
       });
     }
 
-    if (premiumDaysGranted > 0) {
-      const now = new Date();
-      const endDate = DateTime.fromJSDate(now).plus({ days: premiumDaysGranted }).toJSDate();
+    if (premiumGrant) {
       await tx.premiumGrant.create({
         data: {
           userId: params.userId,
           source: 'PURCHASE',
-          days: premiumDaysGranted,
-          startDate: now,
-          endDate,
+          days: premiumGrant.days,
+          startDate: premiumGrant.startDate,
+          endDate: premiumGrant.endDate,
           iapReceiptId: receipt.id,
         },
       });
@@ -187,8 +192,13 @@ function verifyTestReceipt(input: VerifyReceiptInput): ReceiptVerificationResult
     const payload = JSON.parse(decoded) as {
       transactionId?: string;
       productId?: string;
+      originalTransactionId?: string;
+      original_transaction_id?: string;
       quantity?: number;
       purchaseDate?: string;
+      expiresDate?: string;
+      expiresDateMs?: number;
+      isTrial?: boolean;
       environment?: string;
     };
 
@@ -203,6 +213,11 @@ function verifyTestReceipt(input: VerifyReceiptInput): ReceiptVerificationResult
 
     const quantity = Number(payload.quantity ?? input.quantity ?? DEFAULT_QUANTITY);
     const purchaseDate = payload.purchaseDate ? new Date(payload.purchaseDate) : new Date();
+    const expiresDate = resolveExpiresDate(payload.expiresDate, payload.expiresDateMs);
+    const originalTransactionId =
+      payload.originalTransactionId ??
+      payload.original_transaction_id ??
+      input.transactionId;
 
     if (Number.isNaN(purchaseDate.getTime())) {
       throw new Error('purchaseDate が無効です');
@@ -211,8 +226,11 @@ function verifyTestReceipt(input: VerifyReceiptInput): ReceiptVerificationResult
     return {
       transactionId,
       productId,
+      originalTransactionId,
       quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : DEFAULT_QUANTITY,
       purchaseDate,
+      expiresDate,
+      isTrial: payload.isTrial ?? false,
       environment: payload.environment ?? 'TEST',
       raw: payload,
     };
@@ -288,15 +306,22 @@ async function verifyAppStoreReceipt(input: VerifyReceiptInput): Promise<Receipt
 
       const transactionId = matched.transaction_id ?? input.transactionId;
       const productId = matched.product_id ?? input.productId;
+      const originalTransactionId = matched.original_transaction_id ?? transactionId;
       const quantity = Number(matched.quantity ?? input.quantity ?? DEFAULT_QUANTITY);
       const purchaseDateMs = Number(matched.purchase_date_ms ?? Date.now());
       const purchaseDate = Number.isFinite(purchaseDateMs) ? new Date(purchaseDateMs) : new Date();
+      const expiresDateMs = Number(matched.expires_date_ms ?? NaN);
+      const expiresDate = Number.isFinite(expiresDateMs) ? new Date(expiresDateMs) : null;
+      const isTrial = matched.is_trial_period === 'true' || matched.is_trial_period === true;
 
       return {
         transactionId,
         productId,
+        originalTransactionId,
         quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : DEFAULT_QUANTITY,
         purchaseDate,
+        expiresDate,
+        isTrial,
         environment: payload?.environment ?? (endpoint.includes('sandbox') ? 'SANDBOX' : 'PRODUCTION'),
         raw: payload,
       };
@@ -317,4 +342,44 @@ async function verifyAppStoreReceipt(input: VerifyReceiptInput): Promise<Receipt
     statusCode: StatusCodes.BAD_REQUEST,
     expose: true,
   });
+}
+
+function resolveExpiresDate(expiresDate?: string, expiresDateMs?: number) {
+  if (typeof expiresDateMs === 'number' && Number.isFinite(expiresDateMs)) {
+    return new Date(expiresDateMs);
+  }
+  if (typeof expiresDate === 'string') {
+    const parsed = new Date(expiresDate);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function resolvePremiumGrant(
+  verification: ReceiptVerificationResult,
+  premiumDaysPerUnit: number | null,
+  quantity: number,
+) {
+  if (!premiumDaysPerUnit) {
+    return null;
+  }
+
+  const startDate = verification.purchaseDate;
+  const expiresDate = verification.expiresDate;
+
+  if (expiresDate && expiresDate.getTime() > startDate.getTime()) {
+    const diffDays = DateTime.fromJSDate(expiresDate).diff(DateTime.fromJSDate(startDate), 'days').days;
+    const days = Math.max(1, Math.ceil(diffDays));
+    return { days, startDate, endDate: expiresDate };
+  }
+
+  const days = premiumDaysPerUnit * quantity;
+  if (days <= 0) {
+    return null;
+  }
+
+  const endDate = DateTime.fromJSDate(startDate).plus({ days }).toJSDate();
+  return { days, startDate, endDate };
 }

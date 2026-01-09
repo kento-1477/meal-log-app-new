@@ -3,9 +3,29 @@ import { StatusCodes } from 'http-status-codes';
 import { IapPurchaseRequestSchema } from '@meal-log/shared';
 import { requireAuth } from '../middleware/require-auth.js';
 import { processIapPurchase } from '../services/iap-service.js';
+import { processAppStoreNotification } from '../services/iap-notification-service.js';
 import { env } from '../env.js';
+import { logger } from '../logger.js';
 
 export const iapRouter = Router();
+
+iapRouter.post('/iap/notifications', async (req, res) => {
+  const signedPayload = typeof req.body?.signedPayload === 'string' ? req.body.signedPayload : null;
+  if (!signedPayload) {
+    res.status(StatusCodes.BAD_REQUEST).json({ ok: false, error: 'signedPayload is required' });
+    return;
+  }
+
+  try {
+    const result = await processAppStoreNotification(signedPayload);
+    res.status(StatusCodes.OK).json({ ok: true, ...result });
+  } catch (error) {
+    const err = error as { statusCode?: number; message?: string };
+    const statusCode = err.statusCode ?? StatusCodes.INTERNAL_SERVER_ERROR;
+    logger.warn({ err }, 'Failed to process IAP notification');
+    res.status(statusCode).json({ ok: false, error: err.message ?? 'Failed to process notification' });
+  }
+});
 
 iapRouter.post('/iap/purchase', requireAuth, async (req, res, next) => {
   try {

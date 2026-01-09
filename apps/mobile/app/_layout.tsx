@@ -8,6 +8,7 @@ import { useSessionBootstrap } from '@/hooks/useSessionBootstrap';
 import { useLocaleBootstrap } from '@/hooks/useLocaleBootstrap';
 import { useReferralDeepLink } from '@/hooks/useReferralDeepLink';
 import { useNotificationBootstrap } from '@/hooks/useNotificationBootstrap';
+import { useIapSync } from '@/hooks/useIapSync';
 import { useTranslation } from '@/i18n';
 import { colors } from '@/theme/colors';
 
@@ -17,6 +18,7 @@ export default function RootLayout() {
   useLocaleBootstrap();
   useReferralDeepLink();
   useNotificationBootstrap();
+  useIapSync();
   const { t } = useTranslation();
 
   return (
