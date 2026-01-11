@@ -1087,7 +1087,7 @@ export default function ChatScreen() {
       console.warn('Failed to open media library', error);
       setError(t('chat.photoLoadFailed'));
     }
-  }, [ensureMediaLibraryPermission, setError, setComposingImage]);
+  }, [ensureMediaLibraryPermission, setError, setComposingImage, t]);
 
   const handleTakePhoto = useCallback(async () => {
     try {
@@ -1121,7 +1121,7 @@ export default function ChatScreen() {
       console.warn('Failed to open camera', error);
       setError(t('chat.cameraLaunchFailed'));
     }
-  }, [ensureCameraPermission, setComposingImage, setError]);
+  }, [ensureCameraPermission, setComposingImage, setError, t]);
 
   const handlePhotoQuickAction = useCallback(() => {
     if (Platform.OS === 'ios') {
