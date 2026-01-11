@@ -48,6 +48,7 @@ import {
   getStreak,
   getSession,
   postMealLog,
+  translateMealLog,
   updateNotificationSettings,
   type MealLogResponse,
   type ApiError,
@@ -165,6 +166,8 @@ export default function ChatScreen() {
   const [usageResetHasPassed, setUsageResetHasPassed] = useState(false);
   const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reviewPromptQueueRef = useRef(Promise.resolve());
+  const translationInFlightRef = useRef(new Set<string>());
+  const logToAssistantIdRef = useRef(new Map<string, string>());
   const usageRefreshInFlight = useRef(false);
   const usageResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setUser = useSessionStore((state) => state.setUser);
@@ -185,6 +188,7 @@ export default function ChatScreen() {
     setMessageText,
     updateMessageStatus,
     attachCardToMessage,
+    updateCardForLog,
     composingImageUri,
     setComposingImage,
   } = useChatStore();
@@ -253,6 +257,44 @@ export default function ChatScreen() {
     ],
   );
 
+  const requestTranslation = useCallback(
+    async (logId: string) => {
+      if (!logId) {
+        return;
+      }
+      if (translationInFlightRef.current.has(logId)) {
+        return;
+      }
+      translationInFlightRef.current.add(logId);
+      try {
+        const translated = await translateMealLog(logId);
+        updateCardForLog(logId, {
+          dish: translated.dish,
+          items: translated.items,
+          warnings: translated.breakdown.warnings,
+          locale: translated.locale,
+          requestedLocale: translated.requestLocale,
+          fallbackApplied: translated.fallbackApplied,
+          translations: translated.translations,
+          favoriteCandidate: translated.favoriteCandidate,
+        });
+        const assistantId =
+          logToAssistantIdRef.current.get(logId) ??
+          useChatStore.getState().messages.find((message) => message.card?.logId === logId)?.id;
+        if (assistantId) {
+          setMessageText(assistantId, buildAssistantSummary(translated));
+        }
+      } catch (error) {
+        if (__DEV__) {
+          console.warn('[chat] translateMealLog failed', { logId, error });
+        }
+      } finally {
+        translationInFlightRef.current.delete(logId);
+      }
+    },
+    [setMessageText, updateCardForLog],
+  );
+
   const renderMealLogResult = useCallback(
     (response: MealLogResponse, placeholderId: string) => {
       const meta = (response.meta ?? {}) as {
@@ -278,11 +320,15 @@ export default function ChatScreen() {
         mealPeriod,
         timezone,
       });
+      logToAssistantIdRef.current.set(response.logId, placeholderId);
       setMessageText(placeholderId, buildAssistantSummary(response));
       void maybeQueueReviewPrompt(response.logId);
       void maybePromptNotifications(response.logId);
+      if (isTranslationPendingResponse(response)) {
+        void requestTranslation(response.logId);
+      }
     },
-    [attachCardToMessage, maybePromptNotifications, maybeQueueReviewPrompt, setMessageText],
+    [attachCardToMessage, maybePromptNotifications, maybeQueueReviewPrompt, requestTranslation, setMessageText],
   );
 
   const [mediaPermission, requestMediaPermission] = ImagePicker.useMediaLibraryPermissions();
@@ -1634,6 +1680,30 @@ export default function ChatScreen() {
   );
 }
 
+function isTranslationPendingResponse(response: MealLogResponse) {
+  if (!response.fallbackApplied) {
+    return false;
+  }
+  const requested = response.requestLocale;
+  const resolved = response.locale;
+  if (!requested || !resolved || requested === resolved) {
+    return false;
+  }
+  return !response.translations?.[requested];
+}
+
+function isTranslationPendingPayload(payload: NutritionCardPayload) {
+  if (!payload.fallbackApplied) {
+    return false;
+  }
+  const requested = payload.requestedLocale;
+  const resolved = payload.locale;
+  if (!requested || !resolved || requested === resolved) {
+    return false;
+  }
+  return !payload.translations?.[requested];
+}
+
 function buildAssistantSummary(response: MealLogResponse) {
   const lines = [
     translateKey('chat.summaryLine', {
@@ -1655,7 +1725,9 @@ function buildAssistantSummary(response: MealLogResponse) {
     lines.push(primary);
   }
 
-  if (response.fallbackApplied && response.requestLocale !== response.locale) {
+  if (isTranslationPendingResponse(response)) {
+    lines.push(translateKey('card.translationPending'));
+  } else if (response.fallbackApplied && response.requestLocale !== response.locale) {
     const requested = describeLocale(response.requestLocale);
     const resolved = describeLocale(response.locale);
     lines.push(translateKey('card.languageFallback', { requested, resolved }));
@@ -1684,12 +1756,16 @@ function buildShareMessage(payload: NutritionCardPayload) {
     payload.locale &&
     payload.requestedLocale !== payload.locale
   ) {
-    lines.push(
-      translateKey('card.languageFallback', {
-        requested: describeLocale(payload.requestedLocale),
-        resolved: describeLocale(payload.locale),
-      }),
-    );
+    if (isTranslationPendingPayload(payload)) {
+      lines.push(translateKey('card.translationPending'));
+    } else {
+      lines.push(
+        translateKey('card.languageFallback', {
+          requested: describeLocale(payload.requestedLocale),
+          resolved: describeLocale(payload.locale),
+        }),
+      );
+    }
   }
 
   return lines.join('\n');

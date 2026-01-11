@@ -30,7 +30,21 @@ export const NutritionCard = React.memo<NutritionCardProps>(function NutritionCa
     warning.startsWith('zeroFloored') ? t('card.warnings.zeroFloored') : warning,
   );
 
-  if (payload.fallbackApplied && payload.requestedLocale && payload.locale && payload.requestedLocale !== payload.locale) {
+  const translationPending =
+    payload.fallbackApplied &&
+    payload.requestedLocale &&
+    payload.locale &&
+    payload.requestedLocale !== payload.locale &&
+    !payload.translations?.[payload.requestedLocale];
+
+  if (translationPending) {
+    baseWarnings.push(t('card.translationPending'));
+  } else if (
+    payload.fallbackApplied &&
+    payload.requestedLocale &&
+    payload.locale &&
+    payload.requestedLocale !== payload.locale
+  ) {
     baseWarnings.push(
       t('card.languageFallback', {
         requested: describeLocale(payload.requestedLocale),
