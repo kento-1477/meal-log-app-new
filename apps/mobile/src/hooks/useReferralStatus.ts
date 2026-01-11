@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSessionStore } from '@/store/session';
 import { getReferralStatus } from '@/services/api';
+import { translateKey } from '@/i18n';
 
 type ApiError = import('@/services/api').ApiError;
 type ReferralStatusResponse = import('@/services/api').ReferralStatusResponse;
@@ -38,11 +39,11 @@ export function useReferralStatus() {
         setSessionUser(null);
         setSessionStatus('unauthenticated');
         setStatus(null);
-        setError('ログインが必要です');
+        setError(translateKey('auth.loginRequired'));
         setIsLoading(false);
         return;
       }
-      setError(err instanceof Error ? err.message : 'Failed to fetch referral status');
+      setError(err instanceof Error ? err.message : translateKey('referral.error.loadFailed'));
     } finally {
       setIsLoading(false);
     }

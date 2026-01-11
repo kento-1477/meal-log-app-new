@@ -80,10 +80,14 @@ export default function ProfileScreen() {
       setSnapshot(createSnapshot(mapped));
       Alert.alert(t('settings.profile.savedTitle'), t('settings.profile.savedMessage'));
       if (result.referralClaimed && result.referralResult) {
-        Alert.alert(
-          '🎉 プレミアムを獲得しました！',
-          `${result.referralResult.premiumDays}日間のプレミアムが付与されました。${result.referralResult.referrerUsername ?? ''}`.trim(),
-        );
+        const referrerName = result.referralResult.referrerUsername ?? '';
+        const rewardMessage = referrerName
+          ? t('referral.rewardMessageWithReferrer', {
+              days: result.referralResult.premiumDays,
+              referrer: referrerName,
+            })
+          : t('referral.rewardMessage', { days: result.referralResult.premiumDays });
+        Alert.alert(t('referral.rewardTitle'), rewardMessage);
         getPremiumStatus()
           .then((status) => setPremiumStatus(status))
           .catch((error) => console.warn('Failed to refresh premium status', error));
@@ -198,7 +202,7 @@ export default function ProfileScreen() {
               label={t('settings.profile.displayName')}
               value={form.displayName}
               onChangeText={(value) => setForm((prev) => ({ ...prev, displayName: value }))}
-              placeholder="meal 太郎"
+              placeholder={t('settings.profile.displayNamePlaceholder')}
               keyboardType="default"
             />
             <ProfileField

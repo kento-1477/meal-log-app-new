@@ -47,7 +47,7 @@ export default function FavoriteDetailScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { locale } = useTranslation();
+  const { locale, t } = useTranslation();
   const rawId = params.id ?? 'new';
   const isNew = rawId === 'new';
   const numericId = !isNew ? Number(rawId) : null;
@@ -97,12 +97,12 @@ export default function FavoriteDetailScreen() {
     mutationFn: createFavoriteMeal,
     onSuccess: () => {
       invalidateLists();
-      Alert.alert('保存しました');
+      Alert.alert(t('favorites.saveSuccess'));
       router.back();
     },
     onError: (error: unknown) => {
-      const message = error instanceof Error ? error.message : 'お気に入りを保存できませんでした';
-      Alert.alert('エラー', message);
+      const message = error instanceof Error ? error.message : t('favorites.saveFailedMessage');
+      Alert.alert(t('favorites.saveFailedTitle'), message);
     },
   });
 
@@ -110,12 +110,12 @@ export default function FavoriteDetailScreen() {
     mutationFn: (payload: ReturnType<typeof buildUpdatePayload>) => updateFavoriteMeal(numericId!, payload),
     onSuccess: () => {
       invalidateLists();
-      Alert.alert('更新しました');
+      Alert.alert(t('favorites.updateSuccess'));
       router.back();
     },
     onError: (error: unknown) => {
-      const message = error instanceof Error ? error.message : 'お気に入りを更新できませんでした';
-      Alert.alert('エラー', message);
+      const message = error instanceof Error ? error.message : t('favorites.updateFailedMessage');
+      Alert.alert(t('favorites.updateFailedTitle'), message);
     },
   });
 
@@ -123,12 +123,12 @@ export default function FavoriteDetailScreen() {
     mutationFn: (id: number) => deleteFavoriteMeal(id),
     onSuccess: () => {
       invalidateLists();
-      Alert.alert('削除しました');
+      Alert.alert(t('favorites.deleteSuccess'));
       router.back();
     },
     onError: (error: unknown) => {
-      const message = error instanceof Error ? error.message : 'お気に入りを削除できませんでした';
-      Alert.alert('エラー', message);
+      const message = error instanceof Error ? error.message : t('favorites.deleteFailedMessage');
+      Alert.alert(t('favorites.deleteFailedTitle'), message);
     },
   });
 
@@ -153,7 +153,7 @@ export default function FavoriteDetailScreen() {
 
   const handleSave = () => {
     if (!canSave) {
-      Alert.alert('必須項目を入力してください', '名前を入力してください。');
+      Alert.alert(t('favorites.requiredTitle'), t('favorites.requiredMessage'));
       return;
     }
     const payload = buildUpdatePayload({ name, notes, kcal, protein, fat, carbs, items, favorite });
@@ -166,23 +166,23 @@ export default function FavoriteDetailScreen() {
 
   const handleDelete = () => {
     if (!numericId) return;
-    Alert.alert('お気に入りを削除', '本当に削除しますか？', [
-      { text: 'キャンセル', style: 'cancel' },
+    Alert.alert(t('favorites.deleteConfirmTitle'), t('favorites.deleteConfirmMessage'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: '削除する',
+        text: t('common.delete'),
         style: 'destructive',
         onPress: () => deleteMutation.mutate(numericId),
       },
     ]);
   };
 
-  const headerTitle = isNew ? 'お気に入りを作成' : favorite?.name ?? 'お気に入り';
+  const headerTitle = isNew ? t('favorites.createTitle') : favorite?.name ?? t('favorites.title');
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backLabel}>戻る</Text>
+          <Text style={styles.backLabel}>{t('common.back')}</Text>
         </TouchableOpacity>
         <Text style={styles.title}>{headerTitle}</Text>
         <View style={styles.headerSpacer} />
@@ -194,20 +194,20 @@ export default function FavoriteDetailScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>名前</Text>
-            <TextInput value={name} onChangeText={setName} style={styles.input} placeholder="例: 朝食セット" />
-            <Text style={styles.sectionLabel}>メモ</Text>
+            <Text style={styles.sectionLabel}>{t('favorites.section.name')}</Text>
+            <TextInput value={name} onChangeText={setName} style={styles.input} placeholder={t('favorites.namePlaceholder')} />
+            <Text style={styles.sectionLabel}>{t('favorites.section.notes')}</Text>
             <TextInput
               value={notes}
               onChangeText={setNotes}
               style={[styles.input, styles.notesInput]}
-              placeholder="メモを追加"
+              placeholder={t('favorites.notesPlaceholder')}
               multiline
             />
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>栄養合計</Text>
+            <Text style={styles.sectionTitle}>{t('favorites.section.totals')}</Text>
             <View style={styles.totalsRow}>
               <FieldInput label="kcal" value={kcal} onChangeText={setKcal} keyboardType="numeric" />
               <FieldInput label="P (g)" value={protein} onChangeText={setProtein} keyboardType="numeric" />
@@ -220,9 +220,9 @@ export default function FavoriteDetailScreen() {
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>内訳</Text>
+              <Text style={styles.sectionTitle}>{t('favorites.section.items')}</Text>
               <TouchableOpacity onPress={handleAddItem}>
-                <Text style={styles.addItemLabel}>＋ 食品を追加</Text>
+                <Text style={styles.addItemLabel}>{t('favorites.addItem')}</Text>
               </TouchableOpacity>
             </View>
             {items.map((item, index) => (
@@ -230,12 +230,12 @@ export default function FavoriteDetailScreen() {
                 <View style={styles.itemHeaderRow}>
                   <Text style={styles.itemIndex}>#{index + 1}</Text>
                   <TouchableOpacity onPress={() => handleRemoveItem(index)}>
-                    <Text style={styles.removeItemLabel}>削除</Text>
+                    <Text style={styles.removeItemLabel}>{t('common.delete')}</Text>
                   </TouchableOpacity>
                 </View>
-                <FieldInput label="食品名" value={item.name} onChangeText={(text) => handleChangeItem(index, 'name', text)} />
+                <FieldInput label={t('favorites.field.foodName')} value={item.name} onChangeText={(text) => handleChangeItem(index, 'name', text)} />
                 <FieldInput
-                  label="量 (g)"
+                  label={t('favorites.field.amount')}
                   value={item.grams}
                   onChangeText={(text) => handleChangeItem(index, 'grams', text)}
                   keyboardType="numeric"
@@ -277,7 +277,7 @@ export default function FavoriteDetailScreen() {
             onPress={handleSave}
             disabled={!canSave || isSaving}
           >
-            {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonLabel}>保存する</Text>}
+            {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonLabel}>{t('favorites.saveButton')}</Text>}
           </TouchableOpacity>
 
           {!isNew ? (
@@ -289,7 +289,7 @@ export default function FavoriteDetailScreen() {
               {deleteMutation.isPending ? (
                 <ActivityIndicator color={colors.accent} />
               ) : (
-                <Text style={styles.deleteButtonLabel}>お気に入りを削除</Text>
+                <Text style={styles.deleteButtonLabel}>{t('favorites.deleteButton')}</Text>
               )}
             </TouchableOpacity>
           ) : null}

@@ -138,7 +138,10 @@ export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleF
             </View>
             {log.fallback_applied && log.requested_locale && log.locale && log.requested_locale !== log.locale ? (
               <Text style={styles.fallbackNote}>
-                ※ {describeLocale(log.requested_locale)} の翻訳が未対応のため {describeLocale(log.locale)} で表示しています
+                {t('card.languageFallback', {
+                  requested: describeLocale(log.requested_locale),
+                  resolved: describeLocale(log.locale),
+                })}
               </Text>
             ) : null}
             <View style={styles.itemFooter}>
@@ -171,7 +174,7 @@ export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleF
                 {sharingId === log.id ? (
                   <ActivityIndicator size="small" color={colors.accent} />
                 ) : (
-                  <Text style={styles.shareLabel}>共有</Text>
+                  <Text style={styles.shareLabel}>{t('card.share')}</Text>
                 )}
               </TouchableOpacity>
               <TouchableOpacity
@@ -211,7 +214,7 @@ export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleF
       const response = await getMealLogShare(logId);
       await Share.share({ message: response.share.text });
     } catch (_error) {
-      Alert.alert('共有に失敗しました', '時間をおいて再度お試しください。');
+      Alert.alert(t('common.shareFailedTitle'), t('common.tryAgainMessage'));
     } finally {
       setSharingId(null);
     }
@@ -271,17 +274,17 @@ export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleF
       setIsExporting(true);
       const { export: dataset } = await getLogsExport(exportRange);
       if (!dataset.items.length) {
-        Alert.alert('データがありません', '選択した期間の記録がありません。');
+        Alert.alert(t('export.noDataTitle'), t('export.noDataMessage'));
         return;
       }
 
       if (!cacheDirectory) {
-        Alert.alert('ファイルを保存できません', '一時ディレクトリにアクセスできませんでした。');
+        Alert.alert(t('export.saveFailedTitle'), t('export.saveFailedMessage'));
         return;
       }
 
       if (!(await Sharing.isAvailableAsync())) {
-        Alert.alert('共有できません', 'このデバイスではファイル共有がサポートされていません。');
+        Alert.alert(t('export.shareUnavailableTitle'), t('export.shareUnavailableMessage'));
         return;
       }
 
@@ -303,7 +306,7 @@ export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleF
         try {
           await Sharing.shareAsync(fileUri, {
             mimeType: 'text/csv',
-            dialogTitle: 'CSVを共有',
+            dialogTitle: t('export.shareCsvTitle'),
             UTI: 'public.comma-separated-values-text',
           });
         } finally {
@@ -315,7 +318,7 @@ export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleF
         try {
           await Sharing.shareAsync(result.uri, {
             mimeType: 'application/pdf',
-            dialogTitle: 'PDFを共有',
+            dialogTitle: t('export.sharePdfTitle'),
             UTI: 'com.adobe.pdf',
           });
         } finally {
@@ -324,7 +327,7 @@ export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleF
       }
     } catch (_error) {
       console.error('Failed to export logs', _error);
-      Alert.alert('エクスポートに失敗しました', '時間をおいて再度お試しください。');
+      Alert.alert(t('export.failedTitle'), t('common.tryAgainMessage'));
     } finally {
       setIsExporting(false);
       setExportVisible(false);
@@ -344,10 +347,11 @@ interface ExportModalProps {
 }
 
 function ExportModal({ visible, onClose, range, setRange, format, setFormat, onExport, exporting }: ExportModalProps) {
+  const { t } = useTranslation();
   const rangeOptions: Array<{ key: ExportRange; label: string }> = [
-    { key: 'day', label: '今日' },
-    { key: 'week', label: '今週' },
-    { key: 'month', label: '今月' },
+    { key: 'day', label: t('export.range.day') },
+    { key: 'week', label: t('export.range.week') },
+    { key: 'month', label: t('export.range.month') },
   ];
 
   const formatOptions: Array<{ key: 'csv' | 'pdf'; label: string }> = [
@@ -359,8 +363,8 @@ function ExportModal({ visible, onClose, range, setRange, format, setFormat, onE
     <Modal visible={visible} animationType="fade" transparent>
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>エクスポート設定</Text>
-          <Text style={styles.modalLabel}>期間</Text>
+          <Text style={styles.modalTitle}>{t('export.modal.title')}</Text>
+          <Text style={styles.modalLabel}>{t('export.modal.rangeLabel')}</Text>
           <View style={styles.optionRow}>
             {rangeOptions.map((option) => (
               <Pressable
@@ -372,7 +376,7 @@ function ExportModal({ visible, onClose, range, setRange, format, setFormat, onE
               </Pressable>
             ))}
           </View>
-          <Text style={styles.modalLabel}>形式</Text>
+          <Text style={styles.modalLabel}>{t('export.modal.formatLabel')}</Text>
           <View style={styles.optionRow}>
             {formatOptions.map((option) => (
               <Pressable
@@ -386,14 +390,18 @@ function ExportModal({ visible, onClose, range, setRange, format, setFormat, onE
           </View>
           <View style={styles.modalActions}>
             <TouchableOpacity onPress={onClose} disabled={exporting}>
-              <Text style={styles.modalCancel}>キャンセル</Text>
+              <Text style={styles.modalCancel}>{t('common.cancel')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.modalPrimary, exporting && styles.modalPrimaryDisabled]}
               onPress={onExport}
               disabled={exporting}
             >
-              {exporting ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalPrimaryLabel}>出力する</Text>}
+              {exporting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.modalPrimaryLabel}>{t('export.modal.submit')}</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>

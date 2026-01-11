@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles, fontFamilies } from '@/theme/typography';
+import { getIntlLocale, useTranslation } from '@/i18n';
 
 export type MonthlyBar = {
   day: number;
@@ -37,20 +38,24 @@ function normalizeHeight(value: number | null, target: number) {
 
 export const MonthlyCalorieChart = memo(({ days, startDate, endDate, averageCalories }: MonthlyCalorieChartProps) => {
   const today = useMemo(() => DateTime.now().startOf('day'), []);
+  const { t, locale } = useTranslation();
+  const intlLocale = getIntlLocale(locale);
   const labels = buildAxisLabels(days.length, startDate);
   const targetLineOffset = spacing.xs + CHART_HEIGHT - CHART_HEIGHT * (1 / MAX_RATIO);
   const rangeLabel = useMemo(() => {
-    const from = DateTime.fromISO(startDate).toFormat('yyyy年M月d日');
-    const to = DateTime.fromISO(endDate).toFormat('yyyy年M月d日');
-    return `${from} 〜 ${to}`;
-  }, [startDate, endDate]);
+    const from = DateTime.fromISO(startDate).setLocale(intlLocale).toLocaleString(DateTime.DATE_MED);
+    const to = DateTime.fromISO(endDate).setLocale(intlLocale).toLocaleString(DateTime.DATE_MED);
+    return t('dashboard.chart.rangeLabel', { from, to });
+  }, [startDate, endDate, intlLocale, t]);
 
   return (
     <View style={styles.wrapper}>
       <View style={styles.summaryRow}>
         <View>
-          <Text style={styles.summaryLabel}>平均</Text>
-          <Text style={styles.summaryValue}>{averageCalories != null ? `${averageCalories.toLocaleString()} kcal` : '-- kcal'}</Text>
+          <Text style={styles.summaryLabel}>{t('dashboard.chart.averageLabel')}</Text>
+          <Text style={styles.summaryValue}>
+            {averageCalories != null ? `${averageCalories.toLocaleString()} kcal` : '-- kcal'}
+          </Text>
         </View>
         <Text style={styles.rangeText}>{rangeLabel}</Text>
       </View>

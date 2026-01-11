@@ -48,12 +48,6 @@ export default function SettingsScreen() {
         icon: <Feather name="bell" size={20} color={colors.textPrimary} />,
         action: () => router.push('/settings/notifications'),
       },
-      {
-        key: 'language',
-        label: t('settings.menu.language'),
-        icon: <Feather name="globe" size={20} color={colors.textPrimary} />,
-        action: () => router.push('/settings/language'),
-      },
     ],
     [router, t],
   );

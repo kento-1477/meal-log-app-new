@@ -8,6 +8,18 @@ import {
   formatDayLabel,
   roundNumber,
 } from '../src/features/dashboard/summaryShared.ts';
+import { getLocale, setLocale } from '../src/i18n/index.ts';
+
+const originalLocale = getLocale();
+
+function withLocale(locale: 'ja-JP' | 'en-US', run: () => void) {
+  setLocale(locale);
+  try {
+    run();
+  } finally {
+    setLocale(originalLocale);
+  }
+}
 
 function createSummary(overrides: Partial<DashboardSummary> = {}): DashboardSummary {
   const base: DashboardSummary = {
@@ -41,8 +53,10 @@ function createSummary(overrides: Partial<DashboardSummary> = {}): DashboardSumm
 }
 
 test('formatDayLabel respects timezone and falls back gracefully', () => {
-  const label = formatDayLabel('2025-01-10', 'Day 1', 'Asia/Tokyo');
-  assert.equal(label, '金 10');
+  withLocale('ja-JP', () => {
+    const label = formatDayLabel('2025-01-10', 'Day 1', 'Asia/Tokyo');
+    assert.equal(label, '金 10');
+  });
 
   const fallback = formatDayLabel('invalid-date', 'Day 1', 'Asia/Tokyo');
   assert.equal(fallback, 'Day 1');
@@ -93,8 +107,12 @@ test('buildViewModel includes comparison and formatted labels', () => {
   });
   const targets: DashboardTargets = { calories: 2200, protein_g: 130, fat_g: 70, carbs_g: 260 };
 
-  const viewModel = buildViewModel(summary, targets);
+  let viewModel: ReturnType<typeof buildViewModel>;
+  withLocale('ja-JP', () => {
+    viewModel = buildViewModel(summary, targets);
+  });
 
+  assert.ok(viewModel);
   assert.equal(viewModel.calories.labels[0], '月 6');
   assert.equal(viewModel.calories.labels[1], '火 7');
   assert.equal(viewModel.comparison.totals.target, 2200);

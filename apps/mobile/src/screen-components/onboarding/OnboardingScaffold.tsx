@@ -157,7 +157,7 @@ export function OnboardingScaffold({
                     onPress={onBack}
                     style={styles.backChip}
                     accessibilityRole="button"
-                    accessibilityLabel={backLabel ?? '戻る'}
+                    accessibilityLabel={backLabel ?? t('common.back')}
                     activeOpacity={0.8}
                   >
                     <Feather name="chevron-left" size={22} color={colors.textPrimary} />
@@ -239,7 +239,7 @@ export function OnboardingScaffold({
               {footer}
               {onNext ? (
                 <PrimaryButton
-                  label={nextLabel ?? '続ける'}
+                  label={nextLabel ?? t('common.continue')}
                   onPress={handleNext}
                   disabled={nextDisabled}
                 />

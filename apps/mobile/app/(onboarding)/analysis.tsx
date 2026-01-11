@@ -182,7 +182,9 @@ export default function OnboardingAnalysisScreen() {
             </View>
           )}
           {targetDateIso ? (
-            <Text style={styles.helperText}>目標達成予測: {new Date(targetDateIso).toLocaleDateString()}</Text>
+            <Text style={styles.helperText}>
+              {t('onboarding.summary.etaLabel')}: {new Date(targetDateIso).toLocaleDateString()}
+            </Text>
           ) : null}
         </View>
       </View>

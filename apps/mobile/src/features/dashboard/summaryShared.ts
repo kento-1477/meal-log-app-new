@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 import type { DashboardSummary, DashboardTargets } from '@meal-log/shared';
-import { getIntlLocale } from '@/i18n';
+import { getIntlLocale, translateKey } from '@/i18n';
 
 export interface ChartPoint {
   label: string;
@@ -144,11 +144,11 @@ export function computeMealPeriodBreakdown(daily: DashboardSummary['calories']['
   const totalCalories = Object.values(totalPerPeriod).reduce((sum, value) => sum + value, 0);
 
   const entries: MealPeriodBreakdown[] = [
-    { key: 'breakfast', label: '朝食', value: totalPerPeriod.breakfast, percent: 0 },
-    { key: 'lunch', label: '昼食', value: totalPerPeriod.lunch, percent: 0 },
-    { key: 'dinner', label: '夕食', value: totalPerPeriod.dinner, percent: 0 },
-    { key: 'snack', label: '間食', value: totalPerPeriod.snack, percent: 0 },
-    { key: 'unknown', label: '未分類', value: totalPerPeriod.unknown, percent: 0 },
+    { key: 'breakfast', label: translateKey('meal.breakfast'), value: totalPerPeriod.breakfast, percent: 0 },
+    { key: 'lunch', label: translateKey('meal.lunch'), value: totalPerPeriod.lunch, percent: 0 },
+    { key: 'dinner', label: translateKey('meal.dinner'), value: totalPerPeriod.dinner, percent: 0 },
+    { key: 'snack', label: translateKey('meal.snack'), value: totalPerPeriod.snack, percent: 0 },
+    { key: 'unknown', label: translateKey('meal.unknown'), value: totalPerPeriod.unknown, percent: 0 },
   ];
 
   return entries.map((entry) => ({
@@ -165,7 +165,7 @@ export function buildMacroStats(
   const entries: Array<MacroStat> = [
     {
       key: 'protein_g',
-      label: 'たんぱく質',
+      label: translateKey('macro.protein'),
       actual: roundNumber(total.protein_g, 1),
       target: roundNumber(targets.protein_g, 1),
       delta: roundNumber(delta.protein_g, 1),
@@ -173,7 +173,7 @@ export function buildMacroStats(
     },
     {
       key: 'fat_g',
-      label: '脂質',
+      label: translateKey('macro.fat'),
       actual: roundNumber(total.fat_g, 1),
       target: roundNumber(targets.fat_g, 1),
       delta: roundNumber(delta.fat_g, 1),
@@ -181,7 +181,7 @@ export function buildMacroStats(
     },
     {
       key: 'carbs_g',
-      label: '炭水化物',
+      label: translateKey('macro.carbs'),
       actual: roundNumber(total.carbs_g, 1),
       target: roundNumber(targets.carbs_g, 1),
       delta: roundNumber(delta.carbs_g, 1),

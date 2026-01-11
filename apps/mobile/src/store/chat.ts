@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ChatMessage, NutritionCardPayload } from '@/types/chat';
+import { translateKey } from '@/i18n';
 
 export interface ChatState {
   messages: ChatMessage[];
@@ -29,7 +30,7 @@ function buildInitialMessages(): ChatMessage[] {
     {
       id: nanoid(),
       role: 'assistant',
-      text: 'こんにちは！食事内容を送っていただければ、栄養情報をお返しします🍽️',
+      text: translateKey('chat.welcome'),
       createdAt: Date.now(),
     },
   ];
