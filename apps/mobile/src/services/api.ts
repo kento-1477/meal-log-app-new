@@ -408,7 +408,10 @@ export async function postMealLog(params: { message: string; imageUri?: string |
   return apiFetch<MealLogResponse>('/log', {
     method: 'POST',
     body: form,
-    headers: { 'Idempotency-Key': params.idempotencyKey ?? `${Date.now()}-${Math.random()}` },
+    headers: {
+      'Idempotency-Key': params.idempotencyKey ?? `${Date.now()}-${Math.random()}`,
+      'X-Translation-Mode': 'defer',
+    },
     timeoutMs: hasImage ? IMAGE_LOG_TIMEOUT_MS : undefined,
   });
 }
@@ -535,6 +538,13 @@ export async function getMealLogDetail(logId: string) {
   const locale = getLocale();
   return apiFetch<{ ok: boolean; item: MealLogDetail }>(appendLocale(`/api/log/${logId}`, locale), {
     method: 'GET',
+  });
+}
+
+export async function translateMealLog(logId: string) {
+  const locale = getLocale();
+  return apiFetch<MealLogResponse>(appendLocale(`/api/log/${logId}/translate`, locale), {
+    method: 'POST',
   });
 }
 
