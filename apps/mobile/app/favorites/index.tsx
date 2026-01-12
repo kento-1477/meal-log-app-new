@@ -49,6 +49,14 @@ export default function FavoritesIndexScreen() {
         <View style={styles.empty}>
           <Text style={styles.emptyText}>{t('favorites.empty')}</Text>
           <Text style={styles.emptySubText}>{t('favorites.emptyHint')}</Text>
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyCardTitle}>{t('favorites.emptyGuideTitle')}</Text>
+            <Text style={styles.emptyCardText}>{t('favorites.emptyGuideSteps')}</Text>
+          </View>
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyCardTitle}>{t('favorites.emptyBenefitsTitle')}</Text>
+            <Text style={styles.emptyCardText}>{t('favorites.emptyBenefitsList')}</Text>
+          </View>
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.list}>
@@ -105,19 +113,37 @@ const styles = StyleSheet.create({
   },
   empty: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: 'stretch',
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
-    gap: spacing.xs,
+    paddingVertical: spacing.xl,
+    gap: spacing.md,
   },
   emptyText: {
     ...textStyles.body,
     color: colors.textPrimary,
+    textAlign: 'center',
   },
   emptySubText: {
     ...textStyles.caption,
     color: colors.textSecondary,
     textAlign: 'center',
+  },
+  emptyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  emptyCardTitle: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  emptyCardText: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    textAlign: 'left',
   },
   list: {
     paddingHorizontal: spacing.lg,
