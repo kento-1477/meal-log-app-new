@@ -3,7 +3,6 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AiUsageSummary, OnboardingStatus, UserTier } from '@meal-log/shared';
 import { getLocale, setLocale as setI18nLocale, type Locale } from '@/i18n';
-import { savePreferredLocale } from '@/services/locale-storage';
 
 type User = {
   id: number;
@@ -67,7 +66,6 @@ export const useSessionStore = create<SessionState>()(
       setLocale: (locale) => {
         set({ locale });
         setI18nLocale(locale);
-        void savePreferredLocale(locale);
       },
       setOnboarding: (onboarding) => set({ onboarding }),
     }),
@@ -79,7 +77,6 @@ export const useSessionStore = create<SessionState>()(
         user: state.user,
         usage: state.usage,
         onboarding: state.onboarding,
-        locale: state.locale,
       }),
       onRehydrateStorage: () => (state) => {
         if (!state) return;

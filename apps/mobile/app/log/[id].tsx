@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -30,14 +30,7 @@ import { useTranslation } from '@/i18n';
 import { describeLocale } from '@/utils/locale';
 import { useChatStore } from '@/store/chat';
 
-const mealPeriodOptions = [
-  { value: 'breakfast', label: '朝食' },
-  { value: 'lunch', label: '昼食' },
-  { value: 'dinner', label: '夕食' },
-  { value: 'snack', label: '間食' },
-] as const;
-
-type MealPeriodValue = (typeof mealPeriodOptions)[number]['value'];
+type MealPeriodValue = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 
 type FieldState = {
   dish: string;
@@ -66,6 +59,15 @@ export default function MealLogDetailScreen() {
   const [deleting, setDeleting] = useState(false);
   const { locale, t } = useTranslation();
   const updateCardForLog = useChatStore((state) => state.updateCardForLog);
+  const mealPeriodOptions = useMemo(
+    () => [
+      { value: 'breakfast', label: t('meal.breakfast') },
+      { value: 'lunch', label: t('meal.lunch') },
+      { value: 'dinner', label: t('meal.dinner') },
+      { value: 'snack', label: t('meal.snack') },
+    ],
+    [t],
+  );
 
   const logId = params.id ?? '';
 
@@ -118,11 +120,11 @@ export default function MealLogDetailScreen() {
           },
         });
       }
-      Alert.alert('保存しました');
+      Alert.alert(t('log.saveSuccess'));
     },
     onError: (error) => {
       console.error(error);
-      Alert.alert('保存に失敗しました', '時間をおいて再度お試しください。');
+      Alert.alert(t('log.saveFailedTitle'), t('common.tryAgainMessage'));
     },
   });
 
@@ -143,8 +145,8 @@ export default function MealLogDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['mealLogs'] });
     },
     onError: (error: unknown) => {
-      const message = error instanceof Error ? error.message : 'お気に入りの更新に失敗しました';
-      Alert.alert('お気に入りの更新に失敗しました', message);
+      const message = error instanceof Error ? error.message : t('favorites.saveFailedMessage');
+      Alert.alert(t('favorites.saveFailedTitle'), message);
     },
   });
 
@@ -157,7 +159,7 @@ export default function MealLogDetailScreen() {
 
   const handleSave = () => {
     if (!fields.dish.trim()) {
-      Alert.alert('料理名を入力してください');
+      Alert.alert(t('log.enterDishName'));
       return;
     }
 
@@ -174,7 +176,7 @@ export default function MealLogDetailScreen() {
       const response = await getMealLogShare(logId);
       await Share.share({ message: response.share.text });
     } catch (_error) {
-      Alert.alert('共有に失敗しました', '時間をおいて再度お試しください。');
+      Alert.alert(t('common.shareFailedTitle'), t('common.tryAgainMessage'));
     } finally {
       setSharing(false);
     }
@@ -249,7 +251,7 @@ export default function MealLogDetailScreen() {
         </View>
       ) : !detail ? (
         <View style={styles.loadingContainer}>
-          <Text style={textStyles.body}>データを取得できませんでした。</Text>
+          <Text style={textStyles.body}>{t('log.loadFailed')}</Text>
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
@@ -271,12 +273,14 @@ export default function MealLogDetailScreen() {
                     detail?.favorite_meal_id ? styles.favoriteButtonActiveLabel : null,
                   ]}
                 >
-                  {detail?.favorite_meal_id ? 'お気に入り済み' : 'お気に入り登録'}
+                  {detail?.favorite_meal_id ? t('log.favoriteActive') : t('log.favoriteInactive')}
                 </Text>
               )}
             </TouchableOpacity>
             <TouchableOpacity style={styles.shareButton} onPress={handleShare} disabled={sharing}>
-              <Text style={styles.shareButtonLabel}>{sharing ? '共有中…' : '共有する'}</Text>
+              <Text style={styles.shareButtonLabel}>
+                {sharing ? t('log.shareInProgress') : t('log.shareLabel')}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.deleteButton, deleting && styles.deleteButtonDisabled]}
@@ -293,29 +297,35 @@ export default function MealLogDetailScreen() {
           {detail.image_url ? <Image source={{ uri: detail.image_url }} style={styles.heroImage} /> : null}
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>基本情報</Text>
-            {detail.fallback_applied && detail.requested_locale && detail.locale && detail.requested_locale !== detail.locale ? (
+            <Text style={styles.sectionTitle}>{t('log.section.basicInfo')}</Text>
+            {detail.fallback_applied &&
+            detail.requested_locale &&
+            detail.locale &&
+            detail.requested_locale !== detail.locale ? (
               <Text style={styles.fallbackNote}>
-                ※ {describeLocale(detail.requested_locale)} の翻訳が未対応のため {describeLocale(detail.locale)} で表示しています
+                {t('card.languageFallback', {
+                  requested: describeLocale(detail.requested_locale),
+                  resolved: describeLocale(detail.locale),
+                })}
               </Text>
             ) : null}
-            <Text style={styles.label}>料理名</Text>
+            <Text style={styles.label}>{t('log.label.dish')}</Text>
             <TextInput
               value={fields.dish}
               onChangeText={(text) => handleChange('dish', text)}
               style={styles.input}
-              placeholder="例: グリルチキンサラダ"
+              placeholder={t('log.placeholder.dish')}
             />
 
             <View style={styles.gridRow}>
               <FieldInput
-                label="カロリー"
+                label={t('log.label.calories')}
                 unit="kcal"
                 value={fields.calories}
                 onChangeText={(text) => handleChange('calories', text)}
               />
               <FieldInput
-                label="タンパク質"
+                label={t('macro.protein')}
                 unit="g"
                 value={fields.protein}
                 onChangeText={(text) => handleChange('protein', text)}
@@ -323,20 +333,20 @@ export default function MealLogDetailScreen() {
             </View>
             <View style={styles.gridRow}>
               <FieldInput
-                label="脂質"
+                label={t('macro.fat')}
                 unit="g"
                 value={fields.fat}
                 onChangeText={(text) => handleChange('fat', text)}
               />
               <FieldInput
-                label="炭水化物"
+                label={t('macro.carbs')}
                 unit="g"
                 value={fields.carbs}
                 onChangeText={(text) => handleChange('carbs', text)}
               />
             </View>
 
-            <Text style={[styles.label, { marginTop: spacing.lg }]}>時間帯タグ</Text>
+            <Text style={[styles.label, { marginTop: spacing.lg }]}>{t('log.label.mealPeriod')}</Text>
             <View style={styles.mealPeriodRow}>
               {mealPeriodOptions.map((option) => {
                 const isActive = fields.mealPeriod === option.value;
@@ -358,22 +368,25 @@ export default function MealLogDetailScreen() {
             onPress={handleSave}
             disabled={mutation.isLoading}
           >
-            <Text style={styles.saveButtonText}>{mutation.isLoading ? '保存中...' : '変更を保存'}</Text>
+            <Text style={styles.saveButtonText}>
+              {mutation.isLoading ? t('log.saveSaving') : t('log.saveButton')}
+            </Text>
           </TouchableOpacity>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>編集履歴</Text>
+            <Text style={styles.sectionTitle}>{t('log.section.editHistory')}</Text>
             {historyEntries.length === 0 ? (
-              <Text style={styles.placeholder}>まだ編集履歴はありません。</Text>
+              <Text style={styles.placeholder}>{t('log.editHistory.empty')}</Text>
             ) : (
               historyEntries.map((entry) => (
                 <View key={entry.id} style={styles.historyCard}>
                   <Text style={styles.historyTitle}>
-                    {formatTimestamp(entry.created_at)} · {entry.user_name ?? entry.user_email ?? 'ユーザー'}
+                    {formatTimestamp(entry.created_at, locale)} ·{' '}
+                    {entry.user_name ?? entry.user_email ?? t('log.userFallback')}
                   </Text>
                   {Object.entries(entry.changes).map(([field, change]) => (
                     <Text key={field} style={styles.historyChange}>
-                      {formatFieldLabel(field)}: {formatChange(change)}
+                      {formatFieldLabel(field, t)}: {formatChange(change)}
                     </Text>
                   ))}
                 </View>
@@ -382,7 +395,7 @@ export default function MealLogDetailScreen() {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>時間帯履歴</Text>
+            <Text style={styles.sectionTitle}>{t('log.section.mealPeriodHistory')}</Text>
             {timeHistoryEntries.length === 0 ? (
               <Text style={styles.placeholder}>{t('history.timeHistory.empty')}</Text>
             ) : (
@@ -395,7 +408,7 @@ export default function MealLogDetailScreen() {
                     return (
                       <>
                         <Text style={styles.historyTitle}>
-                          {formatTimestamp(entry.changed_at)} · {sourceLabel}
+                          {formatTimestamp(entry.changed_at, locale)} · {sourceLabel}
                         </Text>
                         <Text style={styles.historyChange}>{`${previousLabel} → ${nextLabel}`}</Text>
                       </>
@@ -438,8 +451,8 @@ function FieldInput({
   );
 }
 
-function formatTimestamp(iso: string) {
-  return new Date(iso).toLocaleString('ja-JP', {
+function formatTimestamp(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale, {
     month: 'numeric',
     day: 'numeric',
     hour: '2-digit',
@@ -463,20 +476,20 @@ function describeMealPeriod(value: string | null | undefined, t: Translator) {
   return t(`meal.${value}`);
 }
 
-function formatFieldLabel(field: string) {
+function formatFieldLabel(field: string, t: Translator) {
   switch (field) {
     case 'foodItem':
-      return '料理名';
+      return t('log.field.dish');
     case 'calories':
-      return 'カロリー';
+      return t('log.field.calories');
     case 'proteinG':
-      return 'タンパク質';
+      return t('log.field.protein');
     case 'fatG':
-      return '脂質';
+      return t('log.field.fat');
     case 'carbsG':
-      return '炭水化物';
+      return t('log.field.carbs');
     case 'mealPeriod':
-      return '時間帯タグ';
+      return t('log.field.mealPeriod');
     default:
       return field;
   }
