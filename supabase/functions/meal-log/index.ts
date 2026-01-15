@@ -42,6 +42,7 @@ import {
   resolveMealLogLocalization,
   type LocalizationResolution,
   parseMealLogAiRaw,
+  collectTranslations,
   normalizeLocale,
   DEFAULT_LOCALE,
   maybeTranslateNutritionResponse,
@@ -478,6 +479,27 @@ app.get('/api/log/:id/share', requireAuth, async (c) => {
   return respondWithCache(c, { ok: true, share });
 });
 
+app.post('/api/log/:id/translate', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const logId = c.req.param('id');
+  const requestedLocale = normalizeLocale(resolveRequestLocale(c.req.raw, { queryField: 'locale' }));
+
+  await ensureMealLogTranslation({
+    userId: user.id,
+    logId,
+    requestedLocale,
+  });
+
+  const result = await buildIdempotentMealLogResult({
+    userId: user.id,
+    logId,
+    requestKey: `translate-${Date.now()}-${logId.slice(0, 6)}`,
+    requestedLocale,
+  });
+
+  return c.json(result);
+});
+
 app.get('/api/logs/export', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
   const locale = resolveRequestLocale(c.req.raw);
@@ -502,6 +524,8 @@ const handleCreateLog = async (c: Context) => {
     throw new HttpError('メッセージまたは画像のいずれかを送信してください。', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
   }
 
+  const translationMode = (c.req.header('X-Translation-Mode') ?? '').trim().toLowerCase();
+  const deferTranslation = translationMode === 'defer';
   const idempotencyKey = c.req.header('Idempotency-Key') ?? undefined;
   const locale = resolveRequestLocale(c.req.raw, { queryField: 'locale' });
   const timezone = resolveRequestTimezone(c.req.raw, { queryField: 'timezone', fallback: DASHBOARD_TIMEZONE });
@@ -513,6 +537,7 @@ const handleCreateLog = async (c: Context) => {
     idempotencyKey,
     locale,
     timezone,
+    deferTranslation,
   });
 
   return c.json(response);
@@ -1823,6 +1848,7 @@ type ProcessMealLogParams = {
   idempotencyKey?: string;
   locale?: Locale;
   timezone?: string;
+  deferTranslation?: boolean;
 };
 
 type ProcessMealLogResult = {
@@ -1929,7 +1955,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
   const seededTranslations: Record<Locale, GeminiNutritionResponse> = {
     [DEFAULT_LOCALE]: cloneResponse(enrichedResponse),
   };
-  if (requestedLocale !== DEFAULT_LOCALE) {
+  if (!params.deferTranslation && requestedLocale !== DEFAULT_LOCALE) {
     const localized = await maybeTranslateNutritionResponse(enrichedResponse, requestedLocale);
     if (localized) {
       seededTranslations[requestedLocale] = localized;
@@ -2110,6 +2136,72 @@ async function buildIdempotentMealLogResult(params: {
     usage: usageSummary,
     favoriteCandidate: buildFavoriteDraftFallback(log),
   };
+}
+
+async function ensureMealLogTranslation(params: {
+  userId: number;
+  logId: string;
+  requestedLocale: Locale;
+}) {
+  const targetLocale = normalizeLocale(params.requestedLocale);
+  if (targetLocale === DEFAULT_LOCALE) {
+    return;
+  }
+
+  const { data: row, error } = await supabaseAdmin
+    .from('MealLog')
+    .select('id, aiRaw')
+    .eq('id', params.logId)
+    .eq('userId', params.userId)
+    .is('deletedAt', null)
+    .maybeSingle();
+
+  if (error) {
+    console.error('translate log: fetch failed', error);
+    throw new HttpError('食事記録が見つかりませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  if (!row) {
+    throw new HttpError('食事記録が見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
+  }
+
+  const parsed = parseMealLogAiRaw(row.aiRaw);
+  const translations = collectTranslations(row.aiRaw, parsed);
+
+  if (translations[targetLocale]) {
+    return;
+  }
+
+  const baseLocale = parsed?.locale ? normalizeLocale(parsed.locale) : DEFAULT_LOCALE;
+  const baseTranslation =
+    translations[baseLocale] ??
+    translations[DEFAULT_LOCALE] ??
+    Object.values(translations)[0];
+
+  if (!baseTranslation) {
+    console.warn('translate log: missing base translation', { logId: params.logId });
+    return;
+  }
+
+  const translated = await maybeTranslateNutritionResponse(baseTranslation, targetLocale);
+  if (!translated) {
+    return;
+  }
+
+  const updatedTranslations = { ...translations, [targetLocale]: translated };
+  const updatedAiRaw = parsed
+    ? { ...parsed, translations: updatedTranslations, locale: parsed.locale ?? baseLocale }
+    : { ...cloneResponse(baseTranslation), locale: baseLocale, translations: updatedTranslations };
+
+  const { error: updateError } = await supabaseAdmin
+    .from('MealLog')
+    .update({ aiRaw: updatedAiRaw })
+    .eq('id', params.logId)
+    .eq('userId', params.userId);
+
+  if (updateError) {
+    console.error('translate log: update failed', updateError);
+  }
 }
 
 function buildLocalizationMeta(localization: LocalizationResolution) {

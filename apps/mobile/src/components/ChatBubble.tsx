@@ -4,6 +4,7 @@ import { Animated, Easing, Image, StyleSheet, Text, View } from 'react-native';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
 import type { ChatMessage } from '@/types/chat';
+import { useTranslation } from '@/i18n';
 
 const AI_AVATAR = require('../assets/ai-avatar.png');
 
@@ -16,6 +17,7 @@ export const ChatBubble = React.memo<ChatBubbleProps>(function ChatBubble({ mess
   const isProcessing = !isUser && message.status === 'processing';
   const hasImage = typeof message.imageUri === 'string' && message.imageUri.length > 0;
   const shimmer = useRef(new Animated.Value(0)).current;
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!isProcessing) {
@@ -65,7 +67,7 @@ export const ChatBubble = React.memo<ChatBubbleProps>(function ChatBubble({ mess
           {content.length ? (
             <Text style={[textStyle, hasImage && styles.textWithImage]}>{message.text}</Text>
           ) : null}
-          {message.status === 'error' && <Text style={styles.error}>⚠️ 再度お試しください。</Text>}
+          {message.status === 'error' && <Text style={styles.error}>{t('chat.genericErrorBubble')}</Text>}
         </LinearGradient>
       ) : (
         <View
@@ -85,7 +87,7 @@ export const ChatBubble = React.memo<ChatBubbleProps>(function ChatBubble({ mess
             <>
               <Text style={textStyle}>{message.text}</Text>
               {message.status === 'error' && (
-                <Text style={styles.error}>⚠️ 再度お試しください。</Text>
+                <Text style={styles.error}>{t('chat.genericErrorBubble')}</Text>
               )}
             </>
           )}

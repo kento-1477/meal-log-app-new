@@ -38,8 +38,8 @@ type PlanType = 'yearly' | 'monthly';
 interface ComparisonRow {
   feature: string;
   subtitle?: string;
-  free: string;
-  premium: string;
+  freeKey: string;
+  premiumKey: string;
   premiumIcon?: boolean;
 }
 
@@ -47,18 +47,18 @@ const COMPARISON_DATA: ComparisonRow[] = [
   {
     feature: 'paywall.table.aiAnalysis',
     subtitle: 'paywall.table.perDay',
-    free: '3回',
-    premium: '20回',
+    freeKey: 'paywall.table.aiAnalysis.free',
+    premiumKey: 'paywall.table.aiAnalysis.premium',
   },
   {
     feature: 'paywall.table.historyRetention',
-    free: '30日',
-    premium: '90日',
+    freeKey: 'paywall.table.historyRetention.free',
+    premiumKey: 'paywall.table.historyRetention.premium',
   },
   {
     feature: 'paywall.table.monthlyCalorieDeficit',
-    free: '—',
-    premium: '✓',
+    freeKey: 'paywall.table.monthlyCalorieDeficit.free',
+    premiumKey: 'paywall.table.monthlyCalorieDeficit.premium',
     premiumIcon: true,
   },
 ];
@@ -189,7 +189,7 @@ export default function PaywallScreen() {
     // 商品が取得されていない場合はエラー
     const selectedProduct = selectedPlan === 'yearly' ? yearlyProduct : monthlyProduct;
     if (!selectedProduct) {
-      Alert.alert(t('paywall.error.generic'), 'Must query item from store before calling purchase');
+      Alert.alert(t('paywall.error.generic'), t('paywall.error.productUnavailable'));
       return;
     }
     purchaseMutation.mutate(selectedPlan);
@@ -319,20 +319,20 @@ export default function PaywallScreen() {
               <View key={index} style={styles.tableRow}>
                 <View style={styles.tableFeatureCol}>
                   <Text style={styles.tableFeatureText}>{t(row.feature)}</Text>
-                  {row.subtitle && <Text style={styles.tableSubtitle}>{t(row.subtitle)}</Text>}
-                </View>
-                <View style={styles.tableFreeCol}>
-                  <Text style={styles.tableFreeValue}>{row.free}</Text>
-                </View>
-                <View style={styles.tablePremiumCol}>
-                  {row.premiumIcon ? (
-                    <Feather name="check" size={20} color="#22C55E" />
-                  ) : (
-                    <Text style={styles.tablePremiumValue}>{row.premium}</Text>
-                  )}
-                </View>
+                {row.subtitle && <Text style={styles.tableSubtitle}>{t(row.subtitle)}</Text>}
               </View>
-            ))}
+              <View style={styles.tableFreeCol}>
+                <Text style={styles.tableFreeValue}>{t(row.freeKey)}</Text>
+              </View>
+              <View style={styles.tablePremiumCol}>
+                {row.premiumIcon ? (
+                  <Feather name="check" size={20} color="#22C55E" />
+                ) : (
+                  <Text style={styles.tablePremiumValue}>{t(row.premiumKey)}</Text>
+                )}
+              </View>
+            </View>
+          ))}
           </View>
 
           {/* Plan Selection Cards */}
@@ -348,9 +348,12 @@ export default function PaywallScreen() {
               </View>
               <Text style={styles.planTitle}>{t('paywall.plan.yearly')}</Text>
               <Text style={styles.planPrice}>{yearlyPriceInfo.price}</Text>
-              <Text style={styles.planSubtitle}>/年</Text>
+              <Text style={styles.planSubtitle}>{t('paywall.plan.perYearSuffix')}</Text>
               {yearlyPriceInfo.perMonth && (
-                <Text style={styles.planPerMonth}>{yearlyPriceInfo.perMonth}/月</Text>
+                <Text style={styles.planPerMonth}>
+                  {yearlyPriceInfo.perMonth}
+                  {t('paywall.plan.perMonthSuffix')}
+                </Text>
               )}
             </TouchableOpacity>
 
