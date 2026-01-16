@@ -56,6 +56,10 @@ export default function RootLayout() {
               options={{ headerShown: true, title: t('screen.settingsLanguage'), headerBackTitleVisible: false, headerBackTitle: '' }}
             />
             <Stack.Screen
+              name="report"
+              options={{ headerShown: true, title: t('report.header'), headerBackTitleVisible: false, headerBackTitle: '' }}
+            />
+            <Stack.Screen
               name="paywall"
               options={{
                 headerShown: true,
