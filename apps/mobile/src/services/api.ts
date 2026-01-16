@@ -1,4 +1,5 @@
 import { API_BASE_URL } from './config';
+import Constants from 'expo-constants';
 import { z } from 'zod';
 import { getLocale, translateKey } from '@/i18n';
 import { getDeviceTimezone } from '@/utils/timezone';
@@ -53,8 +54,11 @@ const HTTP_STATUS = {
 } as const;
 
 const responseCache = new Map<string, unknown>();
-const IMAGE_LOG_TIMEOUT_MS = 120_000;
+const LOG_TIMEOUT_MS = 30_000;
+const IMAGE_LOG_TIMEOUT_MS = 30_000;
 const JAPANESE_CHAR_REGEX = /[ぁ-んァ-ヶ一-龯]/;
+const APP_VERSION =
+  Constants.nativeApplicationVersion ?? Constants.expoConfig?.version ?? null;
 
 function isJapaneseText(value: string) {
   return JAPANESE_CHAR_REGEX.test(value);
@@ -174,6 +178,9 @@ async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise
 
   if (!headers.has('X-Device-Id')) {
     headers.set('X-Device-Id', await getDeviceFingerprintId());
+  }
+  if (!headers.has('X-App-Version') && APP_VERSION) {
+    headers.set('X-App-Version', APP_VERSION);
   }
 
   let response: Response;
@@ -376,6 +383,23 @@ export interface MealLogResponse {
 
 export type IngestStatusResponse =
   | { ok: true; status: 'processing'; requestKey: string; createdAt: string | null }
+  | {
+      ok: true;
+      status: 'deferred';
+      requestKey: string;
+      createdAt: string | null;
+      nextCheckAt: string | null;
+      deadlineAt: string | null;
+    }
+  | {
+      ok: true;
+      status: 'failed';
+      requestKey: string;
+      createdAt: string | null;
+      errorCode: string | null;
+      errorCategory: 'waitable' | 'actionable' | null;
+      message: string | null;
+    }
   | { ok: true; status: 'done'; requestKey: string; result: MealLogResponse };
 
 export async function getIngestStatus(requestKey: string) {
@@ -412,7 +436,7 @@ export async function postMealLog(params: { message: string; imageUri?: string |
       'Idempotency-Key': params.idempotencyKey ?? `${Date.now()}-${Math.random()}`,
       'X-Translation-Mode': 'defer',
     },
-    timeoutMs: hasImage ? IMAGE_LOG_TIMEOUT_MS : undefined,
+    timeoutMs: hasImage ? IMAGE_LOG_TIMEOUT_MS : LOG_TIMEOUT_MS,
   });
 }
 
