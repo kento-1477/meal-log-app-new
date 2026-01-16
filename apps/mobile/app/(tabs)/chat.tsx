@@ -1215,8 +1215,14 @@ export default function ChatScreen() {
         label: t('chat.quickActions.favorite'),
         onPress: () => setFavoritesVisible(true),
       },
+      {
+        key: 'report',
+        icon: 'file-text',
+        label: t('chat.quickActions.report'),
+        onPress: () => router.push('/report'),
+      },
     ],
-    [handlePhotoQuickAction, t],
+    [handlePhotoQuickAction, router, t],
   );
 
   const handleShareCard = useCallback(

@@ -13,6 +13,10 @@ import type {
   UserProfile,
   SlotSelectionRequest,
   NutritionPlanInput,
+  DashboardSummary,
+  AiReportPeriod,
+  AiReportContent,
+  AiReportResponse,
   HedgeAttemptReport,
 } from '@shared/index.js';
 import {
@@ -34,6 +38,8 @@ import {
   PushTokenRegisterRequestSchema,
   PushTokenDisableRequestSchema,
   computeNutritionPlan,
+  AiReportRequestSchema,
+  AiReportContentSchema,
 } from '@shared/index.js';
 import type { Context } from 'hono';
 import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
@@ -927,6 +933,49 @@ app.get('/api/dashboard/summary', requireAuth, async (c) => {
   const payload = { ok: true, summary } as const;
   DashboardSummarySchema.parse(summary);
   return respondWithCache(c, payload);
+});
+
+app.post('/api/reports', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  const parsed = AiReportRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new HttpError('invalid payload', { status: HTTP_STATUS.BAD_REQUEST, expose: true, data: parsed.error.flatten() });
+  }
+
+  const usageStatus = await evaluateAiUsage(user.id);
+  if (!usageStatus.allowed) {
+    throw buildUsageLimitError(usageStatus);
+  }
+
+  const locale = resolveRequestLocale(c.req.raw);
+  const reportParams = resolveReportSummaryParams(parsed.data.period);
+  const summary = await getDashboardSummary({
+    userId: user.id,
+    period: reportParams.period,
+    from: reportParams.from,
+    to: reportParams.to,
+  });
+
+  const context = buildReportContext({ period: parsed.data.period, summary });
+  const analysis = await analyzeReportWithGemini({ context, locale });
+
+  const report: AiReportResponse = {
+    period: parsed.data.period,
+    range: summary.range,
+    summary: analysis.report.summary,
+    metrics: analysis.report.metrics,
+    advice: analysis.report.advice,
+    meta: { ...analysis.meta, attemptReports: analysis.attemptReports },
+  };
+
+  const usageSummary = await recordAiUsage({
+    userId: user.id,
+    usageDate: usageStatus.usageDate,
+    consumeCredit: usageStatus.consumeCredit,
+  });
+
+  return c.json({ ok: true, report, usage: usageSummary });
 });
 
 app.get('/api/dashboard/targets', requireAuth, async (c) => {
@@ -2907,6 +2956,19 @@ function resolveWeekRange(period: string, timezone: string) {
   };
 }
 
+function resolveReportSummaryParams(period: AiReportPeriod) {
+  if (period === 'daily') {
+    return { period: 'today' as const };
+  }
+  if (period === 'weekly') {
+    return { period: 'thisWeek' as const };
+  }
+  const now = DateTime.now().setZone(DASHBOARD_TIMEZONE).startOf('day');
+  const from = now.minus({ days: 29 }).toISODate() ?? now.minus({ days: 29 }).toFormat('yyyy-MM-dd');
+  const to = now.toISODate() ?? now.toFormat('yyyy-MM-dd');
+  return { period: 'custom' as const, from, to };
+}
+
 function buildDashboardSummary({
   logs,
   range,
@@ -3271,6 +3333,443 @@ function calculateCurrentStreak(days: DateTime[], timezone: string) {
   }
 
   return streak;
+}
+
+function buildReportContext(params: { period: AiReportPeriod; summary: DashboardSummary }) {
+  const daily = params.summary.calories.daily;
+  const totalDays = daily.length;
+  const loggedDays = daily.filter((entry) => entry.total > 0).length;
+  const totalCalories = daily.reduce((acc, entry) => acc + entry.total, 0);
+  const averageCalories = loggedDays > 0 ? Math.round(totalCalories / loggedDays) : 0;
+  const mealPeriodTotals = daily.reduce(
+    (acc, entry) => {
+      acc.breakfast += entry.perMealPeriod.breakfast;
+      acc.lunch += entry.perMealPeriod.lunch;
+      acc.dinner += entry.perMealPeriod.dinner;
+      acc.snack += entry.perMealPeriod.snack;
+      acc.unknown += entry.perMealPeriod.unknown;
+      return acc;
+    },
+    { breakfast: 0, lunch: 0, dinner: 0, snack: 0, unknown: 0 },
+  );
+
+  return {
+    period: params.period,
+    range: params.summary.range,
+    days: {
+      total: totalDays,
+      logged: loggedDays,
+    },
+    calories: {
+      total: Math.round(totalCalories),
+      average: averageCalories,
+    },
+    macros: params.summary.macros,
+    mealPeriods: mealPeriodTotals,
+    daily: daily.map((entry) => ({ date: entry.date, total: entry.total })),
+  };
+}
+
+function buildReportPrompt(context: ReturnType<typeof buildReportContext>, locale: Locale) {
+  const preferJapanese = locale.toLowerCase().startsWith('ja');
+  const languageInstruction = preferJapanese
+    ? 'Use Japanese for all text fields.'
+    : 'Use English (United States) for all text fields.';
+  return `You are a nutrition coach. Summarize the user's eating patterns based on the JSON data.
+Return ONLY valid JSON that matches this TypeScript type:
+{
+  "summary": { "headline": string, "score": number (0-100), "highlights": string[] },
+  "metrics": Array<{ "label": string, "value": string, "note"?: string }>,
+  "advice": Array<{ "priority": "high"|"medium"|"low", "title": string, "detail": string }>,
+  "ingredients": Array<{ "name": string, "reason": string }>
+}
+Rules:
+- highlights: 1-3 short bullets.
+- metrics: 3-5 items, values should include units where applicable.
+- advice: 1-3 items, each with a concrete action and brief reason.
+- ingredients: pick about 3 ingredients (not dishes). Use macros.delta to decide focus:
+  - If fat is over target, prioritize low-fat ingredients.
+  - If protein is under target, prioritize high-protein ingredients.
+  - If carbs are over target, prioritize low-carb ingredients.
+  - Otherwise, suggest balanced, nutrient-dense ingredients.
+- Never invent data that is not present in the input JSON.
+${languageInstruction}
+JSON input: ${JSON.stringify(context)}`;
+}
+
+function buildIngredientSuggestions(
+  context: ReturnType<typeof buildReportContext>,
+  locale: Locale,
+): AiReportContent['ingredients'] {
+  const preferJapanese = locale.toLowerCase().startsWith('ja');
+  const delta = context.macros.delta;
+  let focus: 'low_fat' | 'high_protein' | 'low_carb' | 'balanced' = 'balanced';
+
+  if (delta.fat_g > 0) {
+    focus = 'low_fat';
+  } else if (delta.protein_g < 0) {
+    focus = 'high_protein';
+  } else if (delta.carbs_g > 0) {
+    focus = 'low_carb';
+  }
+
+  const bank = {
+    low_fat: [
+      {
+        name: preferJapanese ? '鶏むね肉' : 'Chicken breast',
+        reason: preferJapanese ? '脂質が少なく、たんぱく質を補いやすい' : 'Low fat and easy to boost protein',
+      },
+      {
+        name: preferJapanese ? '白身魚' : 'White fish',
+        reason: preferJapanese ? '脂質が少なく、消化が軽い' : 'Lean protein with minimal fat',
+      },
+      {
+        name: preferJapanese ? '豆腐' : 'Tofu',
+        reason: preferJapanese ? '脂質を抑えつつ栄養を補える' : 'Light protein with low fat',
+      },
+    ],
+    high_protein: [
+      {
+        name: preferJapanese ? 'ツナ水煮' : 'Canned tuna (in water)',
+        reason: preferJapanese ? '脂質を抑えてたんぱく質を補給' : 'High protein with low fat',
+      },
+      {
+        name: preferJapanese ? 'ギリシャヨーグルト' : 'Greek yogurt',
+        reason: preferJapanese ? '手軽にたんぱく質を追加できる' : 'Easy protein boost',
+      },
+      {
+        name: preferJapanese ? '納豆' : 'Natto',
+        reason: preferJapanese ? 'たんぱく質と食物繊維を追加' : 'Adds protein and fiber',
+      },
+    ],
+    low_carb: [
+      {
+        name: preferJapanese ? '葉物野菜' : 'Leafy greens',
+        reason: preferJapanese ? '炭水化物を抑えながら量を増やせる' : 'Adds volume with minimal carbs',
+      },
+      {
+        name: preferJapanese ? 'きのこ' : 'Mushrooms',
+        reason: preferJapanese ? '低カロリーで満足感が出やすい' : 'Low calorie and filling',
+      },
+      {
+        name: preferJapanese ? '白身魚' : 'White fish',
+        reason: preferJapanese ? '炭水化物を増やさず栄養を補える' : 'Lean protein without carbs',
+      },
+    ],
+    balanced: [
+      {
+        name: preferJapanese ? 'ブロッコリー' : 'Broccoli',
+        reason: preferJapanese ? 'ビタミンと食物繊維を補える' : 'Adds vitamins and fiber',
+      },
+      {
+        name: preferJapanese ? '豆類' : 'Legumes',
+        reason: preferJapanese ? 'たんぱく質と食物繊維のバランスが良い' : 'Balanced protein and fiber',
+      },
+      {
+        name: preferJapanese ? '玄米' : 'Brown rice',
+        reason: preferJapanese ? '食物繊維が多く腹持ちが良い' : 'Whole grain for steady energy',
+      },
+    ],
+  } as const;
+
+  return bank[focus].slice(0, 3);
+}
+
+function buildReportMock(context: ReturnType<typeof buildReportContext>, locale: Locale): AiReportContent {
+  const preferJapanese = locale.toLowerCase().startsWith('ja');
+  const headline = preferJapanese ? '記録の要約' : 'Summary of your logs';
+  const highlights = preferJapanese
+    ? ['記録日数が少ないため傾向は控えめに評価']
+    : ['Limited logs, trends are shown cautiously'];
+  const metrics = preferJapanese
+    ? [
+        { label: '平均カロリー', value: `${context.calories.average} kcal` },
+        { label: '記録日数', value: `${context.days.logged} / ${context.days.total} 日` },
+        {
+          label: 'P/F/C',
+          value: `${Math.round(context.macros.total.protein_g)} / ${Math.round(context.macros.total.fat_g)} / ${Math.round(
+            context.macros.total.carbs_g,
+          )}`,
+        },
+      ]
+    : [
+        { label: 'Avg calories', value: `${context.calories.average} kcal` },
+        { label: 'Logged days', value: `${context.days.logged} / ${context.days.total}` },
+        {
+          label: 'P/F/C',
+          value: `${Math.round(context.macros.total.protein_g)} / ${Math.round(context.macros.total.fat_g)} / ${Math.round(
+            context.macros.total.carbs_g,
+          )}`,
+        },
+      ];
+
+  const advice = preferJapanese
+    ? [
+        {
+          priority: 'medium',
+          title: '記録の継続を優先',
+          detail: 'まずは1日1回の記録でデータを増やすと、より精度の高い傾向が出せます。',
+        },
+      ]
+    : [
+        {
+          priority: 'medium',
+          title: 'Keep logging consistently',
+          detail: 'Log at least one meal per day to improve trend accuracy.',
+        },
+      ];
+
+  return {
+    summary: { headline, score: 70, highlights },
+    metrics,
+    advice,
+    ingredients: buildIngredientSuggestions(context, locale),
+  };
+}
+
+async function analyzeReportWithGemini(params: {
+  context: ReturnType<typeof buildReportContext>;
+  locale: Locale;
+}): Promise<{
+  report: AiReportContent;
+  attemptReports: HedgeAttemptReport[];
+  meta: { model: string; attempt: number; latencyMs: number; fallback_model_used?: boolean };
+}> {
+  const apiKey = Deno.env.get('GEMINI_API_KEY');
+  const prompt = buildReportPrompt(params.context, params.locale);
+
+  if (!apiKey) {
+    const mock = buildReportMock(params.context, params.locale);
+    return {
+      report: mock,
+      attemptReports: [{ model: 'mock', ok: true, latencyMs: 10, attempt: 1 }],
+      meta: { model: 'mock', attempt: 1, latencyMs: 10 },
+    };
+  }
+
+  const parseModelList = (raw: string | undefined) =>
+    (raw ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+  const uniqueModels = (entries: string[]) => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const entry of entries) {
+      if (!seen.has(entry)) {
+        seen.add(entry);
+        result.push(entry);
+      }
+    }
+    return result;
+  };
+
+  const primaryModel = (Deno.env.get('GEMINI_PRIMARY_MODEL') ?? 'models/gemini-2.5-flash').trim();
+  const legacyFallbackModelRaw = (Deno.env.get('GEMINI_FALLBACK_MODEL') ?? '').trim();
+  const legacyFallbackModel = legacyFallbackModelRaw && legacyFallbackModelRaw !== primaryModel ? legacyFallbackModelRaw : null;
+  const fallbackModels = parseModelList(Deno.env.get('GEMINI_FALLBACK_MODELS'));
+  const chainModels = parseModelList(Deno.env.get('GEMINI_MODEL_CHAIN'));
+  const models = uniqueModels(
+    chainModels.length ? chainModels : [primaryModel, ...fallbackModels, ...(legacyFallbackModel ? [legacyFallbackModel] : [])],
+  );
+
+  const timeoutMsCandidate = Number(Deno.env.get('GEMINI_TIMEOUT_MS') ?? '25000');
+  const timeoutMs = Number.isFinite(timeoutMsCandidate) ? Math.max(1_000, timeoutMsCandidate) : 25_000;
+
+  const isQuotaErrorMessage = (message: string) => {
+    const lower = message.toLowerCase();
+    return (
+      message.includes('Gemini error 429') ||
+      lower.includes('resource_exhausted') ||
+      lower.includes('quota exceeded') ||
+      lower.includes('rate limit')
+    );
+  };
+
+  const buildAttemptError = (model: string, latencyMs: number, attempt: number, message: string, textLen = 0) => {
+    const err = new Error(message) as Error & { report: HedgeAttemptReport };
+    err.report = { model, ok: false, latencyMs, attempt, error: message, textLen };
+    return err;
+  };
+
+  const extractJsonText = (text: string) => {
+    const trimmed = text.trim();
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    const candidate = fenced ? fenced[1].trim() : trimmed;
+    if (candidate.startsWith('{') || candidate.startsWith('[')) {
+      return candidate;
+    }
+    const start = candidate.indexOf('{');
+    const end = candidate.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      return candidate.slice(start, end + 1);
+    }
+    return candidate;
+  };
+
+  const normalizeIngredientList = (value: unknown): AiReportContent['ingredients'] => {
+    if (!Array.isArray(value)) {
+      return buildIngredientSuggestions(params.context, params.locale);
+    }
+
+    const normalized = value
+      .map((item) => {
+        if (!item || typeof item !== 'object') {
+          return null;
+        }
+        const candidate = item as { name?: unknown; reason?: unknown };
+        const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
+        const reason = typeof candidate.reason === 'string' ? candidate.reason.trim() : '';
+        if (!name || !reason) {
+          return null;
+        }
+        return { name, reason };
+      })
+      .filter((item): item is AiReportContent['ingredients'][number] => Boolean(item));
+
+    if (!normalized.length) {
+      return buildIngredientSuggestions(params.context, params.locale);
+    }
+    return normalized.slice(0, 3);
+  };
+
+  const normalizeReportPayload = (payload: unknown) => {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return payload;
+    }
+    const base = payload as Record<string, unknown>;
+    return {
+      ...base,
+      ingredients: normalizeIngredientList(base.ingredients),
+    };
+  };
+
+  const parseReportContent = (candidateText: string) => {
+    const jsonText = extractJsonText(candidateText);
+    const parsedJson = JSON.parse(jsonText) as unknown;
+    const direct = AiReportContentSchema.safeParse(parsedJson);
+    if (direct.success) {
+      return direct.data;
+    }
+    const normalized = normalizeReportPayload(parsedJson);
+    const normalizedResult = AiReportContentSchema.safeParse(normalized);
+    if (normalizedResult.success) {
+      return normalizedResult.data;
+    }
+    const issues = (normalizedResult.error as any).issues ?? (normalizedResult.error as any).errors;
+    const firstIssue = Array.isArray(issues) ? issues[0] : null;
+    const message = firstIssue
+      ? `${String(firstIssue.path?.join?.('.') ?? '')}: ${String(firstIssue.message ?? 'invalid')}`
+      : normalizedResult.error.message;
+    throw new Error(`Gemini response validation failed: ${message}`);
+  };
+
+  const attempt = async (model: string, attemptNumber: number) => {
+    const url = new URL(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent`);
+    url.searchParams.set('key', apiKey);
+
+    const requestBody: Record<string, unknown> = {
+      contents: [
+        {
+          parts: [{ text: prompt }],
+          role: 'user',
+        },
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        topK: 32,
+        topP: 0.8,
+        responseMimeType: 'application/json',
+      },
+    };
+
+    const started = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort('GEMINI_TIMEOUT'), timeoutMs);
+    let text = '';
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+      text = await resp.text();
+      const latencyMs = Date.now() - started;
+      if (!resp.ok) {
+        throw buildAttemptError(model, latencyMs, attemptNumber, `Gemini error ${resp.status}: ${text}`, text.length);
+      }
+      const data = JSON.parse(text) as any;
+      const first = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!first) {
+        throw buildAttemptError(model, latencyMs, attemptNumber, 'Gemini returned no content');
+      }
+      let parsed: AiReportContent;
+      try {
+        parsed = parseReportContent(first);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Gemini response parse failed';
+        throw buildAttemptError(model, latencyMs, attemptNumber, message, first.length);
+      }
+      const report: HedgeAttemptReport = {
+        model,
+        ok: true,
+        latencyMs,
+        attempt: attemptNumber,
+        textLen: first.length,
+      };
+      return { report: parsed, attemptReport: report, meta: { model, attempt: attemptNumber, latencyMs, rawText: first } };
+    } catch (error) {
+      const latencyMs = Date.now() - started;
+      if (error instanceof Error && (error as any).report) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : 'Unknown AI error';
+      throw buildAttemptError(model, latencyMs, attemptNumber, message);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const attemptReports: HedgeAttemptReport[] = [];
+  let firstError: Error | null = null;
+
+  for (let i = 0; i < models.length; i += 1) {
+    const model = models[i];
+    const attemptNumber = i + 1;
+    try {
+      const result = await attempt(model, attemptNumber);
+      attemptReports.push(result.attemptReport);
+      return {
+        report: result.report,
+        attemptReports,
+        meta: {
+          model,
+          attempt: attemptNumber,
+          latencyMs: result.meta.latencyMs,
+          fallback_model_used: attemptNumber > 1,
+        },
+      };
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown AI error');
+      if (!firstError) {
+        firstError = err;
+      }
+      if ((err as any).report) {
+        attemptReports.push((err as any).report);
+      }
+      if (isQuotaErrorMessage(err.message)) {
+        throw new HttpError('AIの無料枠が上限に達しました。時間をおいて再度お試しください。', {
+          status: HTTP_STATUS.TOO_MANY_REQUESTS,
+          code: 'AI_UPSTREAM_QUOTA',
+          expose: true,
+        });
+      }
+    }
+  }
+
+  throw firstError ?? new Error('Gemini request failed');
 }
 
 async function analyzeMeal(params: { message: string; imageBase64?: string; imageMimeType?: string; locale?: Locale }) {

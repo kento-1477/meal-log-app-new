@@ -14,6 +14,8 @@ import type {
   UpdateMealLogRequest,
   AiUsageSummary,
   GeminiNutritionResponse,
+  AiReportPeriod,
+  AiReportApiResponse,
   FavoriteMeal,
   FavoriteMealDraft,
   FavoriteMealCreateRequest,
@@ -35,6 +37,7 @@ import {
   UserProfileResponseSchema,
   UpdateUserProfileRequestSchema,
   CalorieTrendResponseSchema,
+  AiReportApiResponseSchema,
   NotificationSettingsResponseSchema,
   NotificationSettingsUpdateRequestSchema,
   PushTokenRegisterRequestSchema,
@@ -621,6 +624,15 @@ export async function getDashboardTargets() {
   );
   const parsed = DashboardTargetsSchema.parse(response.targets);
   return parsed as DashboardTargets;
+}
+
+export async function createAiReport(period: AiReportPeriod) {
+  const response = await apiFetch<unknown>('/api/reports', {
+    method: 'POST',
+    body: JSON.stringify({ period }),
+  });
+  const parsed = AiReportApiResponseSchema.parse(response);
+  return parsed as AiReportApiResponse;
 }
 
 export type CalorieTrendMode = 'daily' | 'weekly' | 'monthly';
