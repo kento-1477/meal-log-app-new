@@ -80,8 +80,9 @@ export function OnboardingScaffold({
       ? t('onboarding.progress.last')
       : t('onboarding.progress.remaining', { count: remainingSteps, minutes: estimatedMinutes });
 
-  // Avoid leaving extra gap above the keyboard; push content right up to the keyboard edge.
+  // Keep keyboard offset at zero; CTA spacing is handled in the footer padding.
   const keyboardOffset = 0;
+  const keyboardGap = 20;
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const hasHeaderAction = Boolean(headerActionLabel && onHeaderAction);
   const showTopAction = hasHeaderAction && headerActionPosition === 'left';
@@ -235,14 +236,21 @@ export function OnboardingScaffold({
               )}
             </View>
 
-            <View style={[styles.footer, { paddingBottom: keyboardVisible ? 0 : Math.max(16, insets.bottom + 12) }]}>
+            <View
+              style={[
+                styles.footer,
+                { paddingBottom: keyboardVisible ? keyboardGap : Math.max(16, insets.bottom + 12) },
+              ]}
+            >
               {footer}
               {onNext ? (
-                <PrimaryButton
-                  label={nextLabel ?? t('common.continue')}
-                  onPress={handleNext}
-                  disabled={nextDisabled}
-                />
+                <View style={keyboardVisible ? styles.ctaMuted : null}>
+                  <PrimaryButton
+                    label={nextLabel ?? t('common.continue')}
+                    onPress={handleNext}
+                    disabled={nextDisabled}
+                  />
+                </View>
               ) : null}
             </View>
         </SafeAreaView>
@@ -321,11 +329,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.95)',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
     shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 10,
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  ctaMuted: {
+    opacity: 0.6,
   },
   progressArea: {
     flex: 1,
