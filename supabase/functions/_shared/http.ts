@@ -60,6 +60,7 @@ export function createApp() {
         'Authorization',
         'X-Timezone',
         'X-Device-Id',
+        'X-App-Version',
         'Accept-Language',
         'X-Translation-Mode',
       ],
