@@ -1,4 +1,6 @@
 PODS:
+  - EXApplication (6.1.5):
+    - ExpoModulesCore
   - EXConstants (18.0.10):
     - ExpoModulesCore
   - EXImageLoader (6.0.0):
@@ -8,6 +10,8 @@ PODS:
     - ExpoModulesCore
   - EXJSONUtils (0.15.0)
   - EXManifests (1.0.9):
+    - ExpoModulesCore
+  - EXNotifications (0.31.4):
     - ExpoModulesCore
   - Expo (54.0.25):
     - ExpoModulesCore
@@ -254,6 +258,8 @@ PODS:
   - ExpoSecureStore (15.0.7):
     - ExpoModulesCore
   - ExpoSharing (14.0.7):
+    - ExpoModulesCore
+  - ExpoStoreReview (9.0.9):
     - ExpoModulesCore
   - ExpoWidgets (3.0.3):
     - ExpoModulesCore
@@ -2267,11 +2273,13 @@ PODS:
   - Yoga (0.0.0)
 
 DEPENDENCIES:
+  - EXApplication (from `../../../node_modules/expo-application/ios`)
   - EXConstants (from `../../../node_modules/expo-constants/ios`)
   - EXImageLoader (from `../../../node_modules/expo-image-loader/ios`)
   - EXInAppPurchases (from `../../../node_modules/expo-in-app-purchases/ios`)
   - EXJSONUtils (from `../../../node_modules/expo-json-utils/ios`)
   - EXManifests (from `../../../node_modules/expo-manifests/ios`)
+  - EXNotifications (from `../../../node_modules/expo-notifications/ios`)
   - Expo (from `../../../node_modules/expo`)
   - expo-dev-client (from `../../../node_modules/expo-dev-client/ios`)
   - expo-dev-launcher (from `../../../node_modules/expo-dev-launcher`)
@@ -2291,6 +2299,7 @@ DEPENDENCIES:
   - ExpoPrint (from `../../../node_modules/expo-print/ios`)
   - ExpoSecureStore (from `../../../node_modules/expo-secure-store/ios`)
   - ExpoSharing (from `../../../node_modules/expo-sharing/ios`)
+  - ExpoStoreReview (from `../../../node_modules/expo-store-review/ios`)
   - ExpoWidgets (from `../../../node_modules/expo-widget/ios`)
   - EXUpdatesInterface (from `../../../node_modules/expo-updates-interface/ios`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
@@ -2371,6 +2380,8 @@ DEPENDENCIES:
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
 EXTERNAL SOURCES:
+  EXApplication:
+    :path: "../../../node_modules/expo-application/ios"
   EXConstants:
     :path: "../../../node_modules/expo-constants/ios"
   EXImageLoader:
@@ -2381,6 +2392,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/expo-json-utils/ios"
   EXManifests:
     :path: "../../../node_modules/expo-manifests/ios"
+  EXNotifications:
+    :path: "../../../node_modules/expo-notifications/ios"
   Expo:
     :path: "../../../node_modules/expo"
   expo-dev-client:
@@ -2419,6 +2432,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/expo-secure-store/ios"
   ExpoSharing:
     :path: "../../../node_modules/expo-sharing/ios"
+  ExpoStoreReview:
+    :path: "../../../node_modules/expo-store-review/ios"
   ExpoWidgets:
     :path: "../../../node_modules/expo-widget/ios"
   EXUpdatesInterface:
@@ -2576,11 +2591,13 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
+  EXApplication: 1e06972201838375ca1ec1ba34d586a98a5dc718
   EXConstants: fd688cef4e401dcf798a021cfb5d87c890c30ba3
   EXImageLoader: 189e3476581efe3ad4d1d3fb4735b7179eb26f05
   EXInAppPurchases: 2cd95670951a56327c4b3ac689283580b321061f
   EXJSONUtils: 1d3e4590438c3ee593684186007028a14b3686cd
   EXManifests: 26e15640538c3d5ef028077ebcaf004b744d4932
+  EXNotifications: be5e949edf1d60b70e77178b81aa505298fadd07
   Expo: 111394d38f32be09385d4c7f70cc96d2da438d0d
   expo-dev-client: cc9491ad3e25a7a89f367c30f72884584c682b77
   expo-dev-launcher: b19f996454719a25b41b810ba4f38874ba23ffc5
@@ -2600,6 +2617,7 @@ SPEC CHECKSUMS:
   ExpoPrint: 3fa0bd322ea8effa81893a099803c914e59ad46f
   ExpoSecureStore: 9c6571fe3fcb045a671c4011c451546eaaab98fd
   ExpoSharing: 032c01bb034319e2374badf082ae935be866d2e9
+  ExpoStoreReview: 32bb43b6fae9c8db3e33cad69996dff3785eef5f
   ExpoWidgets: 810f6722c4e933e06a4cefe1f16e75939c9b1625
   EXUpdatesInterface: 5adf50cb41e079c861da6d9b4b954c3db9a50734
   FBLazyVector: e95a291ad2dadb88e42b06e0c5fb8262de53ec12
@@ -2678,6 +2696,6 @@ SPEC CHECKSUMS:
   RNWorklets: 43cd6af94c18f89cbca10ea83fee281b69d75da5
   Yoga: 5934998fbeaef7845dbf698f698518695ab4cd1a
 
-PODFILE CHECKSUM: b732cad62bde42136c1e4563c435a26d333e6635
+PODFILE CHECKSUM: 9faa44aed5952c0fe2ca1ed2afa75917d491eec6
 
 COCOAPODS: 1.16.2
