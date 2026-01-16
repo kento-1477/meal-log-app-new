@@ -187,6 +187,7 @@ export default function ChatScreen() {
     addAssistantMessage,
     setMessageText,
     updateMessageStatus,
+    updateMessageIngest,
     attachCardToMessage,
     updateCardForLog,
     composingImageUri,
@@ -354,13 +355,18 @@ export default function ChatScreen() {
           typeof message.ingest?.requestKey === 'string' &&
           typeof message.ingest?.userMessageId === 'string',
       )
-      .map((message) => ({
-        requestKey: message.ingest!.requestKey,
-        userMessageId: message.ingest!.userMessageId,
-        assistantMessageId: message.id,
-        createdAt: message.createdAt,
-        hasImage: Boolean(messageById.get(message.ingest!.userMessageId)?.imageUri),
-      }));
+      .map((message) => {
+        const ingest = message.ingest!;
+        return {
+          requestKey: ingest.requestKey,
+          userMessageId: ingest.userMessageId,
+          assistantMessageId: message.id,
+          createdAt: message.createdAt,
+          nextCheckAt: ingest.nextCheckAt ?? null,
+          deadlineAt: ingest.deadlineAt ?? null,
+          hasImage: Boolean(messageById.get(ingest.userMessageId)?.imageUri),
+        };
+      });
 
     // De-dup by requestKey (keep the most recent).
     const byKey = new Map<string, (typeof derived)[number]>();
@@ -386,7 +392,11 @@ export default function ChatScreen() {
     }
     ingestRefreshInFlight.current = true;
     try {
+      const now = Date.now();
       for (const ingest of pendingIngests) {
+        if (ingest.nextCheckAt && now < ingest.nextCheckAt) {
+          continue;
+        }
         try {
           const status = await getIngestStatus(ingest.requestKey);
           if (__DEV__) {
@@ -408,14 +418,27 @@ export default function ChatScreen() {
             queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
             queryClient.invalidateQueries({ queryKey: ['streak'] });
             scrollToEnd();
+          } else if (status.ok && status.status === 'failed') {
+            updateMessageStatus(ingest.userMessageId, 'error');
+            updateMessageStatus(ingest.assistantMessageId, 'error');
+            setMessageText(ingest.assistantMessageId, status.message ?? t('chat.genericErrorBubble'));
+          } else if (status.ok && status.status === 'deferred') {
+            const nextCheckAt = status.nextCheckAt ? Date.parse(status.nextCheckAt) : null;
+            const deadlineAt = status.deadlineAt ? Date.parse(status.deadlineAt) : null;
+            updateMessageIngest(ingest.assistantMessageId, {
+              nextCheckAt: Number.isFinite(nextCheckAt) ? nextCheckAt : null,
+              deadlineAt: Number.isFinite(deadlineAt) ? deadlineAt : null,
+            });
+            setMessageText(ingest.assistantMessageId, t('chat.processingInBackground'));
+            updateMessageStatus(ingest.assistantMessageId, 'processing');
           } else if (status.ok && status.status === 'processing') {
             const staleMs = ingest.hasImage ? PENDING_INGEST_STALE_MS_IMAGE : PENDING_INGEST_STALE_MS;
-            const tooOld = Date.now() - ingest.createdAt > staleMs;
+            const deadlineMs = ingest.deadlineAt ?? null;
+            const tooOld = deadlineMs ? now > deadlineMs : now - ingest.createdAt > staleMs;
             if (tooOld) {
               updateMessageStatus(ingest.userMessageId, 'error');
               updateMessageStatus(ingest.assistantMessageId, 'error');
               setMessageText(ingest.assistantMessageId, t('chat.genericErrorBubble'));
-              removePendingIngest(ingest.requestKey);
             }
           }
         } catch (error) {
@@ -443,6 +466,7 @@ export default function ChatScreen() {
     renderMealLogResult,
     scrollToEnd,
     setMessageText,
+    updateMessageIngest,
     setUsage,
     setError,
     t,
@@ -963,6 +987,19 @@ export default function ChatScreen() {
         updateMessageStatus(assistantPlaceholder.id, 'error');
         setError(apiError.message);
         setMessageText(assistantPlaceholder.id, apiError.message);
+      } else if (apiError.code === 'INGEST_IN_PROGRESS') {
+        updateMessageStatus(userMessage.id, 'delivered');
+        updateMessageStatus(assistantPlaceholder.id, 'processing');
+        const nextRequestKey =
+          typeof (apiError.data as { requestKey?: unknown } | undefined)?.requestKey === 'string'
+            ? ((apiError.data as { requestKey: string }).requestKey)
+            : null;
+        if (nextRequestKey && requestKey && nextRequestKey !== requestKey) {
+          updateMessageIngest(assistantPlaceholder.id, { requestKey: nextRequestKey });
+        }
+        setMessageText(assistantPlaceholder.id, t('chat.processingInBackground'));
+        setError(null);
+        void refreshPendingIngests();
       } else if (apiError.status === 401) {
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');

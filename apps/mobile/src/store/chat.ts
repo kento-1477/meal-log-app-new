@@ -19,6 +19,7 @@ export interface ChatState {
   ) => ChatMessage;
   setMessageText: (id: string, text: string) => void;
   updateMessageStatus: (id: string, status: ChatMessage['status']) => void;
+  updateMessageIngest: (id: string, ingest: Partial<NonNullable<ChatMessage['ingest']>>) => void;
   attachCardToMessage: (id: string, card: NutritionCardPayload) => void;
   updateCardForLog: (logId: string, updates: Partial<NutritionCardPayload>) => void;
   setComposingImage: (uri: string | null) => void;
@@ -78,6 +79,26 @@ export const useChatStore = create<ChatState>()(
           messages: get().messages.map((message) =>
             message.id === id ? { ...message, status } : message,
           ),
+        });
+      },
+      updateMessageIngest: (id, ingestUpdates) => {
+        set({
+          messages: get().messages.map((message) => {
+            if (message.id !== id) {
+              return message;
+            }
+            const currentIngest = message.ingest ?? null;
+            if (!currentIngest) {
+              return message;
+            }
+            return {
+              ...message,
+              ingest: {
+                ...currentIngest,
+                ...ingestUpdates,
+              },
+            };
+          }),
         });
       },
       attachCardToMessage: (id, card) => {

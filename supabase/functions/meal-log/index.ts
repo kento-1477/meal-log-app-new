@@ -89,6 +89,11 @@ const DASHBOARD_TARGETS = {
 const DEFAULT_QUIET_START = 22 * 60;
 const DEFAULT_QUIET_END = 7 * 60;
 const DEFAULT_DAILY_CAP = 1;
+const INGEST_DEFERRED_AFTER_MS = 1000 * 30;
+const INGEST_DEADLINE_MS = 1000 * 60 * 3;
+const INGEST_NEXT_CHECK_MS = 1000 * 60 * 2;
+const INGEST_INPUT_DEDUPE_WINDOW_MS = 1000 * 60 * 2;
+const PROMPT_VERSION = 'v1';
 
 const SHARE_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 const FOOD_CATALOGUE = [
@@ -533,6 +538,7 @@ const handleCreateLog = async (c: Context) => {
   const translationMode = (c.req.header('X-Translation-Mode') ?? '').trim().toLowerCase();
   const deferTranslation = translationMode === 'defer';
   const idempotencyKey = c.req.header('Idempotency-Key') ?? undefined;
+  const appVersion = c.req.header('X-App-Version') ?? undefined;
   const locale = resolveRequestLocale(c.req.raw, { queryField: 'locale' });
   const timezone = resolveRequestTimezone(c.req.raw, { queryField: 'timezone', fallback: DASHBOARD_TIMEZONE });
 
@@ -544,6 +550,7 @@ const handleCreateLog = async (c: Context) => {
     locale,
     timezone,
     deferTranslation,
+    appVersion,
   });
 
   return c.json(response);
@@ -567,7 +574,9 @@ app.get('/api/ingest/:requestKey', requireAuth, async (c) => {
 
   const { data: ingest, error: ingestError } = await supabaseAdmin
     .from('IngestRequest')
-    .select('id, logId, createdAt')
+    .select(
+      'id, logId, status, errorCode, errorCategory, userMessage, nextCheckAt, deadlineAt, createdAt, startedAt, finishedAt',
+    )
     .eq('userId', user.id)
     .eq('requestKey', requestKey)
     .maybeSingle();
@@ -580,6 +589,11 @@ app.get('/api/ingest/:requestKey', requireAuth, async (c) => {
   if (!ingest) {
     throw new HttpError('解析リクエストが見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
   }
+
+  const nowMs = Date.now();
+  const createdAtIso = ingest.createdAt ? new Date(ingest.createdAt).toISOString() : null;
+  const startedAtIso = ingest.startedAt ? new Date(ingest.startedAt).toISOString() : createdAtIso;
+  const deadlineAtIso = ingest.deadlineAt ? new Date(ingest.deadlineAt).toISOString() : null;
 
   // Legacy recovery: older builds nulled logId when `zeroFloored` fired.
   // In that case, try to resolve the single log created right after this ingest.
@@ -619,28 +633,104 @@ app.get('/api/ingest/:requestKey', requireAuth, async (c) => {
     }
   }
 
-  if (!resolvedLogId) {
-    console.log('[meal-log] ingest status processing', {
+  if (resolvedLogId) {
+    if (ingest.status !== 'done') {
+      const { error: statusUpdateError } = await supabaseAdmin
+        .from('IngestRequest')
+        .update({ status: 'done', finishedAt: new Date().toISOString() })
+        .eq('id', ingest.id);
+      if (statusUpdateError) {
+        console.error('ingest status: update done failed', { requestKey, userId: user.id, statusUpdateError });
+      }
+    }
+    const result = await buildIdempotentMealLogResult({
       userId: user.id,
-      requestKey: requestKey.slice(0, 24),
-      createdAt: ingest.createdAt ? new Date(ingest.createdAt).toISOString() : null,
+      logId: resolvedLogId,
+      requestKey,
+      requestedLocale,
     });
+
+    return c.json({ ok: true, status: 'done', requestKey, result });
+  }
+
+  if (ingest.status === 'failed') {
     return c.json({
       ok: true,
-      status: 'processing',
+      status: 'failed',
       requestKey,
-      createdAt: ingest.createdAt ? new Date(ingest.createdAt).toISOString() : null,
+      createdAt: createdAtIso,
+      errorCode: ingest.errorCode ?? null,
+      errorCategory: ingest.errorCategory ?? null,
+      message: ingest.userMessage ?? null,
     });
   }
 
-  const result = await buildIdempotentMealLogResult({
-    userId: user.id,
-    logId: resolvedLogId,
-    requestKey,
-    requestedLocale,
-  });
+  const deadlineMs = deadlineAtIso ? Date.parse(deadlineAtIso) : Number.NaN;
+  if (Number.isFinite(deadlineMs) && nowMs > deadlineMs) {
+    const timeoutMessage = '解析に時間がかかっています。時間をおいて再度お試しください。';
+    const { error: timeoutUpdateError } = await supabaseAdmin
+      .from('IngestRequest')
+      .update({
+        status: 'failed',
+        errorCode: 'INGEST_TIMEOUT',
+        errorCategory: 'waitable',
+        userMessage: timeoutMessage,
+        debugMessage: 'Ingest deadline exceeded',
+        finishedAt: new Date().toISOString(),
+      })
+      .eq('id', ingest.id);
+    if (timeoutUpdateError) {
+      console.error('ingest status: timeout update failed', { requestKey, userId: user.id, timeoutUpdateError });
+    }
+    return c.json({
+      ok: true,
+      status: 'failed',
+      requestKey,
+      createdAt: createdAtIso,
+      errorCode: 'INGEST_TIMEOUT',
+      errorCategory: 'waitable',
+      message: timeoutMessage,
+    });
+  }
 
-  return c.json({ ok: true, status: 'done', requestKey, result });
+  const ageMs = startedAtIso ? nowMs - Date.parse(startedAtIso) : 0;
+  const shouldDefer = ingest.status === 'deferred' || ageMs >= INGEST_DEFERRED_AFTER_MS;
+  if (shouldDefer) {
+    let nextCheckAtIso = ingest.nextCheckAt ? new Date(ingest.nextCheckAt).toISOString() : null;
+    const nextCheckMs = nextCheckAtIso ? Date.parse(nextCheckAtIso) : Number.NaN;
+    if (!nextCheckAtIso || !Number.isFinite(nextCheckMs) || nextCheckMs <= nowMs) {
+      nextCheckAtIso = new Date(nowMs + INGEST_NEXT_CHECK_MS).toISOString();
+    }
+    if (ingest.status !== 'deferred' || nextCheckAtIso !== (ingest.nextCheckAt ?? null)) {
+      const { error: deferUpdateError } = await supabaseAdmin
+        .from('IngestRequest')
+        .update({ status: 'deferred', nextCheckAt: nextCheckAtIso })
+        .eq('id', ingest.id);
+      if (deferUpdateError) {
+        console.error('ingest status: defer update failed', { requestKey, userId: user.id, deferUpdateError });
+      }
+    }
+    return c.json({
+      ok: true,
+      status: 'deferred',
+      requestKey,
+      createdAt: createdAtIso,
+      nextCheckAt: nextCheckAtIso,
+      deadlineAt: deadlineAtIso,
+    });
+  }
+
+  console.log('[meal-log] ingest status processing', {
+    userId: user.id,
+    requestKey: requestKey.slice(0, 24),
+    createdAt: createdAtIso,
+  });
+  return c.json({
+    ok: true,
+    status: 'processing',
+    requestKey,
+    createdAt: createdAtIso,
+  });
 });
 
 app.post('/api/log/choose-slot', requireAuth, async (c) => {
@@ -1898,6 +1988,7 @@ type ProcessMealLogParams = {
   locale?: Locale;
   timezone?: string;
   deferTranslation?: boolean;
+  appVersion?: string;
 };
 
 type ProcessMealLogResult = {
@@ -1923,6 +2014,111 @@ type ProcessMealLogResult = {
   favoriteCandidate: FavoriteMealDraft;
 };
 
+type IngestErrorCategory = 'waitable' | 'actionable';
+
+type IngestFailure = {
+  errorCode: string;
+  errorCategory: IngestErrorCategory;
+  userMessage: string;
+  debugMessage: string;
+  status: number;
+};
+
+function classifyIngestError(error: unknown): IngestFailure {
+  const fallback: IngestFailure = {
+    errorCode: 'INGEST_FAILED',
+    errorCategory: 'waitable',
+    userMessage: '解析に失敗しました。時間をおいて再度お試しください。',
+    debugMessage: 'Unknown ingest error',
+    status: HTTP_STATUS.INTERNAL_ERROR,
+  };
+
+  const err = error instanceof Error ? error : new Error(String(error ?? 'Unknown ingest error'));
+  const message = err.message ?? '';
+  const debugMessage = err.stack ?? message ?? fallback.debugMessage;
+
+  if (err instanceof HttpError) {
+    const code = err.code ?? fallback.errorCode;
+    if (code === 'AI_IMAGE_QUOTA') {
+      return {
+        errorCode: code,
+        errorCategory: 'actionable',
+        userMessage: err.message || fallback.userMessage,
+        debugMessage,
+        status: err.status ?? HTTP_STATUS.TOO_MANY_REQUESTS,
+      };
+    }
+    if (code === 'AI_USAGE_LIMIT') {
+      return {
+        errorCode: code,
+        errorCategory: 'actionable',
+        userMessage: err.message || fallback.userMessage,
+        debugMessage,
+        status: err.status ?? HTTP_STATUS.TOO_MANY_REQUESTS,
+      };
+    }
+    if (code === 'AI_UPSTREAM_QUOTA') {
+      return {
+        errorCode: code,
+        errorCategory: 'waitable',
+        userMessage: err.message || fallback.userMessage,
+        debugMessage,
+        status: err.status ?? HTTP_STATUS.TOO_MANY_REQUESTS,
+      };
+    }
+    return {
+      errorCode: code,
+      errorCategory: 'waitable',
+      userMessage: err.message || fallback.userMessage,
+      debugMessage,
+      status: err.status ?? fallback.status,
+    };
+  }
+
+  const lower = message.toLowerCase();
+  if (message.includes('Gemini error 404') || lower.includes('not found')) {
+    return {
+      errorCode: 'MODEL_NOT_FOUND',
+      errorCategory: 'waitable',
+      userMessage: '解析モデルの準備ができていません。時間をおいて再度お試しください。',
+      debugMessage,
+      status: HTTP_STATUS.BAD_GATEWAY,
+    };
+  }
+  if (message.includes('Gemini error 503') || lower.includes('overloaded') || lower.includes('unavailable')) {
+    return {
+      errorCode: 'AI_OVERLOADED',
+      errorCategory: 'waitable',
+      userMessage: '現在混雑しています。少し時間をおいて再度お試しください。',
+      debugMessage,
+      status: HTTP_STATUS.SERVICE_UNAVAILABLE,
+    };
+  }
+  if (lower.includes('timeout') || lower.includes('gemini_timeout') || lower.includes('ai_attempt_timeout')) {
+    return {
+      errorCode: 'AI_TIMEOUT',
+      errorCategory: 'waitable',
+      userMessage: '解析に時間がかかっています。時間をおいて再度お試しください。',
+      debugMessage,
+      status: HTTP_STATUS.GATEWAY_TIMEOUT,
+    };
+  }
+  if (lower.includes('validation failed') || lower.includes('expected double-quoted')) {
+    return {
+      errorCode: 'AI_BAD_RESPONSE',
+      errorCategory: 'waitable',
+      userMessage: '解析に失敗しました。もう一度お試しください。',
+      debugMessage,
+      status: HTTP_STATUS.BAD_GATEWAY,
+    };
+  }
+
+  return {
+    ...fallback,
+    debugMessage,
+  };
+}
+
 async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMealLogResult> {
   const requestKey = params.idempotencyKey ?? buildRequestKey(params);
   const requestedLocale = normalizeLocale(params.locale);
@@ -1930,7 +2126,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
 
   const { data: ingestExisting, error: ingestFetchError } = await supabaseAdmin
     .from('IngestRequest')
-    .select('id, logId, requestKey')
+    .select('logId, requestKey, status, errorCode, userMessage')
     .eq('userId', params.userId)
     .eq('requestKey', requestKey)
     .maybeSingle();
@@ -1949,152 +2145,306 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
     });
   }
 
-  const usageStatus = await evaluateAiUsage(params.userId);
-  if (!usageStatus.allowed) {
-    throw buildUsageLimitError(usageStatus);
+  if (ingestExisting?.status === 'failed') {
+    throw new HttpError(ingestExisting.userMessage ?? '解析に失敗しました。', {
+      status: HTTP_STATUS.BAD_GATEWAY,
+      code: ingestExisting.errorCode ?? 'INGEST_FAILED',
+      expose: true,
+    });
   }
 
-  let ingestId: number | null = null;
-  if (!ingestExisting) {
-    const { data: inserted, error: ingestInsertError } = await supabaseAdmin
+  if (ingestExisting) {
+    throw new HttpError('解析中です。しばらくお待ちください。', {
+      status: HTTP_STATUS.CONFLICT,
+      code: 'INGEST_IN_PROGRESS',
+      expose: true,
+      data: { requestKey: ingestExisting.requestKey },
+    });
+  }
+
+  const usageStatus = await evaluateAiUsage(params.userId);
+  if (!usageStatus.allowed) {
+    const usageError = buildUsageLimitError(usageStatus);
+    const failure = classifyIngestError(usageError);
+    const nowIso = new Date().toISOString();
+    const { error: ingestInsertError } = await supabaseAdmin
       .from('IngestRequest')
-      .insert({ userId: params.userId, requestKey })
+      .insert({
+        userId: params.userId,
+        requestKey,
+        status: 'failed',
+        errorCode: failure.errorCode,
+        errorCategory: failure.errorCategory,
+        userMessage: failure.userMessage,
+        debugMessage: failure.debugMessage,
+        attempts: 1,
+        promptVersion: PROMPT_VERSION,
+        appVersion: params.appVersion ?? null,
+        startedAt: nowIso,
+        finishedAt: nowIso,
+      })
       .select('id')
       .single();
-    if (ingestInsertError || !inserted) {
+    if (ingestInsertError) {
       console.error('processMealLog: insert ingest failed', ingestInsertError);
-      throw new HttpError('食事記録の処理に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
     }
-    ingestId = inserted.id;
-  } else {
-    ingestId = ingestExisting.id;
+    throw usageError;
   }
 
   const imageMimeType = params.file?.type;
   const imageBase64 = params.file ? await fileToBase64(params.file) : undefined;
-
-  const analysis = await analyzeMeal({
-    message: params.message,
+  const normalizedMessage = normalizeIngestMessage(params.message ?? '');
+  const inputHash = await buildInputHash({
+    userId: params.userId,
+    message: normalizedMessage,
     imageBase64,
-    imageMimeType,
-    locale: requestedLocale,
+    promptVersion: PROMPT_VERSION,
+    appVersion: params.appVersion ?? null,
   });
+  const inputHashBucket = DateTime.utc().toISODate() ?? new Date().toISOString().slice(0, 10);
 
-  const enrichedResponse: GeminiNutritionResponse = {
-    ...analysis.response,
-    meta: {
-      ...(analysis.response.meta ?? {}),
-      model: analysis.meta.model,
-      attempt: analysis.meta.attempt,
-      latencyMs: analysis.meta.latencyMs,
-      attemptReports: analysis.attemptReports,
-    },
-  };
+  if (inputHash) {
+    const windowStartIso = new Date(Date.now() - INGEST_INPUT_DEDUPE_WINDOW_MS).toISOString();
+    const { data: dedupe, error: dedupeError } = await supabaseAdmin
+      .from('IngestRequest')
+      .select('id, logId, requestKey, status, createdAt')
+      .eq('userId', params.userId)
+      .eq('inputHash', inputHash)
+      .eq('inputHashBucket', inputHashBucket)
+      .gte('createdAt', windowStartIso)
+      .order('createdAt', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  const zeroFloored = Object.values(enrichedResponse.totals).some((value) => value === 0);
-  const mealPeriod = inferMealPeriod(timezone);
-  if (zeroFloored) {
-    console.warn('processMealLog: zeroFloored detected', {
-      userId: params.userId,
-      requestKey: requestKey.slice(0, 24),
-      totals: enrichedResponse.totals,
-    });
-  }
-
-  const seededTranslations: Record<Locale, GeminiNutritionResponse> = {
-    [DEFAULT_LOCALE]: cloneResponse(enrichedResponse),
-  };
-  if (!params.deferTranslation && requestedLocale !== DEFAULT_LOCALE) {
-    const localized = await maybeTranslateNutritionResponse(enrichedResponse, requestedLocale);
-    if (localized) {
-      seededTranslations[requestedLocale] = localized;
+    if (dedupeError) {
+      console.error('processMealLog: dedupe lookup failed', dedupeError);
+    } else if (dedupe?.logId) {
+      return await buildIdempotentMealLogResult({
+        userId: params.userId,
+        logId: dedupe.logId,
+        requestKey,
+        requestedLocale,
+      });
+    } else if (dedupe?.requestKey) {
+      throw new HttpError('同じ内容を解析中です。しばらくお待ちください。', {
+        status: HTTP_STATUS.CONFLICT,
+        code: 'INGEST_IN_PROGRESS',
+        expose: true,
+        data: { requestKey: dedupe.requestKey },
+      });
     }
   }
 
-  const aiPayload: GeminiNutritionResponse & { locale: Locale; translations: Record<Locale, GeminiNutritionResponse> } = {
-    ...cloneResponse(enrichedResponse),
-    locale: DEFAULT_LOCALE,
-    translations: seededTranslations,
-  };
+  const startedAt = new Date();
+  const startedAtIso = startedAt.toISOString();
+  const deadlineAtIso = new Date(startedAt.getTime() + INGEST_DEADLINE_MS).toISOString();
 
-  const localization = resolveMealLogLocalization(aiPayload, requestedLocale);
-  const translation = localization.translation ?? cloneResponse(enrichedResponse);
-  const responseTranslations = cloneTranslationsMap(localization.translations);
-  const responseItems = translation.items ?? [];
-  const warnings = [...(translation.warnings ?? [])];
-  if (zeroFloored) {
-    warnings.push('zeroFloored: AI が推定した栄養素の一部が 0 として返されました');
-  }
-  if (localization.fallbackApplied) {
-    warnings.push(`translation_fallback:${localization.resolvedLocale}`);
-  }
-
-  const logId = crypto.randomUUID();
-  const nowIso = new Date().toISOString();
-
-  const { data: createdLog, error: logInsertError } = await supabaseAdmin
-    .from('MealLog')
+  const { data: inserted, error: ingestInsertError } = await supabaseAdmin
+    .from('IngestRequest')
     .insert({
-      id: logId,
       userId: params.userId,
-      foodItem: translation.dish ?? params.message,
-      calories: enrichedResponse.totals.kcal,
-      proteinG: enrichedResponse.totals.protein_g,
-      fatG: enrichedResponse.totals.fat_g,
-      carbsG: enrichedResponse.totals.carbs_g,
-      aiRaw: aiPayload,
-      zeroFloored,
-      guardrailNotes: zeroFloored ? 'zeroFloored' : null,
-      landingType: enrichedResponse.landing_type ?? null,
-      mealPeriod,
-      createdAt: nowIso,
-      updatedAt: nowIso,
+      requestKey,
+      status: 'processing',
+      attempts: 1,
+      inputHash,
+      inputHashBucket,
+      promptVersion: PROMPT_VERSION,
+      appVersion: params.appVersion ?? null,
+      startedAt: startedAtIso,
+      deadlineAt: deadlineAtIso,
     })
     .select('id')
     .single();
 
-  if (logInsertError || !createdLog) {
-    console.error('processMealLog: insert meal log failed', logInsertError);
-    throw new HttpError('食事記録を作成できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
-  }
-  // Use returned id if present; fallback to generated one.
-  const createdLogId = createdLog.id ?? logId;
-
-  const { error: historyError } = await supabaseAdmin.from('MealLogPeriodHistory').insert({
-    mealLogId: createdLogId,
-    previousMealPeriod: null,
-    nextMealPeriod: mealPeriod,
-    source: 'auto',
-  });
-  if (historyError) {
-    console.error('processMealLog: insert period history failed', historyError);
+  if (ingestInsertError || !inserted) {
+    console.error('processMealLog: insert ingest failed', ingestInsertError);
+    throw new HttpError('食事記録の処理に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
   }
 
-  if (params.file && imageBase64) {
-    const imageUrl = `data:${params.file.type};base64,${imageBase64}`;
-    const { error: mediaError } = await supabaseAdmin.from('MediaAsset').insert({
-      mealLogId: createdLogId,
-      mimeType: params.file.type,
-      url: imageUrl,
-      sizeBytes: params.file.size,
+  const ingestId = inserted.id;
+  let analysis: Awaited<ReturnType<typeof analyzeMeal>> | null = null;
+  let enrichedResponse: GeminiNutritionResponse | null = null;
+  let localization: LocalizationResolution | null = null;
+  let responseTranslations: Record<Locale, GeminiNutritionResponse> | null = null;
+  let responseItems: GeminiNutritionResponse['items'] | null = null;
+  let warnings: string[] | null = null;
+  let createdLogId = '';
+  let mealPeriod = '';
+
+  try {
+    analysis = await analyzeMeal({
+      message: params.message,
+      imageBase64,
+      imageMimeType,
+      locale: requestedLocale,
     });
-    if (mediaError) {
-      console.error('processMealLog: insert media asset failed', mediaError);
-    }
-    const { error: updateImageError } = await supabaseAdmin.from('MealLog').update({ imageUrl }).eq('id', createdLogId);
-    if (updateImageError) {
-      console.error('processMealLog: update imageUrl failed', updateImageError);
-    }
-  }
 
-  if (ingestId) {
+    enrichedResponse = {
+      ...analysis.response,
+      meta: {
+        ...(analysis.response.meta ?? {}),
+        model: analysis.meta.model,
+        attempt: analysis.meta.attempt,
+        latencyMs: analysis.meta.latencyMs,
+        attemptReports: analysis.attemptReports,
+      },
+    };
+
+    const zeroFloored = Object.values(enrichedResponse.totals).some((value) => value === 0);
+    mealPeriod = inferMealPeriod(timezone);
+    if (zeroFloored) {
+      console.warn('processMealLog: zeroFloored detected', {
+        userId: params.userId,
+        requestKey: requestKey.slice(0, 24),
+        totals: enrichedResponse.totals,
+      });
+    }
+
+    const seededTranslations: Record<Locale, GeminiNutritionResponse> = {
+      [DEFAULT_LOCALE]: cloneResponse(enrichedResponse),
+    };
+    if (!params.deferTranslation && requestedLocale !== DEFAULT_LOCALE) {
+      const localized = await maybeTranslateNutritionResponse(enrichedResponse, requestedLocale);
+      if (localized) {
+        seededTranslations[requestedLocale] = localized;
+      }
+    }
+
+    const aiPayload: GeminiNutritionResponse & {
+      locale: Locale;
+      translations: Record<Locale, GeminiNutritionResponse>;
+    } = {
+      ...cloneResponse(enrichedResponse),
+      locale: DEFAULT_LOCALE,
+      translations: seededTranslations,
+    };
+
+    localization = resolveMealLogLocalization(aiPayload, requestedLocale);
+    const translation = localization.translation ?? cloneResponse(enrichedResponse);
+    responseTranslations = cloneTranslationsMap(localization.translations);
+    responseItems = translation.items ?? [];
+    warnings = [...(translation.warnings ?? [])];
+    if (zeroFloored) {
+      warnings.push('zeroFloored: AI が推定した栄養素の一部が 0 として返されました');
+    }
+    if (localization.fallbackApplied) {
+      warnings.push(`translation_fallback:${localization.resolvedLocale}`);
+    }
+
+    const logId = crypto.randomUUID();
+    const nowIso = new Date().toISOString();
+
+    const { data: createdLog, error: logInsertError } = await supabaseAdmin
+      .from('MealLog')
+      .insert({
+        id: logId,
+        userId: params.userId,
+        foodItem: translation.dish ?? params.message,
+        calories: enrichedResponse.totals.kcal,
+        proteinG: enrichedResponse.totals.protein_g,
+        fatG: enrichedResponse.totals.fat_g,
+        carbsG: enrichedResponse.totals.carbs_g,
+        aiRaw: aiPayload,
+        zeroFloored,
+        guardrailNotes: zeroFloored ? 'zeroFloored' : null,
+        landingType: enrichedResponse.landing_type ?? null,
+        mealPeriod,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      })
+      .select('id')
+      .single();
+
+    if (logInsertError || !createdLog) {
+      console.error('processMealLog: insert meal log failed', logInsertError);
+      throw new HttpError('食事記録を作成できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+    }
+    // Use returned id if present; fallback to generated one.
+    createdLogId = createdLog.id ?? logId;
+
+    const { error: historyError } = await supabaseAdmin.from('MealLogPeriodHistory').insert({
+      mealLogId: createdLogId,
+      previousMealPeriod: null,
+      nextMealPeriod: mealPeriod,
+      source: 'auto',
+    });
+    if (historyError) {
+      console.error('processMealLog: insert period history failed', historyError);
+    }
+
+    if (params.file && imageBase64) {
+      const imageUrl = `data:${params.file.type};base64,${imageBase64}`;
+      const { error: mediaError } = await supabaseAdmin.from('MediaAsset').insert({
+        mealLogId: createdLogId,
+        mimeType: params.file.type,
+        url: imageUrl,
+        sizeBytes: params.file.size,
+      });
+      if (mediaError) {
+        console.error('processMealLog: insert media asset failed', mediaError);
+      }
+      const { error: updateImageError } = await supabaseAdmin.from('MealLog').update({ imageUrl }).eq('id', createdLogId);
+      if (updateImageError) {
+        console.error('processMealLog: update imageUrl failed', updateImageError);
+      }
+    }
+
+    const modelAttempts = analysis.attemptReports?.length ?? 0;
     const { error: ingestUpdateError } = await supabaseAdmin
       .from('IngestRequest')
-      .update({ logId: createdLogId })
+      .update({
+        status: 'done',
+        logId: createdLogId,
+        finishedAt: nowIso,
+        modelVersion: analysis.meta.model,
+        modelAttempts,
+        errorCode: null,
+        errorCategory: null,
+        userMessage: null,
+        debugMessage: null,
+        nextCheckAt: null,
+      })
       .eq('id', ingestId);
     if (ingestUpdateError) {
       console.error('processMealLog: update ingest failed', ingestUpdateError);
     }
+  } catch (error) {
+    const failure = classifyIngestError(error);
+    const err = error as Error & { report?: HedgeAttemptReport; attemptReports?: HedgeAttemptReport[] };
+    const failureReport = err?.report;
+    const failureReports = err?.attemptReports;
+    const modelVersion = failureReport?.model ?? null;
+    const modelAttempts = failureReports?.length ?? (failureReport ? 1 : 0);
+
+    const { error: ingestUpdateError } = await supabaseAdmin
+      .from('IngestRequest')
+      .update({
+        status: 'failed',
+        errorCode: failure.errorCode,
+        errorCategory: failure.errorCategory,
+        userMessage: failure.userMessage,
+        debugMessage: failure.debugMessage,
+        finishedAt: new Date().toISOString(),
+        modelVersion,
+        modelAttempts,
+        nextCheckAt: null,
+      })
+      .eq('id', ingestId);
+    if (ingestUpdateError) {
+      console.error('processMealLog: update ingest failed', ingestUpdateError);
+    }
+
+    const data = error instanceof HttpError ? error.data : undefined;
+    throw new HttpError(failure.userMessage, {
+      status: failure.status,
+      code: failure.errorCode,
+      expose: true,
+      data,
+    });
+  }
+
+  if (!analysis || !enrichedResponse || !localization || !responseTranslations || !responseItems || !warnings) {
+    throw new HttpError('食事記録の処理に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
   }
 
   const usageSummary = await recordAiUsage({
@@ -2103,6 +2453,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
     consumeCredit: usageStatus.consumeCredit,
   });
 
+  const translation = localization.translation ?? cloneResponse(enrichedResponse);
   const meta: Record<string, unknown> = {
     ...(enrichedResponse.meta ?? {}),
     imageUrl: params.file ? `data:${params.file.type};base64,${imageBase64 ?? ''}` : null,
@@ -2270,6 +2621,36 @@ async function fileToBase64(file: File) {
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
+}
+
+function normalizeIngestMessage(message: string) {
+  return message.trim().replace(/\s+/g, ' ');
+}
+
+async function computeSha256Hex(value: string) {
+  const data = encoder.encode(value);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function buildInputHash(params: {
+  userId: number;
+  message: string;
+  imageBase64?: string;
+  promptVersion: string;
+  appVersion?: string | null;
+}) {
+  const imageHash = params.imageBase64 ? await computeSha256Hex(params.imageBase64) : null;
+  const payload = JSON.stringify({
+    userId: params.userId,
+    message: params.message,
+    imageHash,
+    promptVersion: params.promptVersion,
+    appVersion: params.appVersion ?? null,
+  });
+  return computeSha256Hex(payload);
 }
 
 function buildRequestKey(params: ProcessMealLogParams) {
@@ -4147,6 +4528,10 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
       code: 'AI_UPSTREAM_QUOTA',
       expose: true,
     });
+  }
+
+  if (firstError) {
+    (firstError as any).attemptReports = attemptReports;
   }
 
   throw firstError ?? new Error('Gemini request failed');

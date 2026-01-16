@@ -87,15 +87,35 @@ model MealLogPeriodHistory {
 }
 
 model IngestRequest {
-  id         Int      @id @default(autoincrement())
-  user       User     @relation(fields: [userId], references: [id])
-  userId     Int
-  requestKey String
-  log        MealLog? @relation(fields: [logId], references: [id])
-  logId      String?
-  createdAt  DateTime @default(now())
+  id             Int       @id @default(autoincrement())
+  user           User      @relation(fields: [userId], references: [id])
+  userId         Int
+  requestKey     String
+  log            MealLog?  @relation(fields: [logId], references: [id])
+  logId          String?
+  status         String    @default("queued")
+  errorCode      String?
+  errorCategory  String?
+  userMessage    String?
+  debugMessage   String?
+  nextCheckAt    DateTime?
+  deadlineAt     DateTime?
+  attempts       Int       @default(0)
+  modelAttempts  Int       @default(0)
+  inputHash      String?
+  inputHashBucket DateTime? @db.Date
+  promptVersion  String?
+  modelVersion   String?
+  appVersion     String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime  @default(now())
 
   @@unique([userId, requestKey])
+  @@index([status, nextCheckAt])
+  @@index([userId, status, createdAt])
+  @@index([inputHash])
+  @@index([userId, inputHash, inputHashBucket])
 }
 
 model MediaAsset {
