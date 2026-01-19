@@ -3,14 +3,18 @@ import { getDeviceFingerprintId } from '@/services/device-fingerprint';
 
 const STORAGE_PREFIX = 'review:chat-log:';
 const MAX_RECENT_IDS = 10;
-export const REVIEW_TRIGGER_COUNT = 3;
-export const FREE_REVIEW_TRIGGER_COUNT = 2;
+export const REVIEW_TRIGGER_COUNTS = [3, 20];
+export const FREE_REVIEW_TRIGGER_COUNTS = [2, 20];
+export const REVIEW_TRIGGER_COUNT = REVIEW_TRIGGER_COUNTS[0];
+export const FREE_REVIEW_TRIGGER_COUNT = FREE_REVIEW_TRIGGER_COUNTS[0];
 
 export type ReviewTrackerState = {
   count: number;
   recentLogIds: string[];
   pending: boolean;
+  pendingCount: number | null;
   promptedAt: string | null;
+  promptedCounts: number[];
 };
 
 export type ReviewPromptDecision = {
@@ -22,7 +26,9 @@ const DEFAULT_STATE: ReviewTrackerState = {
   count: 0,
   recentLogIds: [],
   pending: false,
+  pendingCount: null,
   promptedAt: null,
+  promptedCounts: [],
 };
 
 async function resolveStorageKey(userId: number | null): Promise<string> {
@@ -42,14 +48,23 @@ function sanitizeState(raw: unknown): ReviewTrackerState {
   const recentLogIds = Array.isArray(state.recentLogIds)
     ? state.recentLogIds.filter((id) => typeof id === 'string')
     : [];
+  const pendingCount =
+    typeof state.pendingCount === 'number' && Number.isFinite(state.pendingCount)
+      ? state.pendingCount
+      : null;
   const pending = typeof state.pending === 'boolean' ? state.pending : false;
   const promptedAt = typeof state.promptedAt === 'string' ? state.promptedAt : null;
+  const promptedCounts = Array.isArray(state.promptedCounts)
+    ? state.promptedCounts.filter((value) => typeof value === 'number' && Number.isFinite(value))
+    : [];
 
   return {
     count,
     recentLogIds,
-    pending,
+    pending: pendingCount !== null ? true : pending,
+    pendingCount,
     promptedAt,
+    promptedCounts,
   };
 }
 
@@ -82,43 +97,66 @@ export async function getReviewTrackerState(userId: number | null): Promise<Revi
 export async function recordChatLogSuccess(params: {
   logId: string;
   userId: number | null;
-  triggerCount?: number;
+  triggerCounts?: number[];
 }): Promise<ReviewPromptDecision> {
   const storageKey = await resolveStorageKey(params.userId);
   const state = await readState(storageKey);
-  const triggerCount =
-    typeof params.triggerCount === 'number' && Number.isFinite(params.triggerCount)
-      ? Math.max(1, Math.floor(params.triggerCount))
-      : REVIEW_TRIGGER_COUNT;
+  const triggerCounts = normalizeTriggerCounts(params.triggerCounts ?? REVIEW_TRIGGER_COUNTS);
 
   if (state.recentLogIds.includes(params.logId)) {
-    return { shouldPrompt: state.pending && !state.promptedAt, state };
+    return { shouldPrompt: state.pendingCount !== null || state.pending, state };
   }
 
   const nextCount = state.count + 1;
   const nextRecentIds = [...state.recentLogIds, params.logId].slice(-MAX_RECENT_IDS);
-  const eligible = nextCount >= triggerCount && !state.promptedAt;
+  const promptedCounts =
+    state.promptedCounts.length > 0 || !state.promptedAt || triggerCounts.length === 0
+      ? state.promptedCounts
+      : [triggerCounts[0]];
+  const eligibleTriggers = triggerCounts.filter(
+    (count) => nextCount >= count && !promptedCounts.includes(count),
+  );
+  const pendingCount = state.pendingCount ?? eligibleTriggers[0] ?? null;
+  const eligible = pendingCount !== null;
   const nextState: ReviewTrackerState = {
     count: nextCount,
     recentLogIds: nextRecentIds,
-    pending: state.pending || eligible,
+    pending: eligible,
+    pendingCount,
     promptedAt: state.promptedAt,
+    promptedCounts,
   };
 
   await writeState(storageKey, nextState);
-  return { shouldPrompt: nextState.pending && !nextState.promptedAt, state: nextState };
+  return { shouldPrompt: nextState.pending, state: nextState };
 }
 
-export async function markReviewPrompted(userId: number | null) {
+export async function markReviewPrompted(userId: number | null, promptedCount?: number | null) {
   const storageKey = await resolveStorageKey(userId);
   const state = await readState(storageKey);
-  if (state.promptedAt) {
-    return;
-  }
+  const resolvedPromptedCount =
+    typeof promptedCount === 'number' && Number.isFinite(promptedCount)
+      ? promptedCount
+      : state.pendingCount;
   const nextState: ReviewTrackerState = {
     ...state,
     pending: false,
+    pendingCount: null,
+    promptedCounts:
+      typeof resolvedPromptedCount === 'number'
+        ? Array.from(new Set([...state.promptedCounts, resolvedPromptedCount]))
+        : state.promptedCounts,
     promptedAt: new Date().toISOString(),
   };
   await writeState(storageKey, nextState);
+}
+
+function normalizeTriggerCounts(input: number[]) {
+  return Array.from(
+    new Set(
+      input
+        .map((value) => (Number.isFinite(value) ? Math.max(1, Math.floor(value)) : null))
+        .filter((value): value is number => value !== null),
+    ),
+  ).sort((a, b) => a - b);
 }

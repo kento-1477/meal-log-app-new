@@ -21,6 +21,7 @@ const state: {
     connectAsync: () => Promise<void>;
     disconnectAsync: () => Promise<void>;
     getProductsAsync: () => Promise<unknown>;
+    getPurchaseHistoryAsync: () => Promise<unknown>;
     finishTransactionAsync: (purchase: Purchase, remove: boolean) => Promise<void>;
     purchaseItemAsync: (productId: string) => Promise<void>;
     restorePurchasesAsync: () => Promise<void>;
@@ -31,6 +32,7 @@ const state: {
     connectAsync: async () => undefined,
     disconnectAsync: async () => undefined,
     getProductsAsync: async () => [],
+    getPurchaseHistoryAsync: async () => [],
     finishTransactionAsync: async () => undefined,
     purchaseItemAsync: async () => undefined,
     restorePurchasesAsync: async () => undefined,
@@ -53,6 +55,10 @@ export async function disconnectAsync() {
 
 export async function getProductsAsync(productIds: readonly string[]) {
   return state.implementations.getProductsAsync(productIds);
+}
+
+export async function getPurchaseHistoryAsync() {
+  return state.implementations.getPurchaseHistoryAsync();
 }
 
 export async function finishTransactionAsync(purchase: Purchase, remove: boolean) {
@@ -89,6 +95,7 @@ export function __reset() {
   state.implementations.connectAsync = async () => undefined;
   state.implementations.disconnectAsync = async () => undefined;
   state.implementations.getProductsAsync = async () => [];
+  state.implementations.getPurchaseHistoryAsync = async () => [];
   state.implementations.finishTransactionAsync = async () => undefined;
   state.implementations.purchaseItemAsync = async () => undefined;
   state.implementations.restorePurchasesAsync = async () => undefined;

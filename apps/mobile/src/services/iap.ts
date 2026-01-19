@@ -205,6 +205,54 @@ export async function restorePurchases(productIds: string[] = [PREMIUM_PRODUCT_I
   });
 }
 
+export async function syncPurchasesFromHistory(
+  productIds: string[] = [PREMIUM_PRODUCT_ID, PREMIUM_MONTHLY_PRODUCT_ID],
+): Promise<RestorePurchasesResult> {
+  ensureIosSupport();
+
+  return withIapConnection(async () => {
+    const targetIds = new Set(productIds);
+    const history = await InAppPurchases.getPurchaseHistoryAsync({
+      productIds: productIds.length ? productIds : undefined,
+      forceRefresh: true,
+    });
+
+    const responseCode = (history as any)?.responseCode;
+    const purchases = (history as any)?.results ?? history ?? [];
+
+    if (responseCode != null && responseCode !== InAppPurchases.IAPResponseCode.OK) {
+      throw Object.assign(new Error('Purchase history returned error'), { code: 'iap.historyError' } as PurchaseError);
+    }
+
+    if (!Array.isArray(purchases) || purchases.length === 0) {
+      return { restored: [] };
+    }
+
+    const latestByProduct = new Map<string, InAppPurchases.InAppPurchase>();
+    for (const purchase of purchases) {
+      const productId = purchase?.productId ?? null;
+      if (!productId || !targetIds.has(productId)) {
+        continue;
+      }
+      const purchaseTime = Number((purchase as any)?.purchaseTime ?? 0);
+      const existing = latestByProduct.get(productId);
+      const existingTime = Number((existing as any)?.purchaseTime ?? 0);
+      if (!existing || purchaseTime >= existingTime) {
+        latestByProduct.set(productId, purchase);
+      }
+    }
+
+    const restored: RestorePurchaseEntry[] = [];
+    for (const [productId, purchase] of latestByProduct.entries()) {
+      const request = buildRequestPayload(purchase, productId);
+      const apiResponse = await submitPurchase(request);
+      restored.push({ productId, response: apiResponse });
+    }
+
+    return { restored };
+  });
+}
+
 async function purchaseProduct(productId: string): Promise<PurchaseResult> {
   ensureIosSupport();
 
@@ -345,13 +393,23 @@ async function withIapConnection<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 function buildRequestPayload(purchase: InAppPurchases.InAppPurchase, fallbackProductId: string): IapPurchaseRequest {
-  const transactionId = purchase.orderId || purchase.originalOrderId || `${Date.now()}`;
+  const transactionId =
+    (purchase as any).orderId ||
+    (purchase as any).transactionId ||
+    (purchase as any).originalOrderId ||
+    (purchase as any).originalTransactionIdentifier ||
+    `${Date.now()}`;
+  const originalTransactionId =
+    (purchase as any).originalOrderId ||
+    (purchase as any).originalTransactionIdentifier ||
+    transactionId;
   const productId = purchase.productId ?? fallbackProductId;
   const receiptData = purchase.transactionReceipt ??
     encodeTestReceipt({
       transactionId,
       productId,
       quantity: 1,
+      originalTransactionId,
     });
 
   const payload: IapPurchaseRequest = {
@@ -368,10 +426,16 @@ function buildRequestPayload(purchase: InAppPurchases.InAppPurchase, fallbackPro
   return payload;
 }
 
-function encodeTestReceipt(payload: { transactionId: string; productId: string; quantity: number }) {
+function encodeTestReceipt(payload: {
+  transactionId: string;
+  productId: string;
+  quantity: number;
+  originalTransactionId?: string;
+}) {
   return encodeToBase64(
     JSON.stringify({
       transactionId: payload.transactionId,
+      originalTransactionId: payload.originalTransactionId,
       productId: payload.productId,
       quantity: payload.quantity,
       purchaseDate: new Date().toISOString(),

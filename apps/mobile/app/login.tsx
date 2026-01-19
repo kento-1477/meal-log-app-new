@@ -132,7 +132,7 @@ export default function LoginScreen() {
                 disabled={loading}
               />
             ) : (
-              <Text style={styles.unsupportedText}>現在このアプリはiOSのみ対応しています。</Text>
+              <Text style={styles.unsupportedText}>{t('login.unsupportedPlatform')}</Text>
             )}
           </View>
         </View>

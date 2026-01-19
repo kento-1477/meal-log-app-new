@@ -1,13 +1,17 @@
+import { getLocale } from '@/i18n';
+
 export function describeLocale(locale: string | undefined | null) {
   if (!locale) {
     return '';
   }
   const normalized = locale.toLowerCase();
+  const uiLocale = getLocale();
+  const uiIsJapanese = uiLocale.toLowerCase().startsWith('ja');
   if (normalized.startsWith('ja')) {
-    return '日本語';
+    return uiIsJapanese ? '日本語' : 'Japanese';
   }
   if (normalized.startsWith('en')) {
-    return '英語';
+    return uiIsJapanese ? '英語' : 'English';
   }
   return locale;
 }

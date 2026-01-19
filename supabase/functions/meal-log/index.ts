@@ -13,6 +13,10 @@ import type {
   UserProfile,
   SlotSelectionRequest,
   NutritionPlanInput,
+  DashboardSummary,
+  AiReportPeriod,
+  AiReportContent,
+  AiReportResponse,
   HedgeAttemptReport,
 } from '@shared/index.js';
 import {
@@ -34,6 +38,8 @@ import {
   PushTokenRegisterRequestSchema,
   PushTokenDisableRequestSchema,
   computeNutritionPlan,
+  AiReportRequestSchema,
+  AiReportContentSchema,
 } from '@shared/index.js';
 import type { Context } from 'hono';
 import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
@@ -42,6 +48,7 @@ import {
   resolveMealLogLocalization,
   type LocalizationResolution,
   parseMealLogAiRaw,
+  collectTranslations,
   normalizeLocale,
   DEFAULT_LOCALE,
   maybeTranslateNutritionResponse,
@@ -82,6 +89,11 @@ const DASHBOARD_TARGETS = {
 const DEFAULT_QUIET_START = 22 * 60;
 const DEFAULT_QUIET_END = 7 * 60;
 const DEFAULT_DAILY_CAP = 1;
+const INGEST_DEFERRED_AFTER_MS = 1000 * 30;
+const INGEST_DEADLINE_MS = 1000 * 60 * 3;
+const INGEST_NEXT_CHECK_MS = 1000 * 60 * 2;
+const INGEST_INPUT_DEDUPE_WINDOW_MS = 1000 * 60 * 2;
+const PROMPT_VERSION = 'v1';
 
 const SHARE_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 const FOOD_CATALOGUE = [
@@ -478,6 +490,27 @@ app.get('/api/log/:id/share', requireAuth, async (c) => {
   return respondWithCache(c, { ok: true, share });
 });
 
+app.post('/api/log/:id/translate', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const logId = c.req.param('id');
+  const requestedLocale = normalizeLocale(resolveRequestLocale(c.req.raw, { queryField: 'locale' }));
+
+  await ensureMealLogTranslation({
+    userId: user.id,
+    logId,
+    requestedLocale,
+  });
+
+  const result = await buildIdempotentMealLogResult({
+    userId: user.id,
+    logId,
+    requestKey: `translate-${Date.now()}-${logId.slice(0, 6)}`,
+    requestedLocale,
+  });
+
+  return c.json(result);
+});
+
 app.get('/api/logs/export', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
   const locale = resolveRequestLocale(c.req.raw);
@@ -502,7 +535,10 @@ const handleCreateLog = async (c: Context) => {
     throw new HttpError('メッセージまたは画像のいずれかを送信してください。', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
   }
 
+  const translationMode = (c.req.header('X-Translation-Mode') ?? '').trim().toLowerCase();
+  const deferTranslation = translationMode === 'defer';
   const idempotencyKey = c.req.header('Idempotency-Key') ?? undefined;
+  const appVersion = c.req.header('X-App-Version') ?? undefined;
   const locale = resolveRequestLocale(c.req.raw, { queryField: 'locale' });
   const timezone = resolveRequestTimezone(c.req.raw, { queryField: 'timezone', fallback: DASHBOARD_TIMEZONE });
 
@@ -513,6 +549,8 @@ const handleCreateLog = async (c: Context) => {
     idempotencyKey,
     locale,
     timezone,
+    deferTranslation,
+    appVersion,
   });
 
   return c.json(response);
@@ -536,7 +574,9 @@ app.get('/api/ingest/:requestKey', requireAuth, async (c) => {
 
   const { data: ingest, error: ingestError } = await supabaseAdmin
     .from('IngestRequest')
-    .select('id, logId, createdAt')
+    .select(
+      'id, logId, status, errorCode, errorCategory, userMessage, nextCheckAt, deadlineAt, createdAt, startedAt, finishedAt',
+    )
     .eq('userId', user.id)
     .eq('requestKey', requestKey)
     .maybeSingle();
@@ -549,6 +589,11 @@ app.get('/api/ingest/:requestKey', requireAuth, async (c) => {
   if (!ingest) {
     throw new HttpError('解析リクエストが見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
   }
+
+  const nowMs = Date.now();
+  const createdAtIso = ingest.createdAt ? new Date(ingest.createdAt).toISOString() : null;
+  const startedAtIso = ingest.startedAt ? new Date(ingest.startedAt).toISOString() : createdAtIso;
+  const deadlineAtIso = ingest.deadlineAt ? new Date(ingest.deadlineAt).toISOString() : null;
 
   // Legacy recovery: older builds nulled logId when `zeroFloored` fired.
   // In that case, try to resolve the single log created right after this ingest.
@@ -588,28 +633,104 @@ app.get('/api/ingest/:requestKey', requireAuth, async (c) => {
     }
   }
 
-  if (!resolvedLogId) {
-    console.log('[meal-log] ingest status processing', {
+  if (resolvedLogId) {
+    if (ingest.status !== 'done') {
+      const { error: statusUpdateError } = await supabaseAdmin
+        .from('IngestRequest')
+        .update({ status: 'done', finishedAt: new Date().toISOString() })
+        .eq('id', ingest.id);
+      if (statusUpdateError) {
+        console.error('ingest status: update done failed', { requestKey, userId: user.id, statusUpdateError });
+      }
+    }
+    const result = await buildIdempotentMealLogResult({
       userId: user.id,
-      requestKey: requestKey.slice(0, 24),
-      createdAt: ingest.createdAt ? new Date(ingest.createdAt).toISOString() : null,
+      logId: resolvedLogId,
+      requestKey,
+      requestedLocale,
     });
+
+    return c.json({ ok: true, status: 'done', requestKey, result });
+  }
+
+  if (ingest.status === 'failed') {
     return c.json({
       ok: true,
-      status: 'processing',
+      status: 'failed',
       requestKey,
-      createdAt: ingest.createdAt ? new Date(ingest.createdAt).toISOString() : null,
+      createdAt: createdAtIso,
+      errorCode: ingest.errorCode ?? null,
+      errorCategory: ingest.errorCategory ?? null,
+      message: ingest.userMessage ?? null,
     });
   }
 
-  const result = await buildIdempotentMealLogResult({
-    userId: user.id,
-    logId: resolvedLogId,
-    requestKey,
-    requestedLocale,
-  });
+  const deadlineMs = deadlineAtIso ? Date.parse(deadlineAtIso) : Number.NaN;
+  if (Number.isFinite(deadlineMs) && nowMs > deadlineMs) {
+    const timeoutMessage = '解析に時間がかかっています。時間をおいて再度お試しください。';
+    const { error: timeoutUpdateError } = await supabaseAdmin
+      .from('IngestRequest')
+      .update({
+        status: 'failed',
+        errorCode: 'INGEST_TIMEOUT',
+        errorCategory: 'waitable',
+        userMessage: timeoutMessage,
+        debugMessage: 'Ingest deadline exceeded',
+        finishedAt: new Date().toISOString(),
+      })
+      .eq('id', ingest.id);
+    if (timeoutUpdateError) {
+      console.error('ingest status: timeout update failed', { requestKey, userId: user.id, timeoutUpdateError });
+    }
+    return c.json({
+      ok: true,
+      status: 'failed',
+      requestKey,
+      createdAt: createdAtIso,
+      errorCode: 'INGEST_TIMEOUT',
+      errorCategory: 'waitable',
+      message: timeoutMessage,
+    });
+  }
 
-  return c.json({ ok: true, status: 'done', requestKey, result });
+  const ageMs = startedAtIso ? nowMs - Date.parse(startedAtIso) : 0;
+  const shouldDefer = ingest.status === 'deferred' || ageMs >= INGEST_DEFERRED_AFTER_MS;
+  if (shouldDefer) {
+    let nextCheckAtIso = ingest.nextCheckAt ? new Date(ingest.nextCheckAt).toISOString() : null;
+    const nextCheckMs = nextCheckAtIso ? Date.parse(nextCheckAtIso) : Number.NaN;
+    if (!nextCheckAtIso || !Number.isFinite(nextCheckMs) || nextCheckMs <= nowMs) {
+      nextCheckAtIso = new Date(nowMs + INGEST_NEXT_CHECK_MS).toISOString();
+    }
+    if (ingest.status !== 'deferred' || nextCheckAtIso !== (ingest.nextCheckAt ?? null)) {
+      const { error: deferUpdateError } = await supabaseAdmin
+        .from('IngestRequest')
+        .update({ status: 'deferred', nextCheckAt: nextCheckAtIso })
+        .eq('id', ingest.id);
+      if (deferUpdateError) {
+        console.error('ingest status: defer update failed', { requestKey, userId: user.id, deferUpdateError });
+      }
+    }
+    return c.json({
+      ok: true,
+      status: 'deferred',
+      requestKey,
+      createdAt: createdAtIso,
+      nextCheckAt: nextCheckAtIso,
+      deadlineAt: deadlineAtIso,
+    });
+  }
+
+  console.log('[meal-log] ingest status processing', {
+    userId: user.id,
+    requestKey: requestKey.slice(0, 24),
+    createdAt: createdAtIso,
+  });
+  return c.json({
+    ok: true,
+    status: 'processing',
+    requestKey,
+    createdAt: createdAtIso,
+  });
 });
 
 app.post('/api/log/choose-slot', requireAuth, async (c) => {
@@ -902,6 +1023,49 @@ app.get('/api/dashboard/summary', requireAuth, async (c) => {
   const payload = { ok: true, summary } as const;
   DashboardSummarySchema.parse(summary);
   return respondWithCache(c, payload);
+});
+
+app.post('/api/reports', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  const parsed = AiReportRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new HttpError('invalid payload', { status: HTTP_STATUS.BAD_REQUEST, expose: true, data: parsed.error.flatten() });
+  }
+
+  const usageStatus = await evaluateAiUsage(user.id);
+  if (!usageStatus.allowed) {
+    throw buildUsageLimitError(usageStatus);
+  }
+
+  const locale = resolveRequestLocale(c.req.raw);
+  const reportParams = resolveReportSummaryParams(parsed.data.period);
+  const summary = await getDashboardSummary({
+    userId: user.id,
+    period: reportParams.period,
+    from: reportParams.from,
+    to: reportParams.to,
+  });
+
+  const context = buildReportContext({ period: parsed.data.period, summary });
+  const analysis = await analyzeReportWithGemini({ context, locale });
+
+  const report: AiReportResponse = {
+    period: parsed.data.period,
+    range: summary.range,
+    summary: analysis.report.summary,
+    metrics: analysis.report.metrics,
+    advice: analysis.report.advice,
+    meta: { ...analysis.meta, attemptReports: analysis.attemptReports },
+  };
+
+  const usageSummary = await recordAiUsage({
+    userId: user.id,
+    usageDate: usageStatus.usageDate,
+    consumeCredit: usageStatus.consumeCredit,
+  });
+
+  return c.json({ ok: true, report, usage: usageSummary });
 });
 
 app.get('/api/dashboard/targets', requireAuth, async (c) => {
@@ -1823,6 +1987,8 @@ type ProcessMealLogParams = {
   idempotencyKey?: string;
   locale?: Locale;
   timezone?: string;
+  deferTranslation?: boolean;
+  appVersion?: string;
 };
 
 type ProcessMealLogResult = {
@@ -1848,6 +2014,111 @@ type ProcessMealLogResult = {
   favoriteCandidate: FavoriteMealDraft;
 };
 
+type IngestErrorCategory = 'waitable' | 'actionable';
+
+type IngestFailure = {
+  errorCode: string;
+  errorCategory: IngestErrorCategory;
+  userMessage: string;
+  debugMessage: string;
+  status: number;
+};
+
+function classifyIngestError(error: unknown): IngestFailure {
+  const fallback: IngestFailure = {
+    errorCode: 'INGEST_FAILED',
+    errorCategory: 'waitable',
+    userMessage: '解析に失敗しました。時間をおいて再度お試しください。',
+    debugMessage: 'Unknown ingest error',
+    status: HTTP_STATUS.INTERNAL_ERROR,
+  };
+
+  const err = error instanceof Error ? error : new Error(String(error ?? 'Unknown ingest error'));
+  const message = err.message ?? '';
+  const debugMessage = err.stack ?? message ?? fallback.debugMessage;
+
+  if (err instanceof HttpError) {
+    const code = err.code ?? fallback.errorCode;
+    if (code === 'AI_IMAGE_QUOTA') {
+      return {
+        errorCode: code,
+        errorCategory: 'actionable',
+        userMessage: err.message || fallback.userMessage,
+        debugMessage,
+        status: err.status ?? HTTP_STATUS.TOO_MANY_REQUESTS,
+      };
+    }
+    if (code === 'AI_USAGE_LIMIT') {
+      return {
+        errorCode: code,
+        errorCategory: 'actionable',
+        userMessage: err.message || fallback.userMessage,
+        debugMessage,
+        status: err.status ?? HTTP_STATUS.TOO_MANY_REQUESTS,
+      };
+    }
+    if (code === 'AI_UPSTREAM_QUOTA') {
+      return {
+        errorCode: code,
+        errorCategory: 'waitable',
+        userMessage: err.message || fallback.userMessage,
+        debugMessage,
+        status: err.status ?? HTTP_STATUS.TOO_MANY_REQUESTS,
+      };
+    }
+    return {
+      errorCode: code,
+      errorCategory: 'waitable',
+      userMessage: err.message || fallback.userMessage,
+      debugMessage,
+      status: err.status ?? fallback.status,
+    };
+  }
+
+  const lower = message.toLowerCase();
+  if (message.includes('Gemini error 404') || lower.includes('not found')) {
+    return {
+      errorCode: 'MODEL_NOT_FOUND',
+      errorCategory: 'waitable',
+      userMessage: '解析モデルの準備ができていません。時間をおいて再度お試しください。',
+      debugMessage,
+      status: HTTP_STATUS.BAD_GATEWAY,
+    };
+  }
+  if (message.includes('Gemini error 503') || lower.includes('overloaded') || lower.includes('unavailable')) {
+    return {
+      errorCode: 'AI_OVERLOADED',
+      errorCategory: 'waitable',
+      userMessage: '現在混雑しています。少し時間をおいて再度お試しください。',
+      debugMessage,
+      status: HTTP_STATUS.SERVICE_UNAVAILABLE,
+    };
+  }
+  if (lower.includes('timeout') || lower.includes('gemini_timeout') || lower.includes('ai_attempt_timeout')) {
+    return {
+      errorCode: 'AI_TIMEOUT',
+      errorCategory: 'waitable',
+      userMessage: '解析に時間がかかっています。時間をおいて再度お試しください。',
+      debugMessage,
+      status: HTTP_STATUS.GATEWAY_TIMEOUT,
+    };
+  }
+  if (lower.includes('validation failed') || lower.includes('expected double-quoted')) {
+    return {
+      errorCode: 'AI_BAD_RESPONSE',
+      errorCategory: 'waitable',
+      userMessage: '解析に失敗しました。もう一度お試しください。',
+      debugMessage,
+      status: HTTP_STATUS.BAD_GATEWAY,
+    };
+  }
+
+  return {
+    ...fallback,
+    debugMessage,
+  };
+}
+
 async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMealLogResult> {
   const requestKey = params.idempotencyKey ?? buildRequestKey(params);
   const requestedLocale = normalizeLocale(params.locale);
@@ -1855,7 +2126,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
 
   const { data: ingestExisting, error: ingestFetchError } = await supabaseAdmin
     .from('IngestRequest')
-    .select('id, logId, requestKey')
+    .select('logId, requestKey, status, errorCode, userMessage')
     .eq('userId', params.userId)
     .eq('requestKey', requestKey)
     .maybeSingle();
@@ -1874,152 +2145,306 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
     });
   }
 
-  const usageStatus = await evaluateAiUsage(params.userId);
-  if (!usageStatus.allowed) {
-    throw buildUsageLimitError(usageStatus);
+  if (ingestExisting?.status === 'failed') {
+    throw new HttpError(ingestExisting.userMessage ?? '解析に失敗しました。', {
+      status: HTTP_STATUS.BAD_GATEWAY,
+      code: ingestExisting.errorCode ?? 'INGEST_FAILED',
+      expose: true,
+    });
   }
 
-  let ingestId: number | null = null;
-  if (!ingestExisting) {
-    const { data: inserted, error: ingestInsertError } = await supabaseAdmin
+  if (ingestExisting) {
+    throw new HttpError('解析中です。しばらくお待ちください。', {
+      status: HTTP_STATUS.CONFLICT,
+      code: 'INGEST_IN_PROGRESS',
+      expose: true,
+      data: { requestKey: ingestExisting.requestKey },
+    });
+  }
+
+  const usageStatus = await evaluateAiUsage(params.userId);
+  if (!usageStatus.allowed) {
+    const usageError = buildUsageLimitError(usageStatus);
+    const failure = classifyIngestError(usageError);
+    const nowIso = new Date().toISOString();
+    const { error: ingestInsertError } = await supabaseAdmin
       .from('IngestRequest')
-      .insert({ userId: params.userId, requestKey })
+      .insert({
+        userId: params.userId,
+        requestKey,
+        status: 'failed',
+        errorCode: failure.errorCode,
+        errorCategory: failure.errorCategory,
+        userMessage: failure.userMessage,
+        debugMessage: failure.debugMessage,
+        attempts: 1,
+        promptVersion: PROMPT_VERSION,
+        appVersion: params.appVersion ?? null,
+        startedAt: nowIso,
+        finishedAt: nowIso,
+      })
       .select('id')
       .single();
-    if (ingestInsertError || !inserted) {
+    if (ingestInsertError) {
       console.error('processMealLog: insert ingest failed', ingestInsertError);
-      throw new HttpError('食事記録の処理に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
     }
-    ingestId = inserted.id;
-  } else {
-    ingestId = ingestExisting.id;
+    throw usageError;
   }
 
   const imageMimeType = params.file?.type;
   const imageBase64 = params.file ? await fileToBase64(params.file) : undefined;
-
-  const analysis = await analyzeMeal({
-    message: params.message,
+  const normalizedMessage = normalizeIngestMessage(params.message ?? '');
+  const inputHash = await buildInputHash({
+    userId: params.userId,
+    message: normalizedMessage,
     imageBase64,
-    imageMimeType,
-    locale: requestedLocale,
+    promptVersion: PROMPT_VERSION,
+    appVersion: params.appVersion ?? null,
   });
+  const inputHashBucket = DateTime.utc().toISODate() ?? new Date().toISOString().slice(0, 10);
 
-  const enrichedResponse: GeminiNutritionResponse = {
-    ...analysis.response,
-    meta: {
-      ...(analysis.response.meta ?? {}),
-      model: analysis.meta.model,
-      attempt: analysis.meta.attempt,
-      latencyMs: analysis.meta.latencyMs,
-      attemptReports: analysis.attemptReports,
-    },
-  };
+  if (inputHash) {
+    const windowStartIso = new Date(Date.now() - INGEST_INPUT_DEDUPE_WINDOW_MS).toISOString();
+    const { data: dedupe, error: dedupeError } = await supabaseAdmin
+      .from('IngestRequest')
+      .select('id, logId, requestKey, status, createdAt')
+      .eq('userId', params.userId)
+      .eq('inputHash', inputHash)
+      .eq('inputHashBucket', inputHashBucket)
+      .gte('createdAt', windowStartIso)
+      .order('createdAt', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  const zeroFloored = Object.values(enrichedResponse.totals).some((value) => value === 0);
-  const mealPeriod = inferMealPeriod(timezone);
-  if (zeroFloored) {
-    console.warn('processMealLog: zeroFloored detected', {
-      userId: params.userId,
-      requestKey: requestKey.slice(0, 24),
-      totals: enrichedResponse.totals,
-    });
-  }
-
-  const seededTranslations: Record<Locale, GeminiNutritionResponse> = {
-    [DEFAULT_LOCALE]: cloneResponse(enrichedResponse),
-  };
-  if (requestedLocale !== DEFAULT_LOCALE) {
-    const localized = await maybeTranslateNutritionResponse(enrichedResponse, requestedLocale);
-    if (localized) {
-      seededTranslations[requestedLocale] = localized;
+    if (dedupeError) {
+      console.error('processMealLog: dedupe lookup failed', dedupeError);
+    } else if (dedupe?.logId) {
+      return await buildIdempotentMealLogResult({
+        userId: params.userId,
+        logId: dedupe.logId,
+        requestKey,
+        requestedLocale,
+      });
+    } else if (dedupe?.requestKey) {
+      throw new HttpError('同じ内容を解析中です。しばらくお待ちください。', {
+        status: HTTP_STATUS.CONFLICT,
+        code: 'INGEST_IN_PROGRESS',
+        expose: true,
+        data: { requestKey: dedupe.requestKey },
+      });
     }
   }
 
-  const aiPayload: GeminiNutritionResponse & { locale: Locale; translations: Record<Locale, GeminiNutritionResponse> } = {
-    ...cloneResponse(enrichedResponse),
-    locale: DEFAULT_LOCALE,
-    translations: seededTranslations,
-  };
+  const startedAt = new Date();
+  const startedAtIso = startedAt.toISOString();
+  const deadlineAtIso = new Date(startedAt.getTime() + INGEST_DEADLINE_MS).toISOString();
 
-  const localization = resolveMealLogLocalization(aiPayload, requestedLocale);
-  const translation = localization.translation ?? cloneResponse(enrichedResponse);
-  const responseTranslations = cloneTranslationsMap(localization.translations);
-  const responseItems = translation.items ?? [];
-  const warnings = [...(translation.warnings ?? [])];
-  if (zeroFloored) {
-    warnings.push('zeroFloored: AI が推定した栄養素の一部が 0 として返されました');
-  }
-  if (localization.fallbackApplied) {
-    warnings.push(`translation_fallback:${localization.resolvedLocale}`);
-  }
-
-  const logId = crypto.randomUUID();
-  const nowIso = new Date().toISOString();
-
-  const { data: createdLog, error: logInsertError } = await supabaseAdmin
-    .from('MealLog')
+  const { data: inserted, error: ingestInsertError } = await supabaseAdmin
+    .from('IngestRequest')
     .insert({
-      id: logId,
       userId: params.userId,
-      foodItem: translation.dish ?? params.message,
-      calories: enrichedResponse.totals.kcal,
-      proteinG: enrichedResponse.totals.protein_g,
-      fatG: enrichedResponse.totals.fat_g,
-      carbsG: enrichedResponse.totals.carbs_g,
-      aiRaw: aiPayload,
-      zeroFloored,
-      guardrailNotes: zeroFloored ? 'zeroFloored' : null,
-      landingType: enrichedResponse.landing_type ?? null,
-      mealPeriod,
-      createdAt: nowIso,
-      updatedAt: nowIso,
+      requestKey,
+      status: 'processing',
+      attempts: 1,
+      inputHash,
+      inputHashBucket,
+      promptVersion: PROMPT_VERSION,
+      appVersion: params.appVersion ?? null,
+      startedAt: startedAtIso,
+      deadlineAt: deadlineAtIso,
     })
     .select('id')
     .single();
 
-  if (logInsertError || !createdLog) {
-    console.error('processMealLog: insert meal log failed', logInsertError);
-    throw new HttpError('食事記録を作成できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
-  }
-  // Use returned id if present; fallback to generated one.
-  const createdLogId = createdLog.id ?? logId;
-
-  const { error: historyError } = await supabaseAdmin.from('MealLogPeriodHistory').insert({
-    mealLogId: createdLogId,
-    previousMealPeriod: null,
-    nextMealPeriod: mealPeriod,
-    source: 'auto',
-  });
-  if (historyError) {
-    console.error('processMealLog: insert period history failed', historyError);
+  if (ingestInsertError || !inserted) {
+    console.error('processMealLog: insert ingest failed', ingestInsertError);
+    throw new HttpError('食事記録の処理に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
   }
 
-  if (params.file && imageBase64) {
-    const imageUrl = `data:${params.file.type};base64,${imageBase64}`;
-    const { error: mediaError } = await supabaseAdmin.from('MediaAsset').insert({
-      mealLogId: createdLogId,
-      mimeType: params.file.type,
-      url: imageUrl,
-      sizeBytes: params.file.size,
+  const ingestId = inserted.id;
+  let analysis: Awaited<ReturnType<typeof analyzeMeal>> | null = null;
+  let enrichedResponse: GeminiNutritionResponse | null = null;
+  let localization: LocalizationResolution | null = null;
+  let responseTranslations: Record<Locale, GeminiNutritionResponse> | null = null;
+  let responseItems: GeminiNutritionResponse['items'] | null = null;
+  let warnings: string[] | null = null;
+  let createdLogId = '';
+  let mealPeriod = '';
+
+  try {
+    analysis = await analyzeMeal({
+      message: params.message,
+      imageBase64,
+      imageMimeType,
+      locale: requestedLocale,
     });
-    if (mediaError) {
-      console.error('processMealLog: insert media asset failed', mediaError);
-    }
-    const { error: updateImageError } = await supabaseAdmin.from('MealLog').update({ imageUrl }).eq('id', createdLogId);
-    if (updateImageError) {
-      console.error('processMealLog: update imageUrl failed', updateImageError);
-    }
-  }
 
-  if (ingestId) {
+    enrichedResponse = {
+      ...analysis.response,
+      meta: {
+        ...(analysis.response.meta ?? {}),
+        model: analysis.meta.model,
+        attempt: analysis.meta.attempt,
+        latencyMs: analysis.meta.latencyMs,
+        attemptReports: analysis.attemptReports,
+      },
+    };
+
+    const zeroFloored = Object.values(enrichedResponse.totals).some((value) => value === 0);
+    mealPeriod = inferMealPeriod(timezone);
+    if (zeroFloored) {
+      console.warn('processMealLog: zeroFloored detected', {
+        userId: params.userId,
+        requestKey: requestKey.slice(0, 24),
+        totals: enrichedResponse.totals,
+      });
+    }
+
+    const seededTranslations: Record<Locale, GeminiNutritionResponse> = {
+      [DEFAULT_LOCALE]: cloneResponse(enrichedResponse),
+    };
+    if (!params.deferTranslation && requestedLocale !== DEFAULT_LOCALE) {
+      const localized = await maybeTranslateNutritionResponse(enrichedResponse, requestedLocale);
+      if (localized) {
+        seededTranslations[requestedLocale] = localized;
+      }
+    }
+
+    const aiPayload: GeminiNutritionResponse & {
+      locale: Locale;
+      translations: Record<Locale, GeminiNutritionResponse>;
+    } = {
+      ...cloneResponse(enrichedResponse),
+      locale: DEFAULT_LOCALE,
+      translations: seededTranslations,
+    };
+
+    localization = resolveMealLogLocalization(aiPayload, requestedLocale);
+    const translation = localization.translation ?? cloneResponse(enrichedResponse);
+    responseTranslations = cloneTranslationsMap(localization.translations);
+    responseItems = translation.items ?? [];
+    warnings = [...(translation.warnings ?? [])];
+    if (zeroFloored) {
+      warnings.push('zeroFloored: AI が推定した栄養素の一部が 0 として返されました');
+    }
+    if (localization.fallbackApplied) {
+      warnings.push(`translation_fallback:${localization.resolvedLocale}`);
+    }
+
+    const logId = crypto.randomUUID();
+    const nowIso = new Date().toISOString();
+
+    const { data: createdLog, error: logInsertError } = await supabaseAdmin
+      .from('MealLog')
+      .insert({
+        id: logId,
+        userId: params.userId,
+        foodItem: translation.dish ?? params.message,
+        calories: enrichedResponse.totals.kcal,
+        proteinG: enrichedResponse.totals.protein_g,
+        fatG: enrichedResponse.totals.fat_g,
+        carbsG: enrichedResponse.totals.carbs_g,
+        aiRaw: aiPayload,
+        zeroFloored,
+        guardrailNotes: zeroFloored ? 'zeroFloored' : null,
+        landingType: enrichedResponse.landing_type ?? null,
+        mealPeriod,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      })
+      .select('id')
+      .single();
+
+    if (logInsertError || !createdLog) {
+      console.error('processMealLog: insert meal log failed', logInsertError);
+      throw new HttpError('食事記録を作成できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+    }
+    // Use returned id if present; fallback to generated one.
+    createdLogId = createdLog.id ?? logId;
+
+    const { error: historyError } = await supabaseAdmin.from('MealLogPeriodHistory').insert({
+      mealLogId: createdLogId,
+      previousMealPeriod: null,
+      nextMealPeriod: mealPeriod,
+      source: 'auto',
+    });
+    if (historyError) {
+      console.error('processMealLog: insert period history failed', historyError);
+    }
+
+    if (params.file && imageBase64) {
+      const imageUrl = `data:${params.file.type};base64,${imageBase64}`;
+      const { error: mediaError } = await supabaseAdmin.from('MediaAsset').insert({
+        mealLogId: createdLogId,
+        mimeType: params.file.type,
+        url: imageUrl,
+        sizeBytes: params.file.size,
+      });
+      if (mediaError) {
+        console.error('processMealLog: insert media asset failed', mediaError);
+      }
+      const { error: updateImageError } = await supabaseAdmin.from('MealLog').update({ imageUrl }).eq('id', createdLogId);
+      if (updateImageError) {
+        console.error('processMealLog: update imageUrl failed', updateImageError);
+      }
+    }
+
+    const modelAttempts = analysis.attemptReports?.length ?? 0;
     const { error: ingestUpdateError } = await supabaseAdmin
       .from('IngestRequest')
-      .update({ logId: createdLogId })
+      .update({
+        status: 'done',
+        logId: createdLogId,
+        finishedAt: nowIso,
+        modelVersion: analysis.meta.model,
+        modelAttempts,
+        errorCode: null,
+        errorCategory: null,
+        userMessage: null,
+        debugMessage: null,
+        nextCheckAt: null,
+      })
       .eq('id', ingestId);
     if (ingestUpdateError) {
       console.error('processMealLog: update ingest failed', ingestUpdateError);
     }
+  } catch (error) {
+    const failure = classifyIngestError(error);
+    const err = error as Error & { report?: HedgeAttemptReport; attemptReports?: HedgeAttemptReport[] };
+    const failureReport = err?.report;
+    const failureReports = err?.attemptReports;
+    const modelVersion = failureReport?.model ?? null;
+    const modelAttempts = failureReports?.length ?? (failureReport ? 1 : 0);
+
+    const { error: ingestUpdateError } = await supabaseAdmin
+      .from('IngestRequest')
+      .update({
+        status: 'failed',
+        errorCode: failure.errorCode,
+        errorCategory: failure.errorCategory,
+        userMessage: failure.userMessage,
+        debugMessage: failure.debugMessage,
+        finishedAt: new Date().toISOString(),
+        modelVersion,
+        modelAttempts,
+        nextCheckAt: null,
+      })
+      .eq('id', ingestId);
+    if (ingestUpdateError) {
+      console.error('processMealLog: update ingest failed', ingestUpdateError);
+    }
+
+    const data = error instanceof HttpError ? error.data : undefined;
+    throw new HttpError(failure.userMessage, {
+      status: failure.status,
+      code: failure.errorCode,
+      expose: true,
+      data,
+    });
+  }
+
+  if (!analysis || !enrichedResponse || !localization || !responseTranslations || !responseItems || !warnings) {
+    throw new HttpError('食事記録の処理に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
   }
 
   const usageSummary = await recordAiUsage({
@@ -2028,6 +2453,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
     consumeCredit: usageStatus.consumeCredit,
   });
 
+  const translation = localization.translation ?? cloneResponse(enrichedResponse);
   const meta: Record<string, unknown> = {
     ...(enrichedResponse.meta ?? {}),
     imageUrl: params.file ? `data:${params.file.type};base64,${imageBase64 ?? ''}` : null,
@@ -2112,6 +2538,72 @@ async function buildIdempotentMealLogResult(params: {
   };
 }
 
+async function ensureMealLogTranslation(params: {
+  userId: number;
+  logId: string;
+  requestedLocale: Locale;
+}) {
+  const targetLocale = normalizeLocale(params.requestedLocale);
+  if (targetLocale === DEFAULT_LOCALE) {
+    return;
+  }
+
+  const { data: row, error } = await supabaseAdmin
+    .from('MealLog')
+    .select('id, aiRaw')
+    .eq('id', params.logId)
+    .eq('userId', params.userId)
+    .is('deletedAt', null)
+    .maybeSingle();
+
+  if (error) {
+    console.error('translate log: fetch failed', error);
+    throw new HttpError('食事記録が見つかりませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  if (!row) {
+    throw new HttpError('食事記録が見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
+  }
+
+  const parsed = parseMealLogAiRaw(row.aiRaw);
+  const translations = collectTranslations(row.aiRaw, parsed);
+
+  if (translations[targetLocale]) {
+    return;
+  }
+
+  const baseLocale = parsed?.locale ? normalizeLocale(parsed.locale) : DEFAULT_LOCALE;
+  const baseTranslation =
+    translations[baseLocale] ??
+    translations[DEFAULT_LOCALE] ??
+    Object.values(translations)[0];
+
+  if (!baseTranslation) {
+    console.warn('translate log: missing base translation', { logId: params.logId });
+    return;
+  }
+
+  const translated = await maybeTranslateNutritionResponse(baseTranslation, targetLocale);
+  if (!translated) {
+    return;
+  }
+
+  const updatedTranslations = { ...translations, [targetLocale]: translated };
+  const updatedAiRaw = parsed
+    ? { ...parsed, translations: updatedTranslations, locale: parsed.locale ?? baseLocale }
+    : { ...cloneResponse(baseTranslation), locale: baseLocale, translations: updatedTranslations };
+
+  const { error: updateError } = await supabaseAdmin
+    .from('MealLog')
+    .update({ aiRaw: updatedAiRaw })
+    .eq('id', params.logId)
+    .eq('userId', params.userId);
+
+  if (updateError) {
+    console.error('translate log: update failed', updateError);
+  }
+}
+
 function buildLocalizationMeta(localization: LocalizationResolution) {
   return {
     requested: localization.requestedLocale,
@@ -2129,6 +2621,36 @@ async function fileToBase64(file: File) {
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
+}
+
+function normalizeIngestMessage(message: string) {
+  return message.trim().replace(/\s+/g, ' ');
+}
+
+async function computeSha256Hex(value: string) {
+  const data = encoder.encode(value);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function buildInputHash(params: {
+  userId: number;
+  message: string;
+  imageBase64?: string;
+  promptVersion: string;
+  appVersion?: string | null;
+}) {
+  const imageHash = params.imageBase64 ? await computeSha256Hex(params.imageBase64) : null;
+  const payload = JSON.stringify({
+    userId: params.userId,
+    message: params.message,
+    imageHash,
+    promptVersion: params.promptVersion,
+    appVersion: params.appVersion ?? null,
+  });
+  return computeSha256Hex(payload);
 }
 
 function buildRequestKey(params: ProcessMealLogParams) {
@@ -2815,6 +3337,19 @@ function resolveWeekRange(period: string, timezone: string) {
   };
 }
 
+function resolveReportSummaryParams(period: AiReportPeriod) {
+  if (period === 'daily') {
+    return { period: 'today' as const };
+  }
+  if (period === 'weekly') {
+    return { period: 'thisWeek' as const };
+  }
+  const now = DateTime.now().setZone(DASHBOARD_TIMEZONE).startOf('day');
+  const from = now.minus({ days: 29 }).toISODate() ?? now.minus({ days: 29 }).toFormat('yyyy-MM-dd');
+  const to = now.toISODate() ?? now.toFormat('yyyy-MM-dd');
+  return { period: 'custom' as const, from, to };
+}
+
 function buildDashboardSummary({
   logs,
   range,
@@ -3181,6 +3716,443 @@ function calculateCurrentStreak(days: DateTime[], timezone: string) {
   return streak;
 }
 
+function buildReportContext(params: { period: AiReportPeriod; summary: DashboardSummary }) {
+  const daily = params.summary.calories.daily;
+  const totalDays = daily.length;
+  const loggedDays = daily.filter((entry) => entry.total > 0).length;
+  const totalCalories = daily.reduce((acc, entry) => acc + entry.total, 0);
+  const averageCalories = loggedDays > 0 ? Math.round(totalCalories / loggedDays) : 0;
+  const mealPeriodTotals = daily.reduce(
+    (acc, entry) => {
+      acc.breakfast += entry.perMealPeriod.breakfast;
+      acc.lunch += entry.perMealPeriod.lunch;
+      acc.dinner += entry.perMealPeriod.dinner;
+      acc.snack += entry.perMealPeriod.snack;
+      acc.unknown += entry.perMealPeriod.unknown;
+      return acc;
+    },
+    { breakfast: 0, lunch: 0, dinner: 0, snack: 0, unknown: 0 },
+  );
+
+  return {
+    period: params.period,
+    range: params.summary.range,
+    days: {
+      total: totalDays,
+      logged: loggedDays,
+    },
+    calories: {
+      total: Math.round(totalCalories),
+      average: averageCalories,
+    },
+    macros: params.summary.macros,
+    mealPeriods: mealPeriodTotals,
+    daily: daily.map((entry) => ({ date: entry.date, total: entry.total })),
+  };
+}
+
+function buildReportPrompt(context: ReturnType<typeof buildReportContext>, locale: Locale) {
+  const preferJapanese = locale.toLowerCase().startsWith('ja');
+  const languageInstruction = preferJapanese
+    ? 'Use Japanese for all text fields.'
+    : 'Use English (United States) for all text fields.';
+  return `You are a nutrition coach. Summarize the user's eating patterns based on the JSON data.
+Return ONLY valid JSON that matches this TypeScript type:
+{
+  "summary": { "headline": string, "score": number (0-100), "highlights": string[] },
+  "metrics": Array<{ "label": string, "value": string, "note"?: string }>,
+  "advice": Array<{ "priority": "high"|"medium"|"low", "title": string, "detail": string }>,
+  "ingredients": Array<{ "name": string, "reason": string }>
+}
+Rules:
+- highlights: 1-3 short bullets.
+- metrics: 3-5 items, values should include units where applicable.
+- advice: 1-3 items, each with a concrete action and brief reason.
+- ingredients: pick about 3 ingredients (not dishes). Use macros.delta to decide focus:
+  - If fat is over target, prioritize low-fat ingredients.
+  - If protein is under target, prioritize high-protein ingredients.
+  - If carbs are over target, prioritize low-carb ingredients.
+  - Otherwise, suggest balanced, nutrient-dense ingredients.
+- Never invent data that is not present in the input JSON.
+${languageInstruction}
+JSON input: ${JSON.stringify(context)}`;
+}
+
+function buildIngredientSuggestions(
+  context: ReturnType<typeof buildReportContext>,
+  locale: Locale,
+): AiReportContent['ingredients'] {
+  const preferJapanese = locale.toLowerCase().startsWith('ja');
+  const delta = context.macros.delta;
+  let focus: 'low_fat' | 'high_protein' | 'low_carb' | 'balanced' = 'balanced';
+
+  if (delta.fat_g > 0) {
+    focus = 'low_fat';
+  } else if (delta.protein_g < 0) {
+    focus = 'high_protein';
+  } else if (delta.carbs_g > 0) {
+    focus = 'low_carb';
+  }
+
+  const bank = {
+    low_fat: [
+      {
+        name: preferJapanese ? '鶏むね肉' : 'Chicken breast',
+        reason: preferJapanese ? '脂質が少なく、たんぱく質を補いやすい' : 'Low fat and easy to boost protein',
+      },
+      {
+        name: preferJapanese ? '白身魚' : 'White fish',
+        reason: preferJapanese ? '脂質が少なく、消化が軽い' : 'Lean protein with minimal fat',
+      },
+      {
+        name: preferJapanese ? '豆腐' : 'Tofu',
+        reason: preferJapanese ? '脂質を抑えつつ栄養を補える' : 'Light protein with low fat',
+      },
+    ],
+    high_protein: [
+      {
+        name: preferJapanese ? 'ツナ水煮' : 'Canned tuna (in water)',
+        reason: preferJapanese ? '脂質を抑えてたんぱく質を補給' : 'High protein with low fat',
+      },
+      {
+        name: preferJapanese ? 'ギリシャヨーグルト' : 'Greek yogurt',
+        reason: preferJapanese ? '手軽にたんぱく質を追加できる' : 'Easy protein boost',
+      },
+      {
+        name: preferJapanese ? '納豆' : 'Natto',
+        reason: preferJapanese ? 'たんぱく質と食物繊維を追加' : 'Adds protein and fiber',
+      },
+    ],
+    low_carb: [
+      {
+        name: preferJapanese ? '葉物野菜' : 'Leafy greens',
+        reason: preferJapanese ? '炭水化物を抑えながら量を増やせる' : 'Adds volume with minimal carbs',
+      },
+      {
+        name: preferJapanese ? 'きのこ' : 'Mushrooms',
+        reason: preferJapanese ? '低カロリーで満足感が出やすい' : 'Low calorie and filling',
+      },
+      {
+        name: preferJapanese ? '白身魚' : 'White fish',
+        reason: preferJapanese ? '炭水化物を増やさず栄養を補える' : 'Lean protein without carbs',
+      },
+    ],
+    balanced: [
+      {
+        name: preferJapanese ? 'ブロッコリー' : 'Broccoli',
+        reason: preferJapanese ? 'ビタミンと食物繊維を補える' : 'Adds vitamins and fiber',
+      },
+      {
+        name: preferJapanese ? '豆類' : 'Legumes',
+        reason: preferJapanese ? 'たんぱく質と食物繊維のバランスが良い' : 'Balanced protein and fiber',
+      },
+      {
+        name: preferJapanese ? '玄米' : 'Brown rice',
+        reason: preferJapanese ? '食物繊維が多く腹持ちが良い' : 'Whole grain for steady energy',
+      },
+    ],
+  } as const;
+
+  return bank[focus].slice(0, 3);
+}
+
+function buildReportMock(context: ReturnType<typeof buildReportContext>, locale: Locale): AiReportContent {
+  const preferJapanese = locale.toLowerCase().startsWith('ja');
+  const headline = preferJapanese ? '記録の要約' : 'Summary of your logs';
+  const highlights = preferJapanese
+    ? ['記録日数が少ないため傾向は控えめに評価']
+    : ['Limited logs, trends are shown cautiously'];
+  const metrics = preferJapanese
+    ? [
+        { label: '平均カロリー', value: `${context.calories.average} kcal` },
+        { label: '記録日数', value: `${context.days.logged} / ${context.days.total} 日` },
+        {
+          label: 'P/F/C',
+          value: `${Math.round(context.macros.total.protein_g)} / ${Math.round(context.macros.total.fat_g)} / ${Math.round(
+            context.macros.total.carbs_g,
+          )}`,
+        },
+      ]
+    : [
+        { label: 'Avg calories', value: `${context.calories.average} kcal` },
+        { label: 'Logged days', value: `${context.days.logged} / ${context.days.total}` },
+        {
+          label: 'P/F/C',
+          value: `${Math.round(context.macros.total.protein_g)} / ${Math.round(context.macros.total.fat_g)} / ${Math.round(
+            context.macros.total.carbs_g,
+          )}`,
+        },
+      ];
+
+  const advice = preferJapanese
+    ? [
+        {
+          priority: 'medium',
+          title: '記録の継続を優先',
+          detail: 'まずは1日1回の記録でデータを増やすと、より精度の高い傾向が出せます。',
+        },
+      ]
+    : [
+        {
+          priority: 'medium',
+          title: 'Keep logging consistently',
+          detail: 'Log at least one meal per day to improve trend accuracy.',
+        },
+      ];
+
+  return {
+    summary: { headline, score: 70, highlights },
+    metrics,
+    advice,
+    ingredients: buildIngredientSuggestions(context, locale),
+  };
+}
+
+async function analyzeReportWithGemini(params: {
+  context: ReturnType<typeof buildReportContext>;
+  locale: Locale;
+}): Promise<{
+  report: AiReportContent;
+  attemptReports: HedgeAttemptReport[];
+  meta: { model: string; attempt: number; latencyMs: number; fallback_model_used?: boolean };
+}> {
+  const apiKey = Deno.env.get('GEMINI_API_KEY');
+  const prompt = buildReportPrompt(params.context, params.locale);
+
+  if (!apiKey) {
+    const mock = buildReportMock(params.context, params.locale);
+    return {
+      report: mock,
+      attemptReports: [{ model: 'mock', ok: true, latencyMs: 10, attempt: 1 }],
+      meta: { model: 'mock', attempt: 1, latencyMs: 10 },
+    };
+  }
+
+  const parseModelList = (raw: string | undefined) =>
+    (raw ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+  const uniqueModels = (entries: string[]) => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const entry of entries) {
+      if (!seen.has(entry)) {
+        seen.add(entry);
+        result.push(entry);
+      }
+    }
+    return result;
+  };
+
+  const primaryModel = (Deno.env.get('GEMINI_PRIMARY_MODEL') ?? 'models/gemini-2.5-flash').trim();
+  const legacyFallbackModelRaw = (Deno.env.get('GEMINI_FALLBACK_MODEL') ?? '').trim();
+  const legacyFallbackModel = legacyFallbackModelRaw && legacyFallbackModelRaw !== primaryModel ? legacyFallbackModelRaw : null;
+  const fallbackModels = parseModelList(Deno.env.get('GEMINI_FALLBACK_MODELS'));
+  const chainModels = parseModelList(Deno.env.get('GEMINI_MODEL_CHAIN'));
+  const models = uniqueModels(
+    chainModels.length ? chainModels : [primaryModel, ...fallbackModels, ...(legacyFallbackModel ? [legacyFallbackModel] : [])],
+  );
+
+  const timeoutMsCandidate = Number(Deno.env.get('GEMINI_TIMEOUT_MS') ?? '25000');
+  const timeoutMs = Number.isFinite(timeoutMsCandidate) ? Math.max(1_000, timeoutMsCandidate) : 25_000;
+
+  const isQuotaErrorMessage = (message: string) => {
+    const lower = message.toLowerCase();
+    return (
+      message.includes('Gemini error 429') ||
+      lower.includes('resource_exhausted') ||
+      lower.includes('quota exceeded') ||
+      lower.includes('rate limit')
+    );
+  };
+
+  const buildAttemptError = (model: string, latencyMs: number, attempt: number, message: string, textLen = 0) => {
+    const err = new Error(message) as Error & { report: HedgeAttemptReport };
+    err.report = { model, ok: false, latencyMs, attempt, error: message, textLen };
+    return err;
+  };
+
+  const extractJsonText = (text: string) => {
+    const trimmed = text.trim();
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    const candidate = fenced ? fenced[1].trim() : trimmed;
+    if (candidate.startsWith('{') || candidate.startsWith('[')) {
+      return candidate;
+    }
+    const start = candidate.indexOf('{');
+    const end = candidate.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      return candidate.slice(start, end + 1);
+    }
+    return candidate;
+  };
+
+  const normalizeIngredientList = (value: unknown): AiReportContent['ingredients'] => {
+    if (!Array.isArray(value)) {
+      return buildIngredientSuggestions(params.context, params.locale);
+    }
+
+    const normalized = value
+      .map((item) => {
+        if (!item || typeof item !== 'object') {
+          return null;
+        }
+        const candidate = item as { name?: unknown; reason?: unknown };
+        const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
+        const reason = typeof candidate.reason === 'string' ? candidate.reason.trim() : '';
+        if (!name || !reason) {
+          return null;
+        }
+        return { name, reason };
+      })
+      .filter((item): item is AiReportContent['ingredients'][number] => Boolean(item));
+
+    if (!normalized.length) {
+      return buildIngredientSuggestions(params.context, params.locale);
+    }
+    return normalized.slice(0, 3);
+  };
+
+  const normalizeReportPayload = (payload: unknown) => {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return payload;
+    }
+    const base = payload as Record<string, unknown>;
+    return {
+      ...base,
+      ingredients: normalizeIngredientList(base.ingredients),
+    };
+  };
+
+  const parseReportContent = (candidateText: string) => {
+    const jsonText = extractJsonText(candidateText);
+    const parsedJson = JSON.parse(jsonText) as unknown;
+    const direct = AiReportContentSchema.safeParse(parsedJson);
+    if (direct.success) {
+      return direct.data;
+    }
+    const normalized = normalizeReportPayload(parsedJson);
+    const normalizedResult = AiReportContentSchema.safeParse(normalized);
+    if (normalizedResult.success) {
+      return normalizedResult.data;
+    }
+    const issues = (normalizedResult.error as any).issues ?? (normalizedResult.error as any).errors;
+    const firstIssue = Array.isArray(issues) ? issues[0] : null;
+    const message = firstIssue
+      ? `${String(firstIssue.path?.join?.('.') ?? '')}: ${String(firstIssue.message ?? 'invalid')}`
+      : normalizedResult.error.message;
+    throw new Error(`Gemini response validation failed: ${message}`);
+  };
+
+  const attempt = async (model: string, attemptNumber: number) => {
+    const url = new URL(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent`);
+    url.searchParams.set('key', apiKey);
+
+    const requestBody: Record<string, unknown> = {
+      contents: [
+        {
+          parts: [{ text: prompt }],
+          role: 'user',
+        },
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        topK: 32,
+        topP: 0.8,
+        responseMimeType: 'application/json',
+      },
+    };
+
+    const started = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort('GEMINI_TIMEOUT'), timeoutMs);
+    let text = '';
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+      text = await resp.text();
+      const latencyMs = Date.now() - started;
+      if (!resp.ok) {
+        throw buildAttemptError(model, latencyMs, attemptNumber, `Gemini error ${resp.status}: ${text}`, text.length);
+      }
+      const data = JSON.parse(text) as any;
+      const first = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!first) {
+        throw buildAttemptError(model, latencyMs, attemptNumber, 'Gemini returned no content');
+      }
+      let parsed: AiReportContent;
+      try {
+        parsed = parseReportContent(first);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Gemini response parse failed';
+        throw buildAttemptError(model, latencyMs, attemptNumber, message, first.length);
+      }
+      const report: HedgeAttemptReport = {
+        model,
+        ok: true,
+        latencyMs,
+        attempt: attemptNumber,
+        textLen: first.length,
+      };
+      return { report: parsed, attemptReport: report, meta: { model, attempt: attemptNumber, latencyMs, rawText: first } };
+    } catch (error) {
+      const latencyMs = Date.now() - started;
+      if (error instanceof Error && (error as any).report) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : 'Unknown AI error';
+      throw buildAttemptError(model, latencyMs, attemptNumber, message);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const attemptReports: HedgeAttemptReport[] = [];
+  let firstError: Error | null = null;
+
+  for (let i = 0; i < models.length; i += 1) {
+    const model = models[i];
+    const attemptNumber = i + 1;
+    try {
+      const result = await attempt(model, attemptNumber);
+      attemptReports.push(result.attemptReport);
+      return {
+        report: result.report,
+        attemptReports,
+        meta: {
+          model,
+          attempt: attemptNumber,
+          latencyMs: result.meta.latencyMs,
+          fallback_model_used: attemptNumber > 1,
+        },
+      };
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown AI error');
+      if (!firstError) {
+        firstError = err;
+      }
+      if ((err as any).report) {
+        attemptReports.push((err as any).report);
+      }
+      if (isQuotaErrorMessage(err.message)) {
+        throw new HttpError('AIの無料枠が上限に達しました。時間をおいて再度お試しください。', {
+          status: HTTP_STATUS.TOO_MANY_REQUESTS,
+          code: 'AI_UPSTREAM_QUOTA',
+          expose: true,
+        });
+      }
+    }
+  }
+
+  throw firstError ?? new Error('Gemini request failed');
+}
+
 async function analyzeMeal(params: { message: string; imageBase64?: string; imageMimeType?: string; locale?: Locale }) {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   if (!apiKey) {
@@ -3220,6 +4192,10 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
   const textOnlyModels = new Set(parseModelList(Deno.env.get('GEMINI_TEXT_ONLY_MODELS')));
   const timeoutMsCandidate = Number(Deno.env.get('GEMINI_TIMEOUT_MS') ?? '25000');
   const timeoutMs = Number.isFinite(timeoutMsCandidate) ? Math.max(1_000, timeoutMsCandidate) : 25_000;
+  const overloadRetryDelaysMs = [500, 1000, 1500];
+  const overloadRetryJitterMs = 150;
+
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const isQuotaErrorMessage = (message: string) => {
     const lower = message.toLowerCase();
@@ -3229,6 +4205,11 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
       lower.includes('quota exceeded') ||
       lower.includes('rate limit')
     );
+  };
+
+  const isOverloadedErrorMessage = (message: string) => {
+    const lower = message.toLowerCase();
+    return message.includes('Gemini error 503') || lower.includes('overloaded') || lower.includes('unavailable');
   };
 
   const isTimeoutError = (error: unknown) => {
@@ -3455,6 +4436,39 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
   const attemptReports: HedgeAttemptReport[] = [];
   let firstError: Error | null = null;
 
+  const attemptWithRetry = async (model: string, attemptNumber: number, promptMessage: string, includeImage: boolean) => {
+    let lastError: Error | null = null;
+    for (let retryIndex = 0; retryIndex <= overloadRetryDelaysMs.length; retryIndex += 1) {
+      try {
+        const result = await attempt(model, attemptNumber, promptMessage, includeImage);
+        attemptReports.push(result.report);
+        return result;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error('Unknown AI error');
+        lastError = err;
+        if ((err as any).report) {
+          attemptReports.push((err as any).report);
+        }
+
+        const canRetry =
+          retryIndex < overloadRetryDelaysMs.length && isOverloadedErrorMessage(err.message);
+        if (!canRetry) {
+          throw err;
+        }
+        const delayMs =
+          overloadRetryDelaysMs[retryIndex] + Math.floor(Math.random() * overloadRetryJitterMs);
+        console.warn('analyzeMeal: retrying after overload', {
+          model,
+          attempt: attemptNumber,
+          retry: retryIndex + 1,
+          delayMs,
+        });
+        await sleep(delayMs);
+      }
+    }
+    throw lastError ?? new Error('Gemini request failed');
+  };
+
   if (!models.length) {
     throw new Error('No Gemini models configured');
   }
@@ -3481,8 +4495,7 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
         ? `${userMessage}\n\n(You cannot see the attached image. Respond using only the text description.)`
         : userMessage;
     try {
-      const result = await attempt(model, attemptNumber, promptMessage, includeImage);
-      attemptReports.push(result.report);
+      const result = await attemptWithRetry(model, attemptNumber, promptMessage, includeImage);
       if (attemptNumber > 1) {
         result.response.meta = { ...(result.response.meta ?? {}), fallback_model_used: true };
       }
@@ -3491,9 +4504,6 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
       const err = error instanceof Error ? error : new Error('Unknown AI error');
       if (!firstError) {
         firstError = err;
-      }
-      if ((err as any).report) {
-        attemptReports.push((err as any).report);
       }
       if (attemptNumber === 1 && models.length > 1) {
         console.error('analyzeMeal: primary model failed', err);
@@ -3518,6 +4528,10 @@ async function analyzeMeal(params: { message: string; imageBase64?: string; imag
       code: 'AI_UPSTREAM_QUOTA',
       expose: true,
     });
+  }
+
+  if (firstError) {
+    (firstError as any).attemptReports = attemptReports;
   }
 
   throw firstError ?? new Error('Gemini request failed');
