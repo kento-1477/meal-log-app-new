@@ -6,6 +6,7 @@ import { spacing } from '@/theme/spacing';
 import { textStyles, fontFamilies } from '@/theme/typography';
 import type { CalorieChartMode } from '../useCalorieTrend';
 import { DateTime } from 'luxon';
+import { useTranslation } from '@/i18n';
 
 const CHART_HEIGHT = 220;
 const PADDING = 16;
@@ -87,6 +88,7 @@ export function CalorieBarChart({ points, target, mode, config, isLoading, isFet
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const mergedConfig = useMemo(() => mergeConfig(config), [config]);
   const today = useMemo(() => DateTime.now().startOf('day'), []);
+  const { t } = useTranslation();
 
   useEffect(() => {
     setActiveIndex(null);
@@ -201,14 +203,18 @@ export function CalorieBarChart({ points, target, mode, config, isLoading, isFet
   const todayIso = today.toISODate();
   const completion = useMemo(() => {
     if (!stats || stats.totalDays === 0) {
-      return { label: '達成 0日', percent: 0 };
+      return { label: t('dashboard.chart.achievementEmpty'), percent: 0 };
     }
     const percent = Math.min(1, stats.underTargetDays / stats.totalDays);
     return {
-      label: `達成 ${stats.underTargetDays}/${stats.totalDays}日 (${Math.round(percent * 100)}%)`,
+      label: t('dashboard.chart.achievementLabel', {
+        under: stats.underTargetDays,
+        total: stats.totalDays,
+        percent: Math.round(percent * 100),
+      }),
       percent,
     };
-  }, [stats]);
+  }, [stats, t]);
 
   return (
     <View style={styles.wrapper}>
@@ -269,7 +275,7 @@ export function CalorieBarChart({ points, target, mode, config, isLoading, isFet
                       }
                       accessibilityRole="button"
                       accessibilityLabel={`${bar.label}, ${bar.value} kcal${
-                        bar.isFuture ? '（予定日）' : ''
+                        bar.isFuture ? ` ${t('dashboard.chart.futureLabel')}` : ''
                       }`}
                     />
                   );
@@ -277,7 +283,7 @@ export function CalorieBarChart({ points, target, mode, config, isLoading, isFet
               </Svg>
               {targetVisible ? (
                 <Text style={[styles.targetLabel, { top: Math.max(chartData.targetY - 26, 6), right: PADDING }]}>
-                  目標 {target.toLocaleString()} kcal
+                  {t('dashboard.chart.targetLabel', { value: target.toLocaleString() })}
                 </Text>
               ) : null}
               {activeBar ? (

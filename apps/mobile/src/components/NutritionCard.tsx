@@ -1,4 +1,5 @@
 import React from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { GlassCard } from './GlassCard';
 import { colors } from '@/theme/colors';
@@ -30,7 +31,24 @@ export const NutritionCard = React.memo<NutritionCardProps>(function NutritionCa
     warning.startsWith('zeroFloored') ? t('card.warnings.zeroFloored') : warning,
   );
 
-  if (payload.fallbackApplied && payload.requestedLocale && payload.locale && payload.requestedLocale !== payload.locale) {
+  const translationPending =
+    payload.fallbackApplied &&
+    payload.requestedLocale &&
+    payload.locale &&
+    payload.requestedLocale !== payload.locale &&
+    !payload.translations?.[payload.requestedLocale];
+
+  if (translationPending) {
+    baseWarnings.push(t('card.translationPending'));
+  }
+
+  if (
+    !translationPending &&
+    payload.fallbackApplied &&
+    payload.requestedLocale &&
+    payload.locale &&
+    payload.requestedLocale !== payload.locale
+  ) {
     baseWarnings.push(
       t('card.languageFallback', {
         requested: describeLocale(payload.requestedLocale),
@@ -46,86 +64,92 @@ export const NutritionCard = React.memo<NutritionCardProps>(function NutritionCa
   return (
     <GlassCard intensity={30} style={styles.card}>
       <View style={styles.headerRow}>
-        <View style={styles.titleColumn}>
-          <Text style={styles.dish} numberOfLines={1} ellipsizeMode="tail">
-            {payload.dish}
-          </Text>
-          <View style={styles.metaBlock}>
-            <Text style={styles.confidence}>
-              {t('card.confidence', { value: Math.round(payload.confidence * 100) })}
-            </Text>
-            {payload.mealPeriod ? (
-              <Text style={styles.meta} numberOfLines={2}>
-                {t(`meal.${payload.mealPeriod}`)}
-                {payload.timezone ? ` · ${payload.timezone}` : ''}
-              </Text>
-            ) : null}
-          </View>
+        <View style={styles.headerMeta}>
+          {payload.mealPeriod ? (
+            <View style={styles.mealPill}>
+              <Text style={styles.mealPillText}>{t(`meal.${payload.mealPeriod}`)}</Text>
+            </View>
+          ) : null}
         </View>
         <View style={styles.headerActions}>
-          <View style={styles.primaryActions}>
-            {onEdit ? (
-              <TouchableOpacity style={styles.editButton} onPress={onEdit}>
-                <Text style={styles.editLabel}>{t('card.edit')}</Text>
-              </TouchableOpacity>
-            ) : null}
-            <View style={styles.kcalBadge}>
-              <Text style={styles.kcalValue}>{Math.round(payload.totals.kcal)}</Text>
-              <Text style={styles.kcalLabel}>{t('unit.kcal')}</Text>
-            </View>
-          </View>
-          <View style={styles.secondaryActions}>
-            {canAddFavorite ? (
-              <TouchableOpacity
-                style={styles.favoriteButton}
-                onPress={() => payload.favoriteCandidate && onAddFavorite?.(payload.favoriteCandidate)}
-                disabled={addingFavorite}
-              >
-                {addingFavorite ? (
-                  <ActivityIndicator size="small" color={colors.accent} />
-                ) : (
-                  <Text style={styles.favoriteLabel}>★</Text>
-                )}
-              </TouchableOpacity>
-            ) : null}
-            {onShare ? (
-              <TouchableOpacity style={styles.shareButton} onPress={onShare} disabled={sharing}>
-                {sharing ? (
-                  <ActivityIndicator size="small" color={colors.accent} />
-                ) : (
-                  <Text style={styles.shareLabel}>{t('card.share')}</Text>
-                )}
-              </TouchableOpacity>
-            ) : null}
-          </View>
+          {onEdit ? (
+            <TouchableOpacity style={styles.editButton} onPress={onEdit}>
+              <Text style={styles.editLabel}>{t('card.edit')}</Text>
+            </TouchableOpacity>
+          ) : null}
+          {canAddFavorite ? (
+            <TouchableOpacity
+              style={styles.favoriteButton}
+              onPress={() => payload.favoriteCandidate && onAddFavorite?.(payload.favoriteCandidate)}
+              disabled={addingFavorite}
+            >
+              {addingFavorite ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : (
+                <Text style={styles.favoriteLabel}>★</Text>
+              )}
+            </TouchableOpacity>
+          ) : null}
+          {onShare ? (
+            <TouchableOpacity style={styles.shareButton} onPress={onShare} disabled={sharing}>
+              {sharing ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : (
+                <Text style={styles.shareLabel}>{t('card.share')}</Text>
+              )}
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
+      <Text style={styles.dish} numberOfLines={2} ellipsizeMode="tail">
+        {payload.dish}
+      </Text>
+      <View style={styles.metaRow}>
+        {payload.timezone ? <Text style={styles.meta}>{payload.timezone}</Text> : null}
+        <Text style={styles.confidence}>
+          {t('card.confidence', { value: Math.round(payload.confidence * 100) })}
+        </Text>
+      </View>
       <View style={styles.divider} />
+      <LinearGradient
+        colors={[colors.accentSoft, '#FFD586']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.kcalCard}
+      >
+        <Text style={styles.kcalCardLabel}>{t('log.label.calories')}</Text>
+        <View style={styles.kcalValueRow}>
+          <Text style={styles.kcalValue}>{Math.round(payload.totals.kcal)}</Text>
+          <Text style={styles.kcalLabel}>{t('unit.kcal')}</Text>
+        </View>
+      </LinearGradient>
       <View style={styles.macroRow}>
         <MacroPill
           label={t('macro.protein')}
           value={payload.totals.protein_g}
           unit={t('unit.gram')}
-          color="#ff9f0a"
+          color={colors.ringProtein}
         />
         <MacroPill
           label={t('macro.fat')}
           value={payload.totals.fat_g}
           unit={t('unit.gram')}
-          color="#ff453a"
+          color={colors.ringFat}
         />
         <MacroPill
           label={t('macro.carbs')}
           value={payload.totals.carbs_g}
           unit={t('unit.gram')}
-          color="#bf5af2"
+          color={colors.ringCarb}
         />
       </View>
       {payload.items?.length ? (
         <View style={styles.itemsBlock}>
           {payload.items.slice(0, 4).map((item, index) => (
             <View key={`${item.name ?? 'item'}-${index}`} style={styles.itemRow}>
-              <Text style={styles.itemName}>{item.name}</Text>
+              <Text style={styles.itemName} numberOfLines={1} ellipsizeMode="tail">
+                {item.name}
+              </Text>
               <Text style={styles.itemAmount}>{Math.round(item.grams)} g</Text>
             </View>
           ))}
@@ -152,9 +176,7 @@ const MacroPill: React.FC<{ label: string; value: number; unit: string; color: s
 }) => (
   <View style={[styles.macroPill, { backgroundColor: `${color}22`, borderColor: color }]}>
     <Text style={[styles.macroLabel, { color }]}>{label}</Text>
-    <Text style={[styles.macroValue, { color }]}>
-      {Math.round(value)} {unit}
-    </Text>
+    <Text style={[styles.macroValue, { color }]}>{`${Math.round(value)} ${unit}`}</Text>
   </View>
 );
 
@@ -168,22 +190,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  titleColumn: {
-    flex: 1,
-    minWidth: 0,
-    gap: 6,
-  },
-  headerActions: {
-    flexDirection: 'column',
-    alignItems: 'flex-end',
-    gap: 8,
-  },
-  primaryActions: {
+  headerMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexWrap: 'wrap',
+    minHeight: 28,
   },
-  secondaryActions: {
+  headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -191,40 +205,23 @@ const styles = StyleSheet.create({
   dish: {
     ...textStyles.titleMedium,
     color: colors.textPrimary,
-    flexShrink: 1,
+    marginTop: 10,
+    lineHeight: 24,
   },
   confidence: {
     ...textStyles.caption,
     color: colors.accent,
-  },
-  metaBlock: {
-    gap: 2,
+    fontWeight: '600',
   },
   meta: {
     ...textStyles.caption,
     color: colors.textSecondary,
   },
-  kcalBadge: {
-    backgroundColor: colors.accent,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  kcalValue: {
-    color: 'white',
-    fontWeight: '700',
-    fontSize: 18,
-  },
-  kcalLabel: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 11,
-  },
   shareButton: {
     borderWidth: 1,
     borderColor: colors.accent,
     borderRadius: 14,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     justifyContent: 'center',
     alignItems: 'center',
@@ -233,7 +230,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.accent,
     borderRadius: 14,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     justifyContent: 'center',
     alignItems: 'center',
@@ -242,7 +239,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 14,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     justifyContent: 'center',
     alignItems: 'center',
@@ -262,22 +259,70 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: '600',
   },
+  mealPill: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(245,178,37,0.4)',
+  },
+  mealPillText: {
+    ...textStyles.caption,
+    color: colors.accentInk,
+    fontWeight: '700',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 4,
+  },
   divider: {
     height: 1,
     backgroundColor: colors.border,
-    marginVertical: 14,
+    marginVertical: 12,
+  },
+  kcalCard: {
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(245,178,37,0.35)',
+    marginBottom: 8,
+  },
+  kcalCardLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  kcalValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+    marginTop: 6,
+  },
+  kcalValue: {
+    color: colors.accentInk,
+    fontSize: 32,
+    fontWeight: '700',
+  },
+  kcalLabel: {
+    color: colors.accentInk,
+    fontSize: 13,
+    fontWeight: '600',
   },
   macroRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 10,
     marginBottom: 12,
   },
   macroPill: {
     flex: 1,
-    borderRadius: 16,
-    padding: 12,
+    minWidth: 0,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
     borderWidth: 1,
-    marginHorizontal: 4,
   },
   macroLabel: {
     fontSize: 12,
@@ -299,6 +344,8 @@ const styles = StyleSheet.create({
   itemName: {
     ...textStyles.body,
     color: colors.textPrimary,
+    flex: 1,
+    marginRight: 12,
   },
   itemAmount: {
     ...textStyles.body,

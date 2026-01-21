@@ -8,6 +8,7 @@ import { useSessionBootstrap } from '@/hooks/useSessionBootstrap';
 import { useLocaleBootstrap } from '@/hooks/useLocaleBootstrap';
 import { useReferralDeepLink } from '@/hooks/useReferralDeepLink';
 import { useNotificationBootstrap } from '@/hooks/useNotificationBootstrap';
+import { useIapSync } from '@/hooks/useIapSync';
 import { useTranslation } from '@/i18n';
 import { colors } from '@/theme/colors';
 
@@ -17,6 +18,7 @@ export default function RootLayout() {
   useLocaleBootstrap();
   useReferralDeepLink();
   useNotificationBootstrap();
+  useIapSync();
   const { t } = useTranslation();
 
   return (
@@ -31,27 +33,66 @@ export default function RootLayout() {
             <Stack.Screen name="login" options={{ presentation: 'modal' }} />
             <Stack.Screen
               name="log/[id]"
-              options={{ headerShown: true, title: '食事ログの編集', headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.logEdit'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/account"
-              options={{ headerShown: true, title: 'アカウント管理', headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsAccount'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/nutrition"
-              options={{ headerShown: true, title: '栄養目標', headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsNutrition'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/profile"
-              options={{ headerShown: true, title: '目標と現在の体重', headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsProfile'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/notifications"
-              options={{ headerShown: true, title: '通知設定', headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsNotifications'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/language"
-              options={{ headerShown: true, title: '表示言語', headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsLanguage'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
+            />
+            <Stack.Screen
+              name="report"
+              options={{
+                headerShown: true,
+                title: t('report.header'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="paywall"
@@ -59,8 +100,8 @@ export default function RootLayout() {
                 headerShown: true,
                 title: t('paywall.headerTitle'),
                 presentation: 'modal',
-                headerBackTitleVisible: false,
-                headerBackTitle: '',
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
               }}
             />
           </Stack>

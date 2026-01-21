@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ChatMessage, NutritionCardPayload } from '@/types/chat';
+import { translateKey } from '@/i18n';
 
 export interface ChatState {
   messages: ChatMessage[];
@@ -18,6 +19,7 @@ export interface ChatState {
   ) => ChatMessage;
   setMessageText: (id: string, text: string) => void;
   updateMessageStatus: (id: string, status: ChatMessage['status']) => void;
+  updateMessageIngest: (id: string, ingest: Partial<NonNullable<ChatMessage['ingest']>>) => void;
   attachCardToMessage: (id: string, card: NutritionCardPayload) => void;
   updateCardForLog: (logId: string, updates: Partial<NutritionCardPayload>) => void;
   setComposingImage: (uri: string | null) => void;
@@ -29,7 +31,7 @@ function buildInitialMessages(): ChatMessage[] {
     {
       id: nanoid(),
       role: 'assistant',
-      text: 'こんにちは！食事内容を送っていただければ、栄養情報をお返しします🍽️',
+      text: translateKey('chat.welcome'),
       createdAt: Date.now(),
     },
   ];
@@ -77,6 +79,26 @@ export const useChatStore = create<ChatState>()(
           messages: get().messages.map((message) =>
             message.id === id ? { ...message, status } : message,
           ),
+        });
+      },
+      updateMessageIngest: (id, ingestUpdates) => {
+        set({
+          messages: get().messages.map((message) => {
+            if (message.id !== id) {
+              return message;
+            }
+            const currentIngest = message.ingest ?? null;
+            if (!currentIngest) {
+              return message;
+            }
+            return {
+              ...message,
+              ingest: {
+                ...currentIngest,
+                ...ingestUpdates,
+              },
+            };
+          }),
         });
       },
       attachCardToMessage: (id, card) => {

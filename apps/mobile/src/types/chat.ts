@@ -13,6 +13,8 @@ export interface ChatMessage {
   ingest?: {
     requestKey: string;
     userMessageId: string;
+    nextCheckAt?: number | null;
+    deadlineAt?: number | null;
   };
 }
 
