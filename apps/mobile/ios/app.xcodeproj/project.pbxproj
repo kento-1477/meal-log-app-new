@@ -141,6 +141,7 @@
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
 				D9E3B6F0A1C3456789ABCDE0 /* Sync app.json iOS version */,
 				043C3478F28D465C94C509FE /* [Expo] Configure project */,
+				E890A9F6D3BA85B3D7FE8A3A /* Sync app.json iOS version */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
@@ -245,6 +246,17 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-app/expo-configure-project.sh\"\n";
+		};
+		E890A9F6D3BA85B3D7FE8A3A /* Sync app.json iOS version */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			name = "Sync app.json iOS version";
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ -z \"$NODE_BINARY\" ]; then\n  NODE_BINARY=node\nfi\n\"$NODE_BINARY\" \"$SRCROOT/../scripts/sync-ios-version.mjs\"\n";
 		};
 		08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
