@@ -37,77 +37,52 @@ export default function RootLayout() {
             />
             <Stack.Screen
               name="settings/account"
-<<<<<<< Updated upstream
-              options={{ headerShown: true, title: t('screen.settingsAccount'), headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsAccount'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/nutrition"
-              options={{ headerShown: true, title: t('screen.settingsNutrition'), headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsNutrition'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/profile"
-              options={{ headerShown: true, title: t('screen.settingsProfile'), headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsProfile'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/notifications"
-              options={{ headerShown: true, title: t('screen.settingsNotifications'), headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsNotifications'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/language"
-              options={{ headerShown: true, title: t('screen.settingsLanguage'), headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsLanguage'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="report"
               options={{ headerShown: true, title: t('report.header'), headerBackTitleVisible: false, headerBackTitle: '' }}
-=======
-              options={{
-                headerShown: true,
-                title: 'アカウント管理',
-                headerBackTitleVisible: false,
-                headerBackTitle: '',
-                headerBackButtonDisplayMode: 'minimal',
-              }}
-            />
-            <Stack.Screen
-              name="settings/nutrition"
-              options={{
-                headerShown: true,
-                title: '栄養目標',
-                headerBackTitleVisible: false,
-                headerBackTitle: '',
-                headerBackButtonDisplayMode: 'minimal',
-              }}
-            />
-            <Stack.Screen
-              name="settings/profile"
-              options={{
-                headerShown: true,
-                title: '目標と現在の体重',
-                headerBackTitleVisible: false,
-                headerBackTitle: '',
-                headerBackButtonDisplayMode: 'minimal',
-              }}
-            />
-            <Stack.Screen
-              name="settings/notifications"
-              options={{
-                headerShown: true,
-                title: '通知設定',
-                headerBackTitleVisible: false,
-                headerBackTitle: '',
-                headerBackButtonDisplayMode: 'minimal',
-              }}
-            />
-            <Stack.Screen
-              name="settings/language"
-              options={{
-                headerShown: true,
-                title: '表示言語',
-                headerBackTitleVisible: false,
-                headerBackTitle: '',
-                headerBackButtonDisplayMode: 'minimal',
-              }}
->>>>>>> Stashed changes
             />
             <Stack.Screen
               name="paywall"
