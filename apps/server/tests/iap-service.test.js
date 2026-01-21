@@ -152,3 +152,66 @@ test('processIapPurchase grants premium days for premium product', async () => {
   assert.equal(result.premiumStatus.grants.length, 1);
   assert.equal(result.premiumStatus.grants[0].source, 'PURCHASE');
 });
+
+test('processIapPurchase uses receipt expiry when available', async () => {
+  prismaAny.iapReceipt.findUnique = async () => null;
+
+  const grants = [];
+  let grantPayload = null;
+
+  prismaAny.$transaction = async (fn) =>
+    fn({
+      iapReceipt: {
+        create: async ({ data }) => ({ ...data, id: 3 }),
+      },
+      user: {
+        update: async () => ({ aiCredits: 0 }),
+      },
+      premiumGrant: {
+        create: async ({ data }) => {
+          grantPayload = data;
+          grants.push({
+            ...data,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            referralId: null,
+          });
+          return data;
+        },
+      },
+    });
+
+  prismaAny.user.findUnique = async () => ({ aiCredits: 0 });
+  prismaAny.aiUsageCounter.findUnique = async () => ({ count: 0 });
+  prismaAny.premiumGrant.findFirst = async () => (grants.length ? grants[grants.length - 1] : null);
+  prismaAny.premiumGrant.findMany = async () => grants;
+
+  const purchaseDate = new Date('2025-01-01T00:00:00.000Z');
+  const expiresDate = new Date('2025-01-08T00:00:00.000Z');
+
+  const receiptPayload = {
+    transactionId: 'txn-premium-trial-1',
+    productId: 'com.meallog.premium.monthly',
+    quantity: 1,
+    purchaseDate: purchaseDate.toISOString(),
+    expiresDate: expiresDate.toISOString(),
+    environment: 'sandbox',
+  };
+
+  const request = {
+    userId: 101,
+    platform: 'APP_STORE',
+    productId: 'com.meallog.premium.monthly',
+    transactionId: 'txn-premium-trial-1',
+    receiptData: Buffer.from(JSON.stringify(receiptPayload)).toString('base64'),
+    environment: 'sandbox',
+  };
+
+  const result = await processIapPurchase(request);
+
+  assert.ok(grantPayload);
+  assert.equal(grantPayload.days, 7);
+  assert.equal(grantPayload.startDate.toISOString(), purchaseDate.toISOString());
+  assert.equal(grantPayload.endDate.toISOString(), expiresDate.toISOString());
+  assert.equal(result.premiumStatus.isPremium, true);
+});

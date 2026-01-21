@@ -87,15 +87,35 @@ model MealLogPeriodHistory {
 }
 
 model IngestRequest {
-  id         Int      @id @default(autoincrement())
-  user       User     @relation(fields: [userId], references: [id])
-  userId     Int
-  requestKey String
-  log        MealLog? @relation(fields: [logId], references: [id])
-  logId      String?
-  createdAt  DateTime @default(now())
+  id             Int       @id @default(autoincrement())
+  user           User      @relation(fields: [userId], references: [id])
+  userId         Int
+  requestKey     String
+  log            MealLog?  @relation(fields: [logId], references: [id])
+  logId          String?
+  status         String    @default("queued")
+  errorCode      String?
+  errorCategory  String?
+  userMessage    String?
+  debugMessage   String?
+  nextCheckAt    DateTime?
+  deadlineAt     DateTime?
+  attempts       Int       @default(0)
+  modelAttempts  Int       @default(0)
+  inputHash      String?
+  inputHashBucket DateTime? @db.Date
+  promptVersion  String?
+  modelVersion   String?
+  appVersion     String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime  @default(now())
 
   @@unique([userId, requestKey])
+  @@index([status, nextCheckAt])
+  @@index([userId, status, createdAt])
+  @@index([inputHash])
+  @@index([userId, inputHash, inputHashBucket])
 }
 
 model MediaAsset {
@@ -170,6 +190,7 @@ model IapReceipt {
   platform      IapPlatform
   productId     String
   transactionId String       @unique
+  originalTransactionId String?
   environment   String
   quantity      Int          @default(1)
   creditsGranted Int         @default(0)
@@ -181,6 +202,7 @@ model IapReceipt {
   premiumGrants PremiumGrant[]
 
   @@index([userId])
+  @@index([originalTransactionId])
 }
 
 enum Gender {

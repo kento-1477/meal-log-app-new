@@ -55,7 +55,15 @@ export function createApp() {
         if (allowOrigins.length === 0) return origin;
         return allowOrigins.includes(origin) ? origin : allowOrigins[0] ?? origin;
       },
-      allowHeaders: ['Content-Type', 'Authorization', 'X-Timezone', 'X-Device-Id', 'Accept-Language'],
+      allowHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Timezone',
+        'X-Device-Id',
+        'X-App-Version',
+        'Accept-Language',
+        'X-Translation-Mode',
+      ],
       allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       credentials: allowCredentials,
     }),

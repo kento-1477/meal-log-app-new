@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { colors } from '@/theme/colors';
+import { useTranslation } from '@/i18n';
 
 /**
  * Dummy screen so Expo Router can resolve meallog://invite deep links.
@@ -10,6 +11,7 @@ import { colors } from '@/theme/colors';
  */
 export default function InviteRedirectScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -22,8 +24,8 @@ export default function InviteRedirectScreen() {
   return (
     <View style={styles.container}>
       <ActivityIndicator size="large" color={colors.accent} />
-      <Text style={styles.title}>招待リンクを処理しています</Text>
-      <Text style={styles.subtitle}>まもなく画面が切り替わります…</Text>
+      <Text style={styles.title}>{t('invite.processingTitle')}</Text>
+      <Text style={styles.subtitle}>{t('invite.processingSubtitle')}</Text>
     </View>
   );
 }

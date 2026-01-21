@@ -117,10 +117,14 @@ export default function OnboardingAppleConnect() {
       resetDraft();
 
       if (profileResult.referralClaimed && profileResult.referralResult) {
-        Alert.alert(
-          '🎉 プレミアムを獲得しました！',
-          `${profileResult.referralResult.premiumDays}日間のプレミアムが付与されました。${profileResult.referralResult.referrerUsername ?? ''}`.trim(),
-        );
+        const referrerName = profileResult.referralResult.referrerUsername ?? '';
+        const rewardMessage = referrerName
+          ? t('referral.rewardMessageWithReferrer', {
+              days: profileResult.referralResult.premiumDays,
+              referrer: referrerName,
+            })
+          : t('referral.rewardMessage', { days: profileResult.referralResult.premiumDays });
+        Alert.alert(t('referral.rewardTitle'), rewardMessage);
         getPremiumStatus()
           .then((status) => setPremiumStatus(status))
           .catch((err) => console.warn('Failed to refresh premium status', err));
@@ -217,7 +221,7 @@ export default function OnboardingAppleConnect() {
                 disabled={loading}
               />
             ) : (
-              <Text style={styles.unsupportedText}>現在このアプリはiOSのみ対応しています。</Text>
+              <Text style={styles.unsupportedText}>{t('login.unsupportedPlatform')}</Text>
             )}
           </View>
         </View>

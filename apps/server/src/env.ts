@@ -19,6 +19,7 @@ const BaseEnvSchema = z.object({
   AI_TRANSLATION_STRATEGY: z.enum(['ai', 'copy', 'none']).default('ai').optional(),
   TRUST_PROXY: z.string().optional(),
   APP_STORE_SHARED_SECRET: z.string().optional(),
+  APP_STORE_BUNDLE_ID: z.string().optional(),
   GOOGLE_PLAY_SERVICE_ACCOUNT: z.string().optional(),
   IAP_TEST_MODE: z
     .enum(['true', 'false'])
