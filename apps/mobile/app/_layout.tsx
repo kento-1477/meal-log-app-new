@@ -33,7 +33,12 @@ export default function RootLayout() {
             <Stack.Screen name="login" options={{ presentation: 'modal' }} />
             <Stack.Screen
               name="log/[id]"
-              options={{ headerShown: true, title: t('screen.logEdit'), headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.logEdit'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/account"
@@ -82,7 +87,12 @@ export default function RootLayout() {
             />
             <Stack.Screen
               name="report"
-              options={{ headerShown: true, title: t('report.header'), headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('report.header'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="paywall"
@@ -90,8 +100,8 @@ export default function RootLayout() {
                 headerShown: true,
                 title: t('paywall.headerTitle'),
                 presentation: 'modal',
-                headerBackTitleVisible: false,
-                headerBackTitle: '',
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
               }}
             />
           </Stack>
