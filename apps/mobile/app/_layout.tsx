@@ -33,31 +33,66 @@ export default function RootLayout() {
             <Stack.Screen name="login" options={{ presentation: 'modal' }} />
             <Stack.Screen
               name="log/[id]"
-              options={{ headerShown: true, title: t('screen.logEdit'), headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.logEdit'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/account"
-              options={{ headerShown: true, title: t('screen.settingsAccount'), headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsAccount'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/nutrition"
-              options={{ headerShown: true, title: t('screen.settingsNutrition'), headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsNutrition'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/profile"
-              options={{ headerShown: true, title: t('screen.settingsProfile'), headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsProfile'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/notifications"
-              options={{ headerShown: true, title: t('screen.settingsNotifications'), headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsNotifications'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="settings/language"
-              options={{ headerShown: true, title: t('screen.settingsLanguage'), headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('screen.settingsLanguage'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="report"
-              options={{ headerShown: true, title: t('report.header'), headerBackTitleVisible: false, headerBackTitle: '' }}
+              options={{
+                headerShown: true,
+                title: t('report.header'),
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
+              }}
             />
             <Stack.Screen
               name="paywall"
@@ -65,8 +100,8 @@ export default function RootLayout() {
                 headerShown: true,
                 title: t('paywall.headerTitle'),
                 presentation: 'modal',
-                headerBackTitleVisible: false,
-                headerBackTitle: '',
+                headerBackTitleVisible: true,
+                headerBackTitle: t('common.back'),
               }}
             />
           </Stack>
