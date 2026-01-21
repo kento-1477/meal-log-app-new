@@ -55,20 +55,22 @@ export default function ReferralStatusScreen() {
   const steps = useMemo(
     () => [
       {
-        title: 'リンク／コードを贈る',
-        description: '勢いのあるひと言と一緒に送るとリアクション率UP',
+        title: t('referral.status.steps.send.title'),
+        description: t('referral.status.steps.send.description'),
       },
       {
-        title: '友だちが登録＆14日無料スタート',
-        description: 'スタートした瞬間からプレミアム体験が始まります',
+        title: t('referral.status.steps.friend.title'),
+        description: t('referral.status.steps.friend.description'),
       },
       {
-        title: '3日連続ログであなたに+30日',
-        description: '3日続けば勝ち確。勢いそのままプレミアム延長',
+        title: t('referral.status.steps.reward.title'),
+        description: t('referral.status.steps.reward.description'),
       },
     ],
-    []
+    [t],
   );
+
+  const shareLink = status?.webLink || status?.inviteLink || '';
 
   const handleCopyCode = () => {
     if (!status?.inviteCode) return;
@@ -85,11 +87,11 @@ export default function ReferralStatusScreen() {
   };
 
   const handleCopyLink = () => {
-    if (!status?.inviteLink) return;
+    if (!shareLink) return;
 
     try {
       setIsCopyingLink(true);
-      Clipboard.setString(status.inviteLink);
+      Clipboard.setString(shareLink);
       Alert.alert(t('referral.status.linkCopied'));
     } catch (err) {
       console.error('Failed to copy link:', err);
@@ -99,10 +101,10 @@ export default function ReferralStatusScreen() {
   };
 
   const handleShareLink = async () => {
-    if (!status?.inviteLink) return;
+    if (!shareLink) return;
 
     try {
-      const message = t('referral.share.message', { link: status.inviteLink });
+      const message = t('referral.share.message', { link: shareLink });
       await Share.share({
         title: t('referral.share.title'),
         message,
@@ -131,7 +133,7 @@ export default function ReferralStatusScreen() {
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error || t('referral.error.loadFailed')}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={refresh}>
-            <Text style={styles.retryButtonText}>再読み込み</Text>
+            <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -155,24 +157,22 @@ export default function ReferralStatusScreen() {
             <View style={styles.heroPillRow}>
               <View style={styles.heroPill}>
                 <Feather name="zap" size={14} color="#FFDDB2" />
-                <Text style={styles.heroPillText}>プレミアム招待状</Text>
+                <Text style={styles.heroPillText}>{t('referral.status.hero.pillPrimary')}</Text>
               </View>
               <View style={[styles.heroPill, styles.heroPillSecondary]}>
-                <Text style={styles.heroPillText}>3日連続ログで解放</Text>
+                <Text style={styles.heroPillText}>{t('referral.status.hero.pillSecondary')}</Text>
               </View>
             </View>
-            <Text style={styles.heroTitle}>友だちを招待して{`\n`}プレミアム延長</Text>
-            <Text style={styles.heroSubtitle}>
-              友だちが3日連続で記録すると、あなたは+30日、友だちは14日無料。勢いのある今だからこそ仲間を増やそう。
-            </Text>
+            <Text style={styles.heroTitle}>{t('referral.status.hero.title')}</Text>
+            <Text style={styles.heroSubtitle}>{t('referral.status.hero.subtitle')}</Text>
             <View style={styles.heroRewardRow}>
               <View style={[styles.rewardBubble, styles.rewardBubblePrimary]}>
-                <Text style={styles.rewardLabel}>あなた</Text>
-                <Text style={styles.rewardValue}>+30日</Text>
+                <Text style={styles.rewardLabel}>{t('referral.status.hero.youLabel')}</Text>
+                <Text style={styles.rewardValue}>{t('referral.status.hero.youValue')}</Text>
               </View>
               <View style={[styles.rewardBubble, styles.rewardBubbleSecondary]}>
-                <Text style={styles.rewardLabel}>友だち</Text>
-                <Text style={styles.rewardValue}>14日無料</Text>
+                <Text style={styles.rewardLabel}>{t('referral.status.hero.friendLabel')}</Text>
+                <Text style={styles.rewardValue}>{t('referral.status.hero.friendValue')}</Text>
               </View>
             </View>
           </View>
@@ -205,7 +205,7 @@ export default function ReferralStatusScreen() {
                 <Text style={styles.sectionEyebrow}>{t('referral.status.inviteCode')}</Text>
                 <View style={styles.codeRow}>
                   <View>
-                    <Text style={styles.codeHelper}>いつでもタップでコピー</Text>
+                    <Text style={styles.codeHelper}>{t('referral.status.codeHelper')}</Text>
                     <Text style={styles.inviteCode}>{status.inviteCode}</Text>
                   </View>
                   <TouchableOpacity style={styles.copyIconBtn} onPress={handleCopyCode} disabled={isCopyingCode}>
@@ -221,7 +221,7 @@ export default function ReferralStatusScreen() {
 
             <View style={styles.actionsRow}>
               <TouchableOpacity style={styles.primaryButton} onPress={handleShareLink}>
-                <Text style={styles.primaryButtonText}>リンクをシェア</Text>
+                <Text style={styles.primaryButtonText}>{t('referral.status.shareLink')}</Text>
                 <Feather name="share-2" size={18} color="#fff" />
               </TouchableOpacity>
               <TouchableOpacity style={styles.secondaryButton} onPress={handleCopyLink} disabled={isCopyingLink}>
@@ -230,7 +230,7 @@ export default function ReferralStatusScreen() {
                 ) : (
                   <Feather name="link-2" size={18} color={colors.textPrimary} />
                 )}
-                <Text style={styles.secondaryButtonText}>リンクをコピー</Text>
+                <Text style={styles.secondaryButtonText}>{t('referral.status.copyLink')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -260,8 +260,8 @@ export default function ReferralStatusScreen() {
             />
             <View style={styles.cardInner}>
               <View style={styles.cardHeader}>
-                <Text style={styles.sectionTitle}>進捗トラッカー</Text>
-                <Text style={styles.cardHint}>リアルタイム更新</Text>
+                <Text style={styles.sectionTitle}>{t('referral.status.progressTitle')}</Text>
+                <Text style={styles.cardHint}>{t('referral.status.progressHint')}</Text>
               </View>
               <View style={styles.statsGrid}>
                 {stats.map((stat) => (
@@ -298,7 +298,7 @@ export default function ReferralStatusScreen() {
               style={styles.rainbowSheenSecondary}
             />
             <View style={styles.cardInner}>
-              <Text style={styles.sectionTitle}>特典の受け取り方</Text>
+              <Text style={styles.sectionTitle}>{t('referral.status.steps.title')}</Text>
               {steps.map((step, index) => (
                 <View key={step.title} style={styles.stepRow}>
                   <View style={styles.stepIndexWrap}>
@@ -313,7 +313,7 @@ export default function ReferralStatusScreen() {
             </View>
           </View>
 
-          <Text style={styles.disclaimer}>※ 自分への招待や不正は特典対象外です</Text>
+          <Text style={styles.disclaimer}>{t('referral.status.disclaimer')}</Text>
 
           <View style={styles.recentCard}>
             <BlurView tint="light" intensity={55} style={styles.blurLayer} />

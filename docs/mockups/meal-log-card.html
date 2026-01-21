@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>食事ログカード（モック）</title>
+    <style>
+      :root {
+        --bg: #f6f1e7;
+        --bg-deep: #efe4d2;
+        --card: rgba(255, 255, 255, 0.92);
+        --ink: #262421;
+        --subtext: #6d6a65;
+        --muted: #8e8a83;
+        --accent: #f3a43c;
+        --accent-strong: #e5742b;
+        --mint: #6fb18b;
+        --shadow: rgba(26, 24, 20, 0.18);
+        --outline: rgba(38, 36, 33, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Avenir Next", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic Medium", sans-serif;
+        color: var(--ink);
+        background: radial-gradient(circle at 12% 15%, #ffffff 0, transparent 45%),
+          radial-gradient(circle at 88% 8%, #fff4da 0, transparent 45%),
+          linear-gradient(160deg, var(--bg) 10%, #f0ece4 45%, #e7f1ea 100%);
+      }
+
+      .stage {
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 28px 16px 40px;
+      }
+
+      .device {
+        width: min(440px, 100%);
+        aspect-ratio: 390 / 844;
+        border-radius: 42px;
+        background: linear-gradient(165deg, rgba(255, 255, 255, 0.9), rgba(246, 241, 231, 0.94));
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.28);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .device::before {
+        content: "";
+        position: absolute;
+        inset: -40% 0 auto;
+        height: 60%;
+        background: radial-gradient(circle at 30% 30%, rgba(243, 164, 60, 0.3), transparent 60%),
+          radial-gradient(circle at 70% 20%, rgba(111, 177, 139, 0.24), transparent 60%);
+        opacity: 0.8;
+      }
+
+      .device::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: repeating-linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.2) 0,
+          rgba(255, 255, 255, 0.2) 6px,
+          transparent 6px,
+          transparent 12px
+        );
+        opacity: 0.18;
+        pointer-events: none;
+      }
+
+      .safe {
+        position: relative;
+        height: 100%;
+        padding: 58px 20px 28px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      .card {
+        background: var(--card);
+        border-radius: 28px;
+        border: 1px solid rgba(255, 255, 255, 0.85);
+        outline: 1px solid var(--outline);
+        outline-offset: -1px;
+        padding: 22px;
+        box-shadow: 0 18px 36px var(--shadow);
+        backdrop-filter: blur(18px);
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        animation: cardIn 700ms ease both;
+      }
+
+      .top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .meal-meta {
+        display: grid;
+        gap: 6px;
+      }
+
+      .meal-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(243, 164, 60, 0.16);
+        color: #b35b19;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        width: fit-content;
+      }
+
+      .meal-name {
+        margin: 0;
+        font-size: 20px;
+        letter-spacing: -0.01em;
+      }
+
+      .meal-time {
+        margin: 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .btn {
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        background: #fff;
+        color: var(--ink);
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 0 8px 14px rgba(26, 24, 20, 0.06);
+      }
+
+      .btn.ghost {
+        background: rgba(255, 255, 255, 0.7);
+      }
+
+      .btn.primary {
+        background: linear-gradient(140deg, var(--accent) 10%, var(--accent-strong));
+        color: #fff;
+        border: none;
+      }
+
+      .btn.icon {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.85);
+      }
+
+      .hero {
+        display: grid;
+        gap: 14px;
+      }
+
+      .calories {
+        position: relative;
+        padding: 18px 20px 16px;
+        border-radius: 22px;
+        background: linear-gradient(140deg, rgba(255, 237, 197, 0.96), rgba(255, 206, 132, 0.96));
+        box-shadow: inset 0 0 0 1px rgba(243, 164, 60, 0.4), 0 16px 24px rgba(229, 116, 43, 0.18);
+        overflow: hidden;
+      }
+
+      .calories::after {
+        content: "";
+        position: absolute;
+        right: -40px;
+        top: -40px;
+        width: 120px;
+        height: 120px;
+        background: radial-gradient(circle, rgba(255, 255, 255, 0.65), transparent 70%);
+        opacity: 0.8;
+      }
+
+      .calories-label {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: #9c4d16;
+        font-weight: 700;
+      }
+
+      .calories-value {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-top: 4px;
+      }
+
+      .calories-value .num {
+        font-size: 56px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        line-height: 1;
+        font-family: "Avenir Next Condensed", "DIN Condensed", "Hiragino Kaku Gothic ProN", sans-serif;
+      }
+
+      .calories-value .unit {
+        font-size: 18px;
+        font-weight: 700;
+        color: #9c4d16;
+      }
+
+      .calories-foot {
+        margin: 8px 0 0;
+        font-size: 12px;
+        color: #8a5a35;
+        font-weight: 600;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .metric {
+        background: rgba(255, 255, 255, 0.85);
+        border-radius: 16px;
+        border: 1px solid rgba(38, 36, 33, 0.08);
+        padding: 12px 14px;
+        display: grid;
+        gap: 4px;
+      }
+
+      .metric-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .metric-value {
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .macro-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+
+      .macro {
+        border-radius: 16px;
+        padding: 12px 10px;
+        text-align: center;
+        border: 1px solid rgba(38, 36, 33, 0.08);
+        background: rgba(255, 255, 255, 0.85);
+        display: grid;
+        gap: 6px;
+      }
+
+      .macro-label {
+        font-size: 12px;
+        color: var(--subtext);
+        font-weight: 700;
+      }
+
+      .macro-value {
+        font-size: 20px;
+        font-weight: 800;
+      }
+
+      .macro-value span {
+        font-size: 12px;
+        color: var(--muted);
+        margin-left: 2px;
+        font-weight: 600;
+      }
+
+      .macro.protein {
+        background: rgba(255, 245, 225, 0.9);
+        border-color: rgba(243, 164, 60, 0.35);
+        color: #a8641f;
+      }
+
+      .macro.fat {
+        background: rgba(255, 235, 231, 0.9);
+        border-color: rgba(231, 116, 105, 0.35);
+        color: #b54f48;
+      }
+
+      .macro.carbs {
+        background: rgba(236, 245, 255, 0.9);
+        border-color: rgba(94, 146, 216, 0.35);
+        color: #2e5e9b;
+      }
+
+      .note {
+        display: grid;
+        grid-template-columns: 36px 1fr;
+        gap: 10px;
+        align-items: start;
+        background: rgba(235, 247, 240, 0.9);
+        border-radius: 16px;
+        padding: 12px 12px;
+        border: 1px solid rgba(111, 177, 139, 0.4);
+        color: #2e6b4c;
+      }
+
+      .note-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 12px;
+        background: rgba(111, 177, 139, 0.18);
+        display: grid;
+        place-items: center;
+        font-weight: 800;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+      }
+
+      .note-text {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
+      .reveal {
+        animation: rise 700ms ease both;
+      }
+
+      .reveal.delay-1 {
+        animation-delay: 120ms;
+      }
+
+      .reveal.delay-2 {
+        animation-delay: 240ms;
+      }
+
+      .reveal.delay-3 {
+        animation-delay: 360ms;
+      }
+
+      .reveal.delay-4 {
+        animation-delay: 480ms;
+      }
+
+      @keyframes cardIn {
+        from {
+          opacity: 0;
+          transform: translateY(14px) scale(0.98);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 520px) {
+        .device {
+          aspect-ratio: auto;
+        }
+
+        .safe {
+          padding: 48px 16px 24px;
+        }
+
+        .card {
+          padding: 20px 16px;
+        }
+
+        .calories-value .num {
+          font-size: 48px;
+        }
+
+        .actions {
+          gap: 6px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .card,
+        .reveal {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <div class="device">
+        <div class="safe">
+          <main class="card">
+            <header class="top reveal">
+              <div class="meal-meta">
+                <span class="meal-chip">間食</span>
+                <h1 class="meal-name">コーラ</h1>
+                <p class="meal-time">今日 14:12</p>
+              </div>
+              <div class="actions">
+                <button class="btn ghost" type="button">編集</button>
+                <button class="btn icon" type="button" aria-label="お気に入り">★</button>
+                <button class="btn primary" type="button">共有</button>
+              </div>
+            </header>
+
+            <section class="hero reveal delay-1">
+              <div class="calories">
+                <div class="calories-label">カロリー</div>
+                <div class="calories-value">
+                  <span class="num">225</span>
+                  <span class="unit">kcal</span>
+                </div>
+                <p class="calories-foot">目標 2,000 kcal の 11%</p>
+              </div>
+              <div class="metrics">
+                <div class="metric">
+                  <div class="metric-label">内容量</div>
+                  <div class="metric-value">500 g</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">糖質</div>
+                  <div class="metric-value">57 g</div>
+                </div>
+              </div>
+            </section>
+
+            <section class="macro-grid reveal delay-2">
+              <div class="macro protein">
+                <div class="macro-label">たんぱく質</div>
+                <div class="macro-value">0<span>g</span></div>
+              </div>
+              <div class="macro fat">
+                <div class="macro-label">脂質</div>
+                <div class="macro-value">0<span>g</span></div>
+              </div>
+              <div class="macro carbs">
+                <div class="macro-label">炭水化物</div>
+                <div class="macro-value">57<span>g</span></div>
+              </div>
+            </section>
+
+            <section class="note reveal delay-3">
+              <div class="note-icon">AI</div>
+              <p class="note-text">AIアドバイス: たんぱく質が0gなので、次の間食にプロテインやナッツを足すとバランスが整います。</p>
+            </section>
+          </main>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

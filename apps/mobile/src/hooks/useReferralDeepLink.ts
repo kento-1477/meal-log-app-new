@@ -9,6 +9,7 @@ import { useURL } from 'expo-linking';
 import { useSessionStore } from '@/store/session';
 import { trackReferralPremiumClaimedFriend } from '@/analytics/events';
 import { claimReferralCodeApi, getSession } from '@/services/api';
+import { useTranslation } from '@/i18n';
 
 interface ReferralError extends Error {
   status?: number;
@@ -23,6 +24,7 @@ export function useReferralDeepLink() {
   const setOnboarding = useSessionStore((state) => state.setOnboarding);
   const [isProcessing, setIsProcessing] = useState(false);
   const lastProcessedUrlRef = useRef<string | null>(null);
+  const { t } = useTranslation();
 
   const refreshSessionState = useCallback(async () => {
     try {
@@ -44,8 +46,14 @@ export function useReferralDeepLink() {
       try {
         const parsed = new URL(url);
         
-        // meallog://invite?code=XXXXXX の形式を確認
-        if (parsed.hostname !== 'invite' && parsed.pathname !== '/invite') {
+        const normalizedPath = parsed.pathname.replace(/\/+$/, '');
+        const isAppInvite = parsed.protocol === 'meallog:' && parsed.hostname === 'invite';
+        const isWebInvite =
+          (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
+          (parsed.hostname === 'meal-log.app' || parsed.hostname === 'www.meal-log.app') &&
+          normalizedPath === '/invite';
+
+        if (!isAppInvite && !isWebInvite) {
           return;
         }
 
@@ -65,21 +73,27 @@ export function useReferralDeepLink() {
           // ログイン済み：即座にclaim
           try {
             const result = await claimReferralCodeApi(code.trim());
+            const rewardMessage = result.referrerUsername
+              ? t('referral.rewardMessageWithReferrer', {
+                  days: result.premiumDays,
+                  referrer: result.referrerUsername,
+                })
+              : t('referral.rewardMessage', { days: result.premiumDays });
             Alert.alert(
-              '🎉 プレミアムを獲得しました！',
-              `${result.premiumDays}日間のプレミアムが付与されました。${result.referrerUsername ?? ''}さんからの紹介ありがとうございます！`.trim(),
+              t('referral.rewardTitle'),
+              rewardMessage,
             );
             trackReferralPremiumClaimedFriend({ referrer: result.referrerUsername });
             await refreshSessionState();
           } catch (error) {
             const referralError = error as ReferralError;
-            const message = referralError.message ?? '招待コードの適用に失敗しました';
-            Alert.alert('エラー', message);
+            const message = referralError.message ?? t('referral.error.claimFailed');
+            Alert.alert(t('common.errorTitle'), message);
           }
         } else {
           Alert.alert(
-            '招待コードを受け取りました',
-            `コード: ${code}\nオンボーディングの「友人」選択で入力してください。`
+            t('referral.receivedTitle'),
+            t('referral.receivedMessage', { code }),
           );
         }
       } catch (error) {
@@ -91,7 +105,7 @@ export function useReferralDeepLink() {
     };
 
     void handleDeepLink();
-  }, [hydrated, url, user, isProcessing, refreshSessionState]);
+  }, [hydrated, url, user, isProcessing, refreshSessionState, t]);
 
   // 未ログイン時のコードは保存しない（その場での入力のみ）
 }
