@@ -222,6 +222,83 @@ export const AiUsageSummarySchema = z.object({
 
 export type AiUsageSummary = z.infer<typeof AiUsageSummarySchema>;
 
+export const AiReportPeriodSchema = z.enum(['daily', 'weekly', 'monthly']);
+export type AiReportPeriod = z.infer<typeof AiReportPeriodSchema>;
+
+export const AiReportRequestSchema = z.object({
+  period: AiReportPeriodSchema,
+});
+
+export type AiReportRequest = z.infer<typeof AiReportRequestSchema>;
+
+export const AiReportSummarySchema = z.object({
+  headline: z.string().min(1),
+  score: z.coerce.number().min(0).max(100),
+  highlights: z.array(z.string().min(1)).min(1).max(5),
+});
+
+export type AiReportSummary = z.infer<typeof AiReportSummarySchema>;
+
+export const AiReportMetricSchema = z.object({
+  label: z.string().min(1),
+  value: z.string().min(1),
+  note: z.string().min(1).optional(),
+});
+
+export type AiReportMetric = z.infer<typeof AiReportMetricSchema>;
+
+export const AiReportAdviceSchema = z.object({
+  priority: z.enum(['high', 'medium', 'low']),
+  title: z.string().min(1),
+  detail: z.string().min(1),
+});
+
+export type AiReportAdvice = z.infer<typeof AiReportAdviceSchema>;
+
+export const AiReportIngredientSchema = z.object({
+  name: z.string().min(1),
+  reason: z.string().min(1),
+});
+
+export type AiReportIngredient = z.infer<typeof AiReportIngredientSchema>;
+
+export const AiReportContentSchema = z.object({
+  summary: AiReportSummarySchema,
+  metrics: z.array(AiReportMetricSchema).min(1).max(6),
+  advice: z.array(AiReportAdviceSchema).min(1).max(3),
+  ingredients: z.array(AiReportIngredientSchema).min(1).max(3),
+});
+
+export type AiReportContent = z.infer<typeof AiReportContentSchema>;
+
+export const AiReportResponseSchema = AiReportContentSchema.extend({
+  period: AiReportPeriodSchema,
+  range: z.object({
+    from: z.string(),
+    to: z.string(),
+    timezone: z.string(),
+  }),
+  meta: z
+    .object({
+      model: z.string().optional(),
+      fallback_model_used: z.boolean().optional(),
+      attempt: z.number().optional(),
+      latencyMs: z.number().optional(),
+      attemptReports: z.array(HedgeAttemptReportSchema).optional(),
+    })
+    .optional(),
+});
+
+export type AiReportResponse = z.infer<typeof AiReportResponseSchema>;
+
+export const AiReportApiResponseSchema = z.object({
+  ok: z.literal(true),
+  report: AiReportResponseSchema,
+  usage: AiUsageSummarySchema.optional(),
+});
+
+export type AiReportApiResponse = z.infer<typeof AiReportApiResponseSchema>;
+
 export const IapPurchaseRequestSchema = z.object({
   platform: IapPlatformSchema,
   productId: z.string().min(1),
@@ -536,6 +613,49 @@ export const UpdateUserProfileRequestSchema = z
   });
 
 export type UpdateUserProfileRequest = z.infer<typeof UpdateUserProfileRequestSchema>;
+
+export const NotificationSettingsSchema = z.object({
+  reminder_enabled: z.boolean(),
+  important_enabled: z.boolean(),
+  quiet_hours_start: z.number().int().min(0).max(1439),
+  quiet_hours_end: z.number().int().min(0).max(1439),
+  daily_cap: z.number().int().min(1).max(5),
+  timezone: z.string().min(1),
+});
+
+export type NotificationSettings = z.infer<typeof NotificationSettingsSchema>;
+
+export const NotificationSettingsResponseSchema = z.object({
+  ok: z.literal(true),
+  settings: NotificationSettingsSchema,
+});
+
+export type NotificationSettingsResponse = z.infer<typeof NotificationSettingsResponseSchema>;
+
+export const NotificationSettingsUpdateRequestSchema = NotificationSettingsSchema.partial().refine(
+  (data) => Object.keys(data).length > 0,
+  {
+    message: 'At least one field must be provided',
+  },
+);
+
+export type NotificationSettingsUpdateRequest = z.infer<typeof NotificationSettingsUpdateRequestSchema>;
+
+export const PushTokenRegisterRequestSchema = z.object({
+  expo_token: z.string().min(1),
+  device_id: z.string().min(1),
+  platform: z.enum(['IOS']),
+  locale: z.string().min(1).max(20).optional().nullable(),
+  timezone: z.string().min(1).max(60).optional().nullable(),
+});
+
+export type PushTokenRegisterRequest = z.infer<typeof PushTokenRegisterRequestSchema>;
+
+export const PushTokenDisableRequestSchema = z.object({
+  device_id: z.string().min(1),
+});
+
+export type PushTokenDisableRequest = z.infer<typeof PushTokenDisableRequestSchema>;
 
 export const OnboardingStatusSchema = z.object({
   completed: z.boolean(),

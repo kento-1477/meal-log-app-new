@@ -1,4 +1,6 @@
 PODS:
+  - EXApplication (6.1.5):
+    - ExpoModulesCore
   - EXConstants (18.0.10):
     - ExpoModulesCore
   - EXImageLoader (6.0.0):
@@ -6,8 +8,7 @@ PODS:
     - React-Core
   - EXInAppPurchases (14.6.0):
     - ExpoModulesCore
-  - EXJSONUtils (0.15.0)
-  - EXManifests (1.0.9):
+  - EXNotifications (0.31.4):
     - ExpoModulesCore
   - Expo (54.0.25):
     - ExpoModulesCore
@@ -29,177 +30,6 @@ PODS:
     - React-rendererdebug
     - React-utils
     - ReactAppDependencyProvider
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - ReactNativeDependencies
-    - Yoga
-  - expo-dev-client (6.0.18):
-    - EXManifests
-    - expo-dev-launcher
-    - expo-dev-menu
-    - expo-dev-menu-interface
-    - EXUpdatesInterface
-  - expo-dev-launcher (6.0.18):
-    - EXManifests
-    - expo-dev-launcher/Main (= 6.0.18)
-    - expo-dev-menu
-    - expo-dev-menu-interface
-    - ExpoModulesCore
-    - EXUpdatesInterface
-    - hermes-engine
-    - RCTRequired
-    - RCTTypeSafety
-    - React-Core
-    - React-Core-prebuilt
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
-    - React-ImageManager
-    - React-jsi
-    - React-jsinspector
-    - React-NativeModulesApple
-    - React-RCTAppDelegate
-    - React-RCTFabric
-    - React-renderercss
-    - React-rendererdebug
-    - React-utils
-    - ReactAppDependencyProvider
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - ReactNativeDependencies
-    - Yoga
-  - expo-dev-launcher/Main (6.0.18):
-    - EXManifests
-    - expo-dev-launcher/Unsafe
-    - expo-dev-menu
-    - expo-dev-menu-interface
-    - ExpoModulesCore
-    - EXUpdatesInterface
-    - hermes-engine
-    - RCTRequired
-    - RCTTypeSafety
-    - React-Core
-    - React-Core-prebuilt
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
-    - React-ImageManager
-    - React-jsi
-    - React-jsinspector
-    - React-NativeModulesApple
-    - React-RCTAppDelegate
-    - React-RCTFabric
-    - React-renderercss
-    - React-rendererdebug
-    - React-utils
-    - ReactAppDependencyProvider
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - ReactNativeDependencies
-    - Yoga
-  - expo-dev-launcher/Unsafe (6.0.18):
-    - EXManifests
-    - expo-dev-menu
-    - expo-dev-menu-interface
-    - ExpoModulesCore
-    - EXUpdatesInterface
-    - hermes-engine
-    - RCTRequired
-    - RCTTypeSafety
-    - React-Core
-    - React-Core-prebuilt
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
-    - React-ImageManager
-    - React-jsi
-    - React-jsinspector
-    - React-NativeModulesApple
-    - React-RCTAppDelegate
-    - React-RCTFabric
-    - React-renderercss
-    - React-rendererdebug
-    - React-utils
-    - ReactAppDependencyProvider
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - ReactNativeDependencies
-    - Yoga
-  - expo-dev-menu (7.0.17):
-    - expo-dev-menu/Main (= 7.0.17)
-    - expo-dev-menu/ReactNativeCompatibles (= 7.0.17)
-    - hermes-engine
-    - RCTRequired
-    - RCTTypeSafety
-    - React-Core
-    - React-Core-prebuilt
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
-    - React-ImageManager
-    - React-jsi
-    - React-NativeModulesApple
-    - React-RCTFabric
-    - React-renderercss
-    - React-rendererdebug
-    - React-utils
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - ReactNativeDependencies
-    - Yoga
-  - expo-dev-menu-interface (2.0.0)
-  - expo-dev-menu/Main (7.0.17):
-    - EXManifests
-    - expo-dev-menu-interface
-    - ExpoModulesCore
-    - hermes-engine
-    - RCTRequired
-    - RCTTypeSafety
-    - React-Core
-    - React-Core-prebuilt
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
-    - React-ImageManager
-    - React-jsi
-    - React-jsinspector
-    - React-NativeModulesApple
-    - React-RCTFabric
-    - React-renderercss
-    - React-rendererdebug
-    - React-utils
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - ReactNativeDependencies
-    - Yoga
-  - expo-dev-menu/ReactNativeCompatibles (7.0.17):
-    - hermes-engine
-    - RCTRequired
-    - RCTTypeSafety
-    - React-Core
-    - React-Core-prebuilt
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
-    - React-ImageManager
-    - React-jsi
-    - React-NativeModulesApple
-    - React-RCTFabric
-    - React-renderercss
-    - React-rendererdebug
-    - React-utils
     - ReactCodegen
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
@@ -255,9 +85,9 @@ PODS:
     - ExpoModulesCore
   - ExpoSharing (14.0.7):
     - ExpoModulesCore
-  - ExpoWidgets (3.0.3):
+  - ExpoStoreReview (9.0.9):
     - ExpoModulesCore
-  - EXUpdatesInterface (2.0.0):
+  - ExpoWidgets (3.0.3):
     - ExpoModulesCore
   - FBLazyVector (0.81.5)
   - hermes-engine (0.81.5):
@@ -2267,16 +2097,12 @@ PODS:
   - Yoga (0.0.0)
 
 DEPENDENCIES:
+  - EXApplication (from `../../../node_modules/expo-application/ios`)
   - EXConstants (from `../../../node_modules/expo-constants/ios`)
   - EXImageLoader (from `../../../node_modules/expo-image-loader/ios`)
   - EXInAppPurchases (from `../../../node_modules/expo-in-app-purchases/ios`)
-  - EXJSONUtils (from `../../../node_modules/expo-json-utils/ios`)
-  - EXManifests (from `../../../node_modules/expo-manifests/ios`)
+  - EXNotifications (from `../../../node_modules/expo-notifications/ios`)
   - Expo (from `../../../node_modules/expo`)
-  - expo-dev-client (from `../../../node_modules/expo-dev-client/ios`)
-  - expo-dev-launcher (from `../../../node_modules/expo-dev-launcher`)
-  - expo-dev-menu (from `../../../node_modules/expo-dev-menu`)
-  - expo-dev-menu-interface (from `../../../node_modules/expo-dev-menu-interface/ios`)
   - ExpoAppleAuthentication (from `../../../node_modules/expo-apple-authentication/ios`)
   - ExpoAsset (from `../../../node_modules/expo-asset/ios`)
   - ExpoBlur (from `../../../node_modules/expo-blur/ios`)
@@ -2291,8 +2117,8 @@ DEPENDENCIES:
   - ExpoPrint (from `../../../node_modules/expo-print/ios`)
   - ExpoSecureStore (from `../../../node_modules/expo-secure-store/ios`)
   - ExpoSharing (from `../../../node_modules/expo-sharing/ios`)
+  - ExpoStoreReview (from `../../../node_modules/expo-store-review/ios`)
   - ExpoWidgets (from `../../../node_modules/expo-widget/ios`)
-  - EXUpdatesInterface (from `../../../node_modules/expo-updates-interface/ios`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
   - RCTDeprecation (from `../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
@@ -2365,32 +2191,24 @@ DEPENDENCIES:
   - "RNCClipboard (from `../../../node_modules/@react-native-clipboard/clipboard`)"
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
   - RNReanimated (from `../node_modules/react-native-reanimated`)
-  - RNScreens (from `/Users/a81808/Desktop/meal-log-app-new/apps/mobile/node_modules/react-native-screens`)
+  - RNScreens (from `/Users/a81808/Desktop/meal-log-app-new-nutrition/apps/mobile/node_modules/react-native-screens`)
   - RNSVG (from `../node_modules/react-native-svg`)
   - RNWorklets (from `../node_modules/react-native-worklets`)
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
 EXTERNAL SOURCES:
+  EXApplication:
+    :path: "../../../node_modules/expo-application/ios"
   EXConstants:
     :path: "../../../node_modules/expo-constants/ios"
   EXImageLoader:
     :path: "../../../node_modules/expo-image-loader/ios"
   EXInAppPurchases:
     :path: "../../../node_modules/expo-in-app-purchases/ios"
-  EXJSONUtils:
-    :path: "../../../node_modules/expo-json-utils/ios"
-  EXManifests:
-    :path: "../../../node_modules/expo-manifests/ios"
+  EXNotifications:
+    :path: "../../../node_modules/expo-notifications/ios"
   Expo:
     :path: "../../../node_modules/expo"
-  expo-dev-client:
-    :path: "../../../node_modules/expo-dev-client/ios"
-  expo-dev-launcher:
-    :path: "../../../node_modules/expo-dev-launcher"
-  expo-dev-menu:
-    :path: "../../../node_modules/expo-dev-menu"
-  expo-dev-menu-interface:
-    :path: "../../../node_modules/expo-dev-menu-interface/ios"
   ExpoAppleAuthentication:
     :path: "../../../node_modules/expo-apple-authentication/ios"
   ExpoAsset:
@@ -2419,10 +2237,10 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/expo-secure-store/ios"
   ExpoSharing:
     :path: "../../../node_modules/expo-sharing/ios"
+  ExpoStoreReview:
+    :path: "../../../node_modules/expo-store-review/ios"
   ExpoWidgets:
     :path: "../../../node_modules/expo-widget/ios"
-  EXUpdatesInterface:
-    :path: "../../../node_modules/expo-updates-interface/ios"
   FBLazyVector:
     :path: "../node_modules/react-native/Libraries/FBLazyVector"
   hermes-engine:
@@ -2567,7 +2385,7 @@ EXTERNAL SOURCES:
   RNReanimated:
     :path: "../node_modules/react-native-reanimated"
   RNScreens:
-    :path: "/Users/a81808/Desktop/meal-log-app-new/apps/mobile/node_modules/react-native-screens"
+    :path: "/Users/a81808/Desktop/meal-log-app-new-nutrition/apps/mobile/node_modules/react-native-screens"
   RNSVG:
     :path: "../node_modules/react-native-svg"
   RNWorklets:
@@ -2576,16 +2394,12 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
+  EXApplication: 50cc8ea58c138da6e3f25cd789634219c86b90d5
   EXConstants: e6e50cdfcb4524f40121d1fdcff24e97b7dcd2fd
   EXImageLoader: e501c001bc40b8326605e82e6e80363c80fe06b5
   EXInAppPurchases: fa0af818ea94ae5c2df9ff234f5f29e557d88efd
-  EXJSONUtils: 1d3e4590438c3ee593684186007028a14b3686cd
-  EXManifests: eaf327418721c4a7482576c579d215516d36319c
+  EXNotifications: d0a50a5490845c702f2c605e94533ae5ddf1aadb
   Expo: e852e4b236f95ef9fee36ea9ab20bc6f59c76a10
-  expo-dev-client: 779a96a1202684c756cfb159aea357ef01cfdbd9
-  expo-dev-launcher: 1ac7d1b852bb2d832433b0b13b491d6da1745777
-  expo-dev-menu: 34696a3de4571a03bd3442aa78cdbe1d583990ba
-  expo-dev-menu-interface: 600df12ea01efecdd822daaf13cc0ac091775533
   ExpoAppleAuthentication: 414e4316f8e25a2afbc3943cf725579c910f24b8
   ExpoAsset: ee515c16290e521de1870dcdee66d78173fbc533
   ExpoBlur: b5b7a26572b3c33a11f0b2aa2f95c17c4c393b76
@@ -2600,8 +2414,8 @@ SPEC CHECKSUMS:
   ExpoPrint: ad836bb90da10793509651c0ea1f39e120db001e
   ExpoSecureStore: f44dee1354536bdb3d7fab8cc451ee737c41beca
   ExpoSharing: 6f52a070c3083c11717cf2236ae8fd6ac45bf028
+  ExpoStoreReview: 000240ba376090a9a1d14f58bc78daf300c3fae3
   ExpoWidgets: 79617b5bef2514681efb73f97dd529c11d5847a0
-  EXUpdatesInterface: 1436757deb0d574b84bba063bd024c315e0ec08b
   FBLazyVector: e95a291ad2dadb88e42b06e0c5fb8262de53ec12
   hermes-engine: 9f4dfe93326146a1c99eb535b1cb0b857a3cd172
   RCTDeprecation: 943572d4be82d480a48f4884f670135ae30bf990
@@ -2610,7 +2424,11 @@ SPEC CHECKSUMS:
   React: 914f8695f9bf38e6418228c2ffb70021e559f92f
   React-callinvoker: 1c0808402aee0c6d4a0d8e7220ce6547af9fba71
   React-Core: 4ae98f9e8135b8ddbd7c98730afb6fdae883db90
+<<<<<<< Updated upstream
   React-Core-prebuilt: 8f4cca589c14e8cf8fc6db4587ef1c2056b5c151
+=======
+  React-Core-prebuilt: 02f0ad625ddd47463c009c2d0c5dd35c0d982599
+>>>>>>> Stashed changes
   React-CoreModules: e878a90bb19b8f3851818af997dbae3b3b0a27ac
   React-cxxreact: 28af9844f6dc87be1385ab521fbfb3746f19563c
   React-debug: 6328c2228e268846161f10082e80dc69eac2e90a
@@ -2678,6 +2496,6 @@ SPEC CHECKSUMS:
   RNWorklets: 910011487cf1bd81f84a787c7579fce5f3648836
   Yoga: 5934998fbeaef7845dbf698f698518695ab4cd1a
 
-PODFILE CHECKSUM: 6bd40f3994b8b419864627e9a20354e4c1b977f9
+PODFILE CHECKSUM: 9faa44aed5952c0fe2ca1ed2afa75917d491eec6
 
 COCOAPODS: 1.16.2

@@ -34,7 +34,14 @@ target 'app' do
     FileUtils.ln_s(hoisted_react_native, local_react_native)
   end
 
-  pod 'RNScreens', :path => File.join(app_root, 'node_modules', 'react-native-screens')
+  local_screens = File.join(app_root, 'node_modules', 'react-native-screens')
+  hoisted_screens = File.expand_path('../../node_modules/react-native-screens', app_root)
+  if !File.exist?(local_screens) && File.exist?(hoisted_screens)
+    FileUtils.mkdir_p(File.dirname(local_screens))
+    FileUtils.ln_s(hoisted_screens, local_screens)
+  end
+
+  pod 'RNScreens', :path => local_screens
 
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
     config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];

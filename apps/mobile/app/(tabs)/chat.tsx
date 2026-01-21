@@ -8,6 +8,7 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -43,17 +44,31 @@ import {
   getFavorites,
   getMealLogShare,
   getIngestStatus,
+  getNotificationSettings,
   getStreak,
   getSession,
   postMealLog,
+  translateMealLog,
+  updateNotificationSettings,
   type MealLogResponse,
   type ApiError,
 } from '@/services/api';
 import { hasDialogBeenSeen, markDialogSeen } from '@/services/dialog-tracker';
+import { registerPushTokenIfNeeded, requestPushPermissionIfNeeded } from '@/services/notifications';
+import { requestStoreReview } from '@/services/review';
+import { SUPPORT_EMAIL } from '@/config/legal';
+import {
+  FREE_REVIEW_TRIGGER_COUNTS,
+  getReviewTrackerState,
+  markReviewPrompted,
+  recordChatLogSuccess,
+  REVIEW_TRIGGER_COUNTS,
+} from '@/services/review-tracker';
 import { describeLocale } from '@/utils/locale';
 import type { ChatMessage, NutritionCardPayload } from '@/types/chat';
 import type { AiUsageSummary, FavoriteMeal, FavoriteMealDraft } from '@meal-log/shared';
-import { useTranslation } from '@/i18n';
+import { useTranslation, translateKey } from '@/i18n';
+import { trackEvent } from '@/analytics/track';
 
 interface TimelineItemMessage {
   type: 'message';
@@ -71,7 +86,11 @@ const composeTimeline = (messages: ReturnType<typeof useChatStore.getState>['mes
   messages.flatMap((message) => {
     const base: TimelineItemMessage = { type: 'message', id: message.id, payload: message };
     if (message.card) {
-      const card: TimelineItemCard = { type: 'card', id: `${message.id}-card`, payload: message.card };
+      const card: TimelineItemCard = {
+        type: 'card',
+        id: `${message.id}-card`,
+        payload: message.card,
+      };
       return [base, card];
     }
     return [base];
@@ -80,6 +99,8 @@ const composeTimeline = (messages: ReturnType<typeof useChatStore.getState>['mes
 const NETWORK_HINT_DELAY_IMAGE_MS = 30000;
 const NETWORK_HINT_DELAY_TEXT_MS = 15000;
 const PENDING_INGEST_STALE_MS = 1000 * 60 * 10;
+const PENDING_INGEST_STALE_MS_IMAGE = 1000 * 60 * 15;
+const PENDING_INGEST_NOT_FOUND_MS = 1000 * 60 * 2;
 const NETWORK_ERROR_PATTERNS = [
   'Network request failed',
   'The network connection was lost',
@@ -94,19 +115,26 @@ function isLikelyNetworkError(error: unknown): boolean {
   if (!error) {
     return false;
   }
-  const code = typeof (error as { code?: unknown }).code === 'string' ? (error as { code: string }).code : '';
+  const code =
+    typeof (error as { code?: unknown }).code === 'string' ? (error as { code: string }).code : '';
   if (code.startsWith('network.')) {
     return true;
   }
-  const name = typeof (error as { name?: unknown }).name === 'string' ? (error as { name: string }).name : '';
+  const name =
+    typeof (error as { name?: unknown }).name === 'string' ? (error as { name: string }).name : '';
   if (name === 'AbortError') {
     return true;
   }
   if (error instanceof TypeError) {
     return true;
   }
-  const message = typeof (error as { message?: unknown }).message === 'string' ? (error as { message: string }).message : '';
-  return NETWORK_ERROR_PATTERNS.some((pattern) => message.toLowerCase().includes(pattern.toLowerCase()));
+  const message =
+    typeof (error as { message?: unknown }).message === 'string'
+      ? (error as { message: string }).message
+      : '';
+  return NETWORK_ERROR_PATTERNS.some((pattern) =>
+    message.toLowerCase().includes(pattern.toLowerCase()),
+  );
 }
 
 // ... (rest of the imports)
@@ -127,11 +155,24 @@ export default function ChatScreen() {
   const [addingFavoriteId, setAddingFavoriteId] = useState<string | null>(null);
   const [limitModalVisible, setLimitModalVisible] = useState(false);
   const [streakModalVisible, setStreakModalVisible] = useState(false);
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [notificationPromptVisible, setNotificationPromptVisible] = useState(false);
+  const [notificationPromptPending, setNotificationPromptPending] = useState(false);
+  const [notificationPromptBusy, setNotificationPromptBusy] = useState(false);
+  const [reviewPromptPending, setReviewPromptPending] = useState(false);
+  const [reviewPromptCount, setReviewPromptCount] = useState<number | null>(null);
+  const [reviewPromptTarget, setReviewPromptTarget] = useState<number | null>(null);
   const [bottomSectionHeight, setBottomSectionHeight] = useState(0);
+  const [usageResetHasPassed, setUsageResetHasPassed] = useState(false);
   const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reviewPromptQueueRef = useRef(Promise.resolve());
+  const translationInFlightRef = useRef(new Set<string>());
+  const logToAssistantIdRef = useRef(new Map<string, string>());
   const usageRefreshInFlight = useRef(false);
+  const usageResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setUser = useSessionStore((state) => state.setUser);
   const setStatus = useSessionStore((state) => state.setStatus);
+  const userId = useSessionStore((state) => state.user?.id ?? null);
 
   const clearNetworkHintTimer = useCallback(() => {
     if (networkHintTimerRef.current) {
@@ -146,7 +187,9 @@ export default function ChatScreen() {
     addAssistantMessage,
     setMessageText,
     updateMessageStatus,
+    updateMessageIngest,
     attachCardToMessage,
+    updateCardForLog,
     composingImageUri,
     setComposingImage,
   } = useChatStore();
@@ -157,10 +200,108 @@ export default function ChatScreen() {
   const hasUsage = Boolean(usage);
   const usagePlan = usage?.plan;
   const usageRemaining = usage?.remaining;
+  const reviewTriggerCounts =
+    userPlan === 'FREE' ? FREE_REVIEW_TRIGGER_COUNTS : REVIEW_TRIGGER_COUNTS;
+  const reviewTriggerCount = reviewTriggerCounts[0] ?? 1;
+  const notificationPromptToken = String(userId ?? 'anon');
+
+  const maybeQueueReviewPrompt = useCallback(
+    async (logId: string) => {
+      reviewPromptQueueRef.current = reviewPromptQueueRef.current.then(async () => {
+        try {
+          const decision = await recordChatLogSuccess({
+            logId,
+            userId,
+            triggerCounts: reviewTriggerCounts,
+          });
+          if (decision.shouldPrompt) {
+            setReviewPromptCount(decision.state.count);
+            setReviewPromptTarget(decision.state.pendingCount ?? reviewTriggerCount);
+            setReviewPromptPending(true);
+          }
+        } catch (error) {
+          console.warn('Failed to update review prompt tracker', error);
+        }
+      });
+    },
+    [reviewTriggerCount, reviewTriggerCounts, userId],
+  );
+
+  const maybePromptNotifications = useCallback(
+    async (_logId: string) => {
+      if (!isAuthenticated) {
+        return;
+      }
+      if (notificationPromptPending || notificationPromptVisible) {
+        return;
+      }
+      const seen = await hasDialogBeenSeen('notifications-first-log', notificationPromptToken);
+      if (seen) {
+        return;
+      }
+      try {
+        const settings = await getNotificationSettings();
+        if (settings.reminder_enabled || settings.important_enabled) {
+          await markDialogSeen('notifications-first-log', notificationPromptToken);
+          return;
+        }
+      } catch (error) {
+        console.warn('[notifications] Failed to load settings for prompt', error);
+      }
+      setNotificationPromptPending(true);
+    },
+    [
+      isAuthenticated,
+      notificationPromptPending,
+      notificationPromptToken,
+      notificationPromptVisible,
+    ],
+  );
+
+  const requestTranslation = useCallback(
+    async (logId: string) => {
+      if (!logId) {
+        return;
+      }
+      if (translationInFlightRef.current.has(logId)) {
+        return;
+      }
+      translationInFlightRef.current.add(logId);
+      try {
+        const translated = await translateMealLog(logId);
+        updateCardForLog(logId, {
+          dish: translated.dish,
+          items: translated.items,
+          warnings: translated.breakdown.warnings,
+          locale: translated.locale,
+          requestedLocale: translated.requestLocale,
+          fallbackApplied: translated.fallbackApplied,
+          translations: translated.translations,
+          favoriteCandidate: translated.favoriteCandidate,
+        });
+        const assistantId =
+          logToAssistantIdRef.current.get(logId) ??
+          useChatStore.getState().messages.find((message) => message.card?.logId === logId)?.id;
+        if (assistantId) {
+          setMessageText(assistantId, buildAssistantSummary(translated));
+        }
+      } catch (error) {
+        if (__DEV__) {
+          console.warn('[chat] translateMealLog failed', { logId, error });
+        }
+      } finally {
+        translationInFlightRef.current.delete(logId);
+      }
+    },
+    [setMessageText, updateCardForLog],
+  );
 
   const renderMealLogResult = useCallback(
     (response: MealLogResponse, placeholderId: string) => {
-      const meta = (response.meta ?? {}) as { mealPeriod?: string | null; timezone?: string | null };
+      const meta = (response.meta ?? {}) as {
+        mealPeriod?: string | null;
+        timezone?: string | null;
+      };
       const rawMealPeriod = meta.mealPeriod ?? response.meal_period ?? null;
       const mealPeriod = typeof rawMealPeriod === 'string' ? rawMealPeriod.toLowerCase() : null;
       const timezone = meta.timezone ?? null;
@@ -180,22 +321,32 @@ export default function ChatScreen() {
         mealPeriod,
         timezone,
       });
+      logToAssistantIdRef.current.set(response.logId, placeholderId);
       setMessageText(placeholderId, buildAssistantSummary(response));
+      void maybeQueueReviewPrompt(response.logId);
+      void maybePromptNotifications(response.logId);
+      if (isTranslationPendingResponse(response)) {
+        void requestTranslation(response.logId);
+      }
     },
-    [attachCardToMessage, setMessageText],
+    [attachCardToMessage, maybePromptNotifications, maybeQueueReviewPrompt, requestTranslation, setMessageText],
   );
 
   const [mediaPermission, requestMediaPermission] = ImagePicker.useMediaLibraryPermissions();
   const [cameraPermission, requestCameraPermission] = ImagePicker.useCameraPermissions();
 
   const prevMessagesRef = useRef<ChatMessage[] | null>(null);
-  const [enhancedExchange, setEnhancedExchange] = useState<{ user: ChatMessage; assistant: ChatMessage | null } | null>(null);
+  const [enhancedExchange, setEnhancedExchange] = useState<{
+    user: ChatMessage;
+    assistant: ChatMessage | null;
+  } | null>(null);
 
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
 
   const pendingIngests = useMemo(() => {
+    const messageById = new Map(messages.map((message) => [message.id, message]));
     const derived = messages
       .filter(
         (message) =>
@@ -204,12 +355,18 @@ export default function ChatScreen() {
           typeof message.ingest?.requestKey === 'string' &&
           typeof message.ingest?.userMessageId === 'string',
       )
-      .map((message) => ({
-        requestKey: message.ingest!.requestKey,
-        userMessageId: message.ingest!.userMessageId,
-        assistantMessageId: message.id,
-        createdAt: message.createdAt,
-      }));
+      .map((message) => {
+        const ingest = message.ingest!;
+        return {
+          requestKey: ingest.requestKey,
+          userMessageId: ingest.userMessageId,
+          assistantMessageId: message.id,
+          createdAt: message.createdAt,
+          nextCheckAt: ingest.nextCheckAt ?? null,
+          deadlineAt: ingest.deadlineAt ?? null,
+          hasImage: Boolean(messageById.get(ingest.userMessageId)?.imageUri),
+        };
+      });
 
     // De-dup by requestKey (keep the most recent).
     const byKey = new Map<string, (typeof derived)[number]>();
@@ -235,11 +392,18 @@ export default function ChatScreen() {
     }
     ingestRefreshInFlight.current = true;
     try {
+      const now = Date.now();
       for (const ingest of pendingIngests) {
+        if (ingest.nextCheckAt && now < ingest.nextCheckAt) {
+          continue;
+        }
         try {
           const status = await getIngestStatus(ingest.requestKey);
           if (__DEV__) {
-            console.log('[chat] ingest status', { requestKey: ingest.requestKey, status: status.status });
+            console.log('[chat] ingest status', {
+              requestKey: ingest.requestKey,
+              status: status.status,
+            });
           }
           if (status.ok && status.status === 'done') {
             updateMessageStatus(ingest.userMessageId, 'delivered');
@@ -254,21 +418,38 @@ export default function ChatScreen() {
             queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
             queryClient.invalidateQueries({ queryKey: ['streak'] });
             scrollToEnd();
+          } else if (status.ok && status.status === 'failed') {
+            updateMessageStatus(ingest.userMessageId, 'error');
+            updateMessageStatus(ingest.assistantMessageId, 'error');
+            setMessageText(ingest.assistantMessageId, status.message ?? t('chat.genericErrorBubble'));
+          } else if (status.ok && status.status === 'deferred') {
+            const nextCheckAt = status.nextCheckAt ? Date.parse(status.nextCheckAt) : null;
+            const deadlineAt = status.deadlineAt ? Date.parse(status.deadlineAt) : null;
+            updateMessageIngest(ingest.assistantMessageId, {
+              nextCheckAt: Number.isFinite(nextCheckAt) ? nextCheckAt : null,
+              deadlineAt: Number.isFinite(deadlineAt) ? deadlineAt : null,
+            });
+            setMessageText(ingest.assistantMessageId, t('chat.processingInBackground'));
+            updateMessageStatus(ingest.assistantMessageId, 'processing');
           } else if (status.ok && status.status === 'processing') {
-            const tooOld = Date.now() - ingest.createdAt > PENDING_INGEST_STALE_MS;
+            const staleMs = ingest.hasImage ? PENDING_INGEST_STALE_MS_IMAGE : PENDING_INGEST_STALE_MS;
+            const deadlineMs = ingest.deadlineAt ?? null;
+            const tooOld = deadlineMs ? now > deadlineMs : now - ingest.createdAt > staleMs;
             if (tooOld) {
               updateMessageStatus(ingest.userMessageId, 'error');
               updateMessageStatus(ingest.assistantMessageId, 'error');
               setMessageText(ingest.assistantMessageId, t('chat.genericErrorBubble'));
-              removePendingIngest(ingest.requestKey);
             }
           }
         } catch (error) {
           if (__DEV__) {
-            console.warn('[chat] ingest status fetch failed', { requestKey: ingest.requestKey, error });
+            console.warn('[chat] ingest status fetch failed', {
+              requestKey: ingest.requestKey,
+              error,
+            });
           }
           const apiError = error as ApiError;
-          const tooOld = Date.now() - ingest.createdAt > 1000 * 60 * 2;
+          const tooOld = Date.now() - ingest.createdAt > PENDING_INGEST_NOT_FOUND_MS;
           if (apiError.status === 404 && tooOld) {
             updateMessageStatus(ingest.userMessageId, 'error');
             updateMessageStatus(ingest.assistantMessageId, 'error');
@@ -285,6 +466,7 @@ export default function ChatScreen() {
     renderMealLogResult,
     scrollToEnd,
     setMessageText,
+    updateMessageIngest,
     setUsage,
     setError,
     t,
@@ -308,7 +490,6 @@ export default function ChatScreen() {
     const poll = setInterval(() => void refreshPendingIngests(), 5000);
     return () => clearInterval(poll);
   }, [pendingIngests.length, refreshPendingIngests]);
-
 
   const favoritesQuery = useQuery({
     queryKey: ['favorites'],
@@ -352,10 +533,52 @@ export default function ChatScreen() {
     }
   }, [favoritesVisible, favoritesQuery]);
 
-  const usageResetHasPassed = useMemo(() => {
-    if (!usage?.resetsAt) return false;
+  useEffect(() => {
+    if (usageResetTimerRef.current) {
+      clearTimeout(usageResetTimerRef.current);
+      usageResetTimerRef.current = null;
+    }
+    if (!usage?.resetsAt) {
+      setUsageResetHasPassed(false);
+      return;
+    }
     const resetMs = Date.parse(usage.resetsAt);
-    return Number.isFinite(resetMs) && resetMs <= Date.now();
+    if (!Number.isFinite(resetMs)) {
+      setUsageResetHasPassed(false);
+      return;
+    }
+    const delayMs = resetMs - Date.now();
+    if (delayMs <= 0) {
+      setUsageResetHasPassed(true);
+      return;
+    }
+    setUsageResetHasPassed(false);
+    usageResetTimerRef.current = setTimeout(() => {
+      usageResetTimerRef.current = null;
+      setUsageResetHasPassed(true);
+    }, delayMs + 250);
+    return () => {
+      if (usageResetTimerRef.current) {
+        clearTimeout(usageResetTimerRef.current);
+        usageResetTimerRef.current = null;
+      }
+    };
+  }, [usage?.resetsAt]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') {
+        return;
+      }
+      if (!usage?.resetsAt) {
+        return;
+      }
+      const resetMs = Date.parse(usage.resetsAt);
+      if (Number.isFinite(resetMs) && resetMs <= Date.now()) {
+        setUsageResetHasPassed(true);
+      }
+    });
+    return () => sub.remove();
   }, [usage?.resetsAt]);
 
   useEffect(() => {
@@ -443,6 +666,29 @@ export default function ChatScreen() {
   }, [hasStreak, streakCurrent, streakLastLoggedAt, userPlan]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const state = await getReviewTrackerState(userId);
+      if (cancelled) return;
+      const pendingCount = state.pendingCount ?? (state.pending ? reviewTriggerCount : null);
+      if (pendingCount !== null) {
+        setReviewPromptCount(state.count);
+        setReviewPromptTarget(pendingCount);
+        setReviewPromptPending(true);
+      } else {
+        setReviewPromptCount(null);
+        setReviewPromptTarget(null);
+        setReviewPromptPending(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reviewTriggerCount, userId]);
+
+  useEffect(() => {
     const prev = prevMessagesRef.current;
     const userCount = messages.filter((message) => message.role === 'user').length;
 
@@ -470,11 +716,20 @@ export default function ChatScreen() {
 
     const lastUser = lastUserIndex >= 0 ? messages[lastUserIndex] : null;
     const assistantAfterUser =
-      lastUserIndex >= 0 ? messages.slice(lastUserIndex + 1).find((message) => message.role === 'assistant') ?? null : null;
+      lastUserIndex >= 0
+        ? (messages.slice(lastUserIndex + 1).find((message) => message.role === 'assistant') ??
+          null)
+        : null;
 
     const shouldUpdateOnNewUser = userCount > prevUserCount && lastUser !== null;
-    const isDifferentUser = lastUser && enhancedExchange && enhancedExchange.user.id !== lastUser.id;
-    const assistantNowPresent = lastUser && enhancedExchange && enhancedExchange.user.id === lastUser.id && !enhancedExchange.assistant && assistantAfterUser;
+    const isDifferentUser =
+      lastUser && enhancedExchange && enhancedExchange.user.id !== lastUser.id;
+    const assistantNowPresent =
+      lastUser &&
+      enhancedExchange &&
+      enhancedExchange.user.id === lastUser.id &&
+      !enhancedExchange.assistant &&
+      assistantAfterUser;
     const assistantUpdated =
       lastUser &&
       enhancedExchange &&
@@ -493,7 +748,10 @@ export default function ChatScreen() {
     prevMessagesRef.current = messages;
   }, [messages, enhancedExchange, scrollToEnd]);
 
-  const timeline = useMemo<Array<TimelineItemMessage | TimelineItemCard>>(() => composeTimeline(messages), [messages]);
+  const timeline = useMemo<Array<TimelineItemMessage | TimelineItemCard>>(
+    () => composeTimeline(messages),
+    [messages],
+  );
 
   const filteredTimeline = useMemo(() => {
     if (!enhancedExchange) {
@@ -538,6 +796,95 @@ export default function ChatScreen() {
   const canSubmitMessage = hasTypedInput || hasAttachment;
   const sendButtonDisabled = sending || !canSend || !canSubmitMessage;
 
+  const reviewPromptBlocked =
+    reviewModalVisible ||
+    limitModalVisible ||
+    streakModalVisible ||
+    notificationPromptVisible ||
+    notificationPromptPending ||
+    favoritesVisible ||
+    sending ||
+    isLimitReached;
+
+  useEffect(() => {
+    if (!reviewPromptPending || reviewPromptBlocked) {
+      return;
+    }
+    setReviewModalVisible(true);
+    setReviewPromptPending(false);
+    void markReviewPrompted(userId, reviewPromptTarget).catch((error) => {
+      console.warn('Failed to mark review prompt as shown', error);
+    });
+    trackEvent('review.prompt_shown', {
+      count: reviewPromptCount ?? reviewTriggerCount,
+    });
+  }, [
+    reviewPromptBlocked,
+    reviewPromptCount,
+    reviewPromptPending,
+    reviewPromptTarget,
+    reviewTriggerCount,
+    userId,
+  ]);
+
+  const notificationPromptBlocked =
+    reviewModalVisible ||
+    limitModalVisible ||
+    streakModalVisible ||
+    favoritesVisible ||
+    sending ||
+    isLimitReached;
+
+  useEffect(() => {
+    if (!notificationPromptPending || notificationPromptBlocked) {
+      return;
+    }
+    setNotificationPromptVisible(true);
+    setNotificationPromptPending(false);
+    void markDialogSeen('notifications-first-log', notificationPromptToken).catch((error) => {
+      console.warn('Failed to mark notification prompt as seen', error);
+    });
+  }, [notificationPromptBlocked, notificationPromptPending, notificationPromptToken]);
+
+  const handleNotificationPromptEnable = useCallback(async () => {
+    if (notificationPromptBusy) {
+      return;
+    }
+    setNotificationPromptBusy(true);
+    try {
+      const granted = await requestPushPermissionIfNeeded();
+      if (!granted) {
+        Alert.alert(
+          t('settings.notifications.permissionTitle'),
+          t('settings.notifications.permissionMessage'),
+        );
+        setNotificationPromptVisible(false);
+        return;
+      }
+      await updateNotificationSettings({ reminder_enabled: true, important_enabled: true });
+      const registered = await registerPushTokenIfNeeded({ prompt: false });
+      if (!registered) {
+        Alert.alert(
+          t('settings.notifications.errorTitle'),
+          t('settings.notifications.permissionMessage'),
+        );
+      }
+      setNotificationPromptVisible(false);
+    } catch (error) {
+      console.warn('[notifications] Failed to enable notifications', error);
+      Alert.alert(
+        t('settings.notifications.errorTitle'),
+        t('settings.notifications.errorMessage'),
+      );
+    } finally {
+      setNotificationPromptBusy(false);
+    }
+  }, [notificationPromptBusy, t]);
+
+  const handleNotificationPromptDismiss = useCallback(() => {
+    setNotificationPromptVisible(false);
+  }, []);
+
   const favoritesList = favoritesQuery.data ?? [];
   const sendLabel = canSend ? t('chat.send') : t('chat.send.limit');
 
@@ -546,9 +893,12 @@ export default function ChatScreen() {
     setComposingImage(null);
   };
 
-  const handleEditLog = (logId: string) => {
-    router.push(`/log/${logId}`);
-  };
+  const handleEditLog = useCallback(
+    (logId: string) => {
+      router.push(`/log/${logId}`);
+    },
+    [router],
+  );
 
   const submitMeal = async (
     rawMessage: string,
@@ -565,7 +915,7 @@ export default function ChatScreen() {
       return null;
     }
     if (usage && !canSend && !options.allowWithoutUsage) {
-      setError('本日の無料利用回数が上限に達しました。');
+      setError(t('chat.usageLimitBubble'));
       return null;
     }
 
@@ -573,9 +923,9 @@ export default function ChatScreen() {
     setSending(true);
     setError(null);
 
-    const displayMessage = trimmedMessage || (hasImage ? t('chat.sentPhoto') : rawMessage);
+    const displayMessage = trimmedMessage || (hasImage ? '' : rawMessage);
 
-    const userMessage = addUserMessage(displayMessage);
+    const userMessage = addUserMessage(displayMessage, { imageUri: options.imageUri ?? undefined });
     const processingText = t('chat.processing');
     const requestKey = options.request ? null : `ingest_${Date.now()}_${nanoid(10)}`;
     if (__DEV__) {
@@ -630,30 +980,44 @@ export default function ChatScreen() {
         if (payload) {
           setUsage(payload);
         }
-        setError('本日の利用回数が上限に達しました。');
+        setError(t('chat.usageLimitBubble'));
         setMessageText(assistantPlaceholder.id, t('chat.usageLimitBubble'));
       } else if (apiError.code === 'AI_UPSTREAM_QUOTA' || apiError.code === 'AI_IMAGE_QUOTA') {
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');
         setError(apiError.message);
         setMessageText(assistantPlaceholder.id, apiError.message);
+      } else if (apiError.code === 'INGEST_IN_PROGRESS') {
+        updateMessageStatus(userMessage.id, 'delivered');
+        updateMessageStatus(assistantPlaceholder.id, 'processing');
+        const nextRequestKey =
+          typeof (apiError.data as { requestKey?: unknown } | undefined)?.requestKey === 'string'
+            ? ((apiError.data as { requestKey: string }).requestKey)
+            : null;
+        if (nextRequestKey && requestKey && nextRequestKey !== requestKey) {
+          updateMessageIngest(assistantPlaceholder.id, { requestKey: nextRequestKey });
+        }
+        setMessageText(assistantPlaceholder.id, t('chat.processingInBackground'));
+        setError(null);
+        void refreshPendingIngests();
       } else if (apiError.status === 401) {
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');
         setUser(null);
         setUsage(null);
         setStatus('unauthenticated');
-        setError('セッションの有効期限が切れました。再度ログインしてください。');
+        setError(t('chat.sessionExpiredBubble'));
         setMessageText(assistantPlaceholder.id, t('chat.sessionExpiredBubble'));
       } else if (isLikelyNetworkError(apiError)) {
         updateMessageStatus(userMessage.id, 'delivered');
         updateMessageStatus(assistantPlaceholder.id, 'processing');
         setMessageText(assistantPlaceholder.id, t('chat.processing'));
         setError(t('chat.networkErrorBanner'));
+        void refreshPendingIngests();
       } else {
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');
-        setError('エラーが発生しました。もう一度お試しください。');
+        setError(t('chat.genericErrorBubble'));
         setMessageText(assistantPlaceholder.id, t('chat.genericErrorBubble'));
       }
       return null;
@@ -664,18 +1028,21 @@ export default function ChatScreen() {
     }
   };
 
-  const handleAddFavoriteFromCard = async (cardId: string, draft: FavoriteMealDraft) => {
-    try {
-      setAddingFavoriteId(cardId);
-      await createFavoriteMutation.mutateAsync(draft);
-      Alert.alert('お気に入りに追加しました');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'お気に入りの保存に失敗しました';
-      Alert.alert('お気に入りの保存に失敗しました', message);
-    } finally {
-      setAddingFavoriteId(null);
-    }
-  };
+  const handleAddFavoriteFromCard = useCallback(
+    async (cardId: string, draft: FavoriteMealDraft) => {
+      try {
+        setAddingFavoriteId(cardId);
+        await createFavoriteMutation.mutateAsync(draft);
+        Alert.alert(t('favorites.addedTitle'));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : t('favorites.saveFailedMessage');
+        Alert.alert(t('favorites.saveFailedTitle'), message);
+      } finally {
+        setAddingFavoriteId(null);
+      }
+    },
+    [createFavoriteMutation, t],
+  );
 
   const buildMessageFromFavorite = (favorite: FavoriteMeal) => {
     const lines = [favorite.name];
@@ -699,7 +1066,9 @@ export default function ChatScreen() {
 
     const message = buildMessageFromFavorite(favorite);
     const userMessage = addUserMessage(message);
-    const assistantPlaceholder = addAssistantMessage('お気に入りを記録しています…', { status: 'sending' });
+    const assistantPlaceholder = addAssistantMessage(t('chat.favoriteRecording'), {
+      status: 'sending',
+    });
     scrollToEnd();
 
     try {
@@ -719,9 +1088,10 @@ export default function ChatScreen() {
     } catch (error) {
       updateMessageStatus(userMessage.id, 'error');
       updateMessageStatus(assistantPlaceholder.id, 'error');
-      const messageText = error instanceof Error ? error.message : 'お気に入りからの記録に失敗しました';
+      const messageText =
+        error instanceof Error ? error.message : t('favorites.recordFailedMessage');
       setError(messageText);
-      Alert.alert('記録に失敗しました', messageText);
+      Alert.alert(t('log.recordFailedTitle'), messageText);
     } finally {
       setSending(false);
       scrollToEnd();
@@ -772,15 +1142,18 @@ export default function ChatScreen() {
     try {
       const permission = await ensureMediaLibraryPermission();
       if (!permission?.granted) {
-        setError('写真ライブラリへのアクセスを許可してください。設定アプリから変更できます。');
+        setError(t('permissions.photoLibraryDenied'));
         if (permission && !permission.canAskAgain) {
-          Alert.alert('ライブラリにアクセスできません', '設定アプリで Meal Log の写真アクセスを許可してください。');
+          Alert.alert(
+            t('permissions.photoLibraryBlockedTitle'),
+            t('permissions.photoLibraryBlockedMessage'),
+          );
         }
         return;
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: false,
         quality: 0.8,
         exif: false,
@@ -795,23 +1168,26 @@ export default function ChatScreen() {
       }
     } catch (error) {
       console.warn('Failed to open media library', error);
-      setError('写真の読み込みに失敗しました。もう一度お試しください。');
+      setError(t('chat.photoLoadFailed'));
     }
-  }, [ensureMediaLibraryPermission, setError, setComposingImage]);
+  }, [ensureMediaLibraryPermission, setError, setComposingImage, t]);
 
   const handleTakePhoto = useCallback(async () => {
     try {
       const permission = await ensureCameraPermission();
       if (!permission?.granted) {
-        setError('カメラへのアクセスを許可してください。設定アプリから変更できます。');
+        setError(t('permissions.cameraDenied'));
         if (permission && !permission.canAskAgain) {
-          Alert.alert('カメラにアクセスできません', '設定アプリで Meal Log のカメラアクセスを許可してください。');
+          Alert.alert(
+            t('permissions.cameraBlockedTitle'),
+            t('permissions.cameraBlockedMessage'),
+          );
         }
         return;
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: false,
         quality: 0.8,
         exif: false,
@@ -826,9 +1202,9 @@ export default function ChatScreen() {
       }
     } catch (error) {
       console.warn('Failed to open camera', error);
-      setError('カメラの起動に失敗しました。もう一度お試しください。');
+      setError(t('chat.cameraLaunchFailed'));
     }
-  }, [ensureCameraPermission, setComposingImage, setError]);
+  }, [ensureCameraPermission, setComposingImage, setError, t]);
 
   const handlePhotoQuickAction = useCallback(() => {
     if (Platform.OS === 'ios') {
@@ -864,35 +1240,112 @@ export default function ChatScreen() {
 
   const quickActions = useMemo<QuickAction[]>(
     () => [
-      { key: 'photo', icon: 'camera', label: t('chat.quickActions.photo'), onPress: handlePhotoQuickAction },
-      { key: 'favorite', icon: 'star', label: t('chat.quickActions.favorite'), onPress: () => setFavoritesVisible(true) },
+      {
+        key: 'photo',
+        icon: 'camera',
+        label: t('chat.quickActions.photo'),
+        onPress: handlePhotoQuickAction,
+      },
+      {
+        key: 'favorite',
+        icon: 'star',
+        label: t('chat.quickActions.favorite'),
+        onPress: () => setFavoritesVisible(true),
+      },
+      {
+        key: 'report',
+        icon: 'file-text',
+        label: t('chat.quickActions.report'),
+        onPress: () => router.push('/report'),
+      },
     ],
-    [handlePhotoQuickAction, t],
+    [handlePhotoQuickAction, router, t],
   );
 
-  const handleShareCard = async (payload: NutritionCardPayload, cardKey: string) => {
-    try {
-      setSharingId(cardKey);
-      let message = buildShareMessage(payload);
-      if (payload.logId) {
-        try {
-          const response = await getMealLogShare(payload.logId);
-          message = response.share.text;
-        } catch (shareError) {
-          console.warn('Failed to fetch share payload, fallback to local data', shareError);
+  const handleShareCard = useCallback(
+    async (payload: NutritionCardPayload, cardKey: string) => {
+      try {
+        setSharingId(cardKey);
+        let message = buildShareMessage(payload);
+        if (payload.logId) {
+          try {
+            const response = await getMealLogShare(payload.logId);
+            message = response.share.text;
+          } catch (shareError) {
+            console.warn('Failed to fetch share payload, fallback to local data', shareError);
+          }
         }
+        await Share.share({ message });
+      } catch (_error) {
+        Alert.alert(t('common.shareFailedTitle'), t('common.tryAgainMessage'));
+      } finally {
+        setSharingId(null);
       }
-      await Share.share({ message });
-    } catch (_error) {
-      Alert.alert('共有に失敗しました', '時間をおいて再度お試しください。');
-    } finally {
-      setSharingId(null);
-    }
-  };
+    },
+    [t],
+  );
 
   const handleOpenPaywall = useCallback(() => {
     router.push('/paywall');
   }, [router]);
+
+  const handleReviewRequest = useCallback(() => {
+    setReviewModalVisible(false);
+    trackEvent('review.prompt_accept', {
+      count: reviewPromptCount ?? reviewTriggerCount,
+    });
+    void requestStoreReview();
+  }, [reviewPromptCount, reviewTriggerCount]);
+
+  const handleReviewFeedback = useCallback(() => {
+    setReviewModalVisible(false);
+    trackEvent('review.prompt_feedback', {
+      count: reviewPromptCount ?? reviewTriggerCount,
+    });
+    const url = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Meal Log feedback')}`;
+    void Linking.openURL(url).catch((error) => {
+      console.warn('Failed to open feedback mail', error);
+    });
+  }, [reviewPromptCount, reviewTriggerCount]);
+
+  const handleReviewDismiss = useCallback(() => {
+    setReviewModalVisible(false);
+    trackEvent('review.prompt_dismiss', {
+      count: reviewPromptCount ?? reviewTriggerCount,
+    });
+  }, [reviewPromptCount, reviewTriggerCount]);
+
+  const keyExtractor = useCallback(
+    (item: TimelineItemMessage | TimelineItemCard) => item.id,
+    [],
+  );
+
+  const renderTimelineItem = useCallback(
+    ({ item }: { item: TimelineItemMessage | TimelineItemCard }) =>
+      item.type === 'message' ? (
+        <ChatBubble
+          message={
+            item.payload.card && item.payload.role === 'assistant'
+              ? { ...item.payload, text: t('chat.recordComplete') }
+              : item.payload
+          }
+        />
+      ) : (
+        <NutritionCard
+          payload={item.payload}
+          onShare={() => handleShareCard(item.payload, item.id)}
+          sharing={sharingId === item.id}
+          onAddFavorite={
+            item.payload.favoriteCandidate
+              ? (draft) => handleAddFavoriteFromCard(item.id, draft)
+              : undefined
+          }
+          addingFavorite={addingFavoriteId === item.id}
+          onEdit={item.payload.logId ? () => handleEditLog(item.payload.logId) : undefined}
+        />
+      ),
+    [addingFavoriteId, handleAddFavoriteFromCard, handleEditLog, handleShareCard, sharingId, t],
+  );
 
   const renderEnhancedFooter = () => {
     if (!enhancedExchange || !enhancedContainerMinHeight) {
@@ -900,7 +1353,9 @@ export default function ChatScreen() {
     }
 
     const assistantCard = enhancedExchange.assistant?.card ?? null;
-    const assistantCardId = enhancedExchange.assistant ? `${enhancedExchange.assistant.id}-card` : null;
+    const assistantCardId = enhancedExchange.assistant
+      ? `${enhancedExchange.assistant.id}-card`
+      : null;
 
     const assistantHasCard = Boolean(enhancedExchange.assistant?.card);
     const assistantBubbleMessage =
@@ -910,7 +1365,8 @@ export default function ChatScreen() {
     const shouldShowUserBubble = !assistantHasCard;
 
     return (
-      <View style={[styles.enhancedContainer, { minHeight: enhancedContainerMinHeight }]}
+      <View
+        style={[styles.enhancedContainer, { minHeight: enhancedContainerMinHeight }]}
         key={enhancedExchange.user.id}
       >
         {shouldShowUserBubble ? <ChatBubble message={enhancedExchange.user} /> : null}
@@ -962,11 +1418,18 @@ export default function ChatScreen() {
                 </View>
                 <View style={styles.statusPillRow}>
                   <View style={styles.statusPill}>
-                    <Text style={styles.statusLabel}>{t('usage.banner.remaining', { remaining: usage.remaining, limit: usage.limit })}</Text>
+                    <Text style={styles.statusLabel}>
+                      {t('usage.banner.remaining', {
+                        remaining: usage.remaining,
+                        limit: usage.limit,
+                      })}
+                    </Text>
                   </View>
                   {usage.credits > 0 ? (
                     <View style={styles.statusPill}>
-                      <Text style={styles.statusLabel}>{t('usage.banner.credits', { credits: usage.credits })}</Text>
+                      <Text style={styles.statusLabel}>
+                        {t('usage.banner.credits', { credits: usage.credits })}
+                      </Text>
                     </View>
                   ) : null}
                 </View>
@@ -978,29 +1441,13 @@ export default function ChatScreen() {
             style={styles.flex}
             ref={listRef}
             data={filteredTimeline}
-            keyExtractor={(item) => item.id}
+            keyExtractor={keyExtractor}
             contentInsetAdjustmentBehavior="never"
-            renderItem={({ item }) =>
-              item.type === 'message' ? (
-                <ChatBubble
-                  message={
-                    item.payload.card && item.payload.role === 'assistant'
-                      ? { ...item.payload, text: t('chat.recordComplete') }
-                      : item.payload
-                  }
-                />
-              ) : (
-                <NutritionCard
-                  payload={item.payload}
-                  onShare={() => handleShareCard(item.payload, item.id)}
-                  sharing={sharingId === item.id}
-                  onAddFavorite={item.payload.favoriteCandidate ? (draft) => handleAddFavoriteFromCard(item.id, draft) : undefined}
-                  addingFavorite={addingFavoriteId === item.id}
-                  onEdit={item.payload.logId ? () => handleEditLog(item.payload.logId) : undefined}
-                />
-              )
-            }
-            contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(bottomSectionHeight, 120) }]}
+            renderItem={renderTimelineItem}
+            contentContainerStyle={[
+              styles.listContent,
+              { paddingBottom: Math.max(bottomSectionHeight, 120) },
+            ]}
             ListFooterComponent={renderEnhancedFooter}
             onContentSizeChange={scrollToEnd}
             showsVerticalScrollIndicator={false}
@@ -1027,21 +1474,32 @@ export default function ChatScreen() {
                 {composingImageUri ? (
                   <View style={styles.previewContainer}>
                     <Image source={{ uri: composingImageUri }} style={styles.preview} />
-                    <TouchableOpacity onPress={() => setComposingImage(null)} style={styles.removeImage}>
+                    <TouchableOpacity
+                      onPress={() => setComposingImage(null)}
+                      style={styles.removeImage}
+                    >
                       <Text style={{ color: '#fff' }}>✕</Text>
                     </TouchableOpacity>
                   </View>
                 ) : null}
                 <View style={styles.quickActionsRow}>
                   {quickActions.map((action) => (
-                    <TouchableOpacity key={action.key} style={styles.quickAction} onPress={action.onPress}>
+                    <TouchableOpacity
+                      key={action.key}
+                      style={styles.quickAction}
+                      onPress={action.onPress}
+                    >
                       <Feather name={action.icon} size={14} color={colors.textPrimary} />
                       <Text style={styles.quickActionLabel}>{action.label}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
                 <View
-                  style={[styles.composerArea, styles.composerDocked, { paddingBottom: Math.max(12, inset.bottom) }]}
+                  style={[
+                    styles.composerArea,
+                    styles.composerDocked,
+                    { paddingBottom: Math.max(12, inset.bottom) },
+                  ]}
                 >
                   <View style={styles.inputRow}>
                     <TextInput
@@ -1049,8 +1507,8 @@ export default function ChatScreen() {
                       placeholder={t('chat.placeholder')}
                       value={input}
                       onChangeText={setInput}
-                      multiline={false}
                       blurOnSubmit={false}
+                      multiline={false}
                       returnKeyType="send"
                       onSubmitEditing={() => {
                         if (!sendButtonDisabled) {
@@ -1067,7 +1525,11 @@ export default function ChatScreen() {
                       disabled={sendButtonDisabled}
                       style={[styles.sendButton, sendButtonDisabled && styles.sendButtonDisabled]}
                     >
-                      {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendLabel}>{sendLabel}</Text>}
+                      {sending ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={styles.sendLabel}>{sendLabel}</Text>
+                      )}
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1093,10 +1555,10 @@ export default function ChatScreen() {
                 style={styles.favoritesBackButton}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 accessibilityRole="button"
-                accessibilityLabel="戻る"
+                accessibilityLabel={t('common.back')}
               >
                 <Feather name="chevron-left" size={20} color={colors.textPrimary} />
-                <Text style={styles.favoritesBackLabel}>戻る</Text>
+                <Text style={styles.favoritesBackLabel}>{t('common.back')}</Text>
               </TouchableOpacity>
               <Text style={styles.favoritesTitle} numberOfLines={1}>
                 {t('recentLogs.heading')}
@@ -1123,15 +1585,17 @@ export default function ChatScreen() {
                   >
                     <Text style={styles.favoritesItemName}>{favorite.name}</Text>
                     <Text style={styles.favoritesItemMeta}>
-                      {Math.round(favorite.totals.kcal)} kcal ／ P {formatMacro(favorite.totals.protein_g)}g ／ F {formatMacro(favorite.totals.fat_g)}g ／
-                      C {formatMacro(favorite.totals.carbs_g)}g
+                      {Math.round(favorite.totals.kcal)} kcal ／ P{' '}
+                      {formatMacro(favorite.totals.protein_g)}g ／ F{' '}
+                      {formatMacro(favorite.totals.fat_g)}g ／ C{' '}
+                      {formatMacro(favorite.totals.carbs_g)}g
                     </Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
             ) : (
               <View style={styles.favoritesEmpty}>
-                <Text style={styles.favoritesEmptyText}>お気に入りがまだ登録されていません。</Text>
+                <Text style={styles.favoritesEmptyText}>{t('favorites.empty')}</Text>
               </View>
             )}
           </SafeAreaView>
@@ -1156,7 +1620,9 @@ export default function ChatScreen() {
                     handleOpenPaywall();
                   }}
                 >
-                  <Text style={styles.usageModalPrimaryLabel}>{t('usage.limitModal.purchase')}</Text>
+                  <Text style={styles.usageModalPrimaryLabel}>
+                    {t('usage.limitModal.purchase')}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setLimitModalVisible(false)}>
                   <Text style={styles.usageModalSecondary}>{t('usage.limitModal.close')}</Text>
@@ -1183,10 +1649,74 @@ export default function ChatScreen() {
                     handleOpenPaywall();
                   }}
                 >
-                  <Text style={styles.usageModalPrimaryLabel}>{t('usage.streakModal.upgrade')}</Text>
+                  <Text style={styles.usageModalPrimaryLabel}>
+                    {t('usage.streakModal.upgrade')}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setStreakModalVisible(false)}>
                   <Text style={styles.usageModalSecondary}>{t('usage.streakModal.close')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+        <Modal
+          visible={reviewModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={handleReviewDismiss}
+        >
+          <View style={styles.usageModalBackdrop}>
+            <View style={styles.usageModalCard}>
+              <Text style={styles.usageModalTitle}>{t('review.prompt.title')}</Text>
+              <Text style={styles.usageModalMessage}>
+                {t('review.prompt.message', {
+                  count: reviewPromptCount ?? reviewTriggerCount,
+                })}
+              </Text>
+              <View style={styles.usageModalActions}>
+                <TouchableOpacity style={styles.usageModalPrimary} onPress={handleReviewRequest}>
+                  <Text style={styles.usageModalPrimaryLabel}>{t('review.prompt.primary')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.usageModalSecondaryButton}
+                  onPress={handleReviewFeedback}
+                >
+                  <Text style={styles.usageModalSecondaryButtonLabel}>
+                    {t('review.prompt.secondary')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleReviewDismiss}>
+                  <Text style={styles.usageModalSecondary}>{t('review.prompt.later')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+        <Modal
+          visible={notificationPromptVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={handleNotificationPromptDismiss}
+        >
+          <View style={styles.usageModalBackdrop}>
+            <View style={styles.usageModalCard}>
+              <Text style={styles.usageModalTitle}>{t('notifications.prompt.title')}</Text>
+              <Text style={styles.usageModalMessage}>{t('notifications.prompt.message')}</Text>
+              <View style={styles.usageModalActions}>
+                <TouchableOpacity
+                  style={styles.usageModalPrimary}
+                  onPress={() => void handleNotificationPromptEnable()}
+                  disabled={notificationPromptBusy}
+                >
+                  <Text style={styles.usageModalPrimaryLabel}>
+                    {t('notifications.prompt.primary')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleNotificationPromptDismiss}>
+                  <Text style={styles.usageModalSecondary}>
+                    {t('notifications.prompt.secondary')}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1197,24 +1727,57 @@ export default function ChatScreen() {
   );
 }
 
+function isTranslationPendingResponse(response: MealLogResponse) {
+  if (!response.fallbackApplied) {
+    return false;
+  }
+  const requested = response.requestLocale;
+  const resolved = response.locale;
+  if (!requested || !resolved || requested === resolved) {
+    return false;
+  }
+  return !response.translations?.[requested];
+}
+
+function isTranslationPendingPayload(payload: NutritionCardPayload) {
+  if (!payload.fallbackApplied) {
+    return false;
+  }
+  const requested = payload.requestedLocale;
+  const resolved = payload.locale;
+  if (!requested || !resolved || requested === resolved) {
+    return false;
+  }
+  return !payload.translations?.[requested];
+}
+
 function buildAssistantSummary(response: MealLogResponse) {
   const lines = [
-    `${response.dish}（${Math.round(response.totals.kcal)} kcal）`,
-    `P ${formatMacro(response.totals.protein_g)}g / F ${formatMacro(response.totals.fat_g)}g / C ${formatMacro(response.totals.carbs_g)}g`,
+    translateKey('chat.summaryLine', {
+      dish: response.dish,
+      calories: Math.round(response.totals.kcal),
+    }),
+    translateKey('chat.summaryMacrosLine', {
+      protein: formatMacro(response.totals.protein_g),
+      fat: formatMacro(response.totals.fat_g),
+      carbs: formatMacro(response.totals.carbs_g),
+    }),
   ];
 
   if (response.items?.length) {
     const primary = response.items
       .slice(0, 2)
       .map((item) => `${item.name} ${Math.round(item.grams)}g`)
-      .join('・');
+      .join(translateKey('chat.summaryItemsSeparator'));
     lines.push(primary);
   }
 
-  if (response.fallbackApplied && response.requestLocale !== response.locale) {
+  if (isTranslationPendingResponse(response)) {
+    lines.push(translateKey('card.translationPending'));
+  } else if (response.fallbackApplied && response.requestLocale !== response.locale) {
     const requested = describeLocale(response.requestLocale);
     const resolved = describeLocale(response.locale);
-    lines.push(`※ ${requested} の翻訳が未対応のため ${resolved} で表示しています`);
+    lines.push(translateKey('card.languageFallback', { requested, resolved }));
   }
 
   return lines.join('\n');
@@ -1222,22 +1785,34 @@ function buildAssistantSummary(response: MealLogResponse) {
 
 function buildShareMessage(payload: NutritionCardPayload) {
   const lines = [
-    `食事記録: ${payload.dish}`,
-    `カロリー: ${Math.round(payload.totals.kcal)} kcal`,
+    translateKey('share.mealLogLine', { dish: payload.dish }),
+    translateKey('share.caloriesLine', { calories: Math.round(payload.totals.kcal) }),
     `P: ${formatMacro(payload.totals.protein_g)} g / F: ${formatMacro(payload.totals.fat_g)} g / C: ${formatMacro(payload.totals.carbs_g)} g`,
   ];
 
   if (payload.items?.length) {
-    lines.push('内訳:');
+    lines.push(translateKey('share.breakdownHeading'));
     payload.items.slice(0, 3).forEach((item) => {
-      lines.push(`・${item.name} ${Math.round(item.grams)} g`);
+      lines.push(`${translateKey('share.itemPrefix')}${item.name} ${Math.round(item.grams)} g`);
     });
   }
 
-  if (payload.fallbackApplied && payload.requestedLocale && payload.locale && payload.requestedLocale !== payload.locale) {
-    lines.push(
-      `※ ${describeLocale(payload.requestedLocale)} の翻訳が未対応のため ${describeLocale(payload.locale)} で表示しています`,
-    );
+  if (
+    payload.fallbackApplied &&
+    payload.requestedLocale &&
+    payload.locale &&
+    payload.requestedLocale !== payload.locale
+  ) {
+    if (isTranslationPendingPayload(payload)) {
+      lines.push(translateKey('card.translationPending'));
+    } else {
+      lines.push(
+        translateKey('card.languageFallback', {
+          requested: describeLocale(payload.requestedLocale),
+          resolved: describeLocale(payload.locale),
+        }),
+      );
+    }
   }
 
   return lines.join('\n');
@@ -1335,6 +1910,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '600',
   },
+  usageModalSecondaryButton: {
+    borderRadius: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.accent,
+    backgroundColor: 'transparent',
+  },
+  usageModalSecondaryButtonLabel: {
+    ...textStyles.body,
+    color: colors.accent,
+    fontWeight: '600',
+  },
   flex: {
     flex: 1,
   },
@@ -1387,14 +1975,13 @@ const styles = StyleSheet.create({
   },
   composerArea: {
     borderRadius: 20,
-    paddingTop: 8,
-    paddingHorizontal: 16,
-    gap: 6,
+    paddingTop: 0,
+    paddingHorizontal: 0,
+    gap: 0,
   },
   composerDocked: {
-    backgroundColor: 'rgba(247,247,250,0.95)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
   inputRow: {
     flexDirection: 'row',

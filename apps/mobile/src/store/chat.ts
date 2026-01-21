@@ -3,17 +3,23 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ChatMessage, NutritionCardPayload } from '@/types/chat';
+import { translateKey } from '@/i18n';
 
 export interface ChatState {
   messages: ChatMessage[];
   composingImageUri?: string | null;
-  addUserMessage: (text: string) => ChatMessage;
+  addUserMessage: (text: string, options?: { imageUri?: string | null }) => ChatMessage;
   addAssistantMessage: (
     text: string,
-    options?: { card?: NutritionCardPayload; status?: ChatMessage['status']; ingest?: ChatMessage['ingest'] },
+    options?: {
+      card?: NutritionCardPayload;
+      status?: ChatMessage['status'];
+      ingest?: ChatMessage['ingest'];
+    },
   ) => ChatMessage;
   setMessageText: (id: string, text: string) => void;
   updateMessageStatus: (id: string, status: ChatMessage['status']) => void;
+  updateMessageIngest: (id: string, ingest: Partial<NonNullable<ChatMessage['ingest']>>) => void;
   attachCardToMessage: (id: string, card: NutritionCardPayload) => void;
   updateCardForLog: (logId: string, updates: Partial<NutritionCardPayload>) => void;
   setComposingImage: (uri: string | null) => void;
@@ -25,7 +31,7 @@ function buildInitialMessages(): ChatMessage[] {
     {
       id: nanoid(),
       role: 'assistant',
-      text: 'こんにちは！食事内容を送っていただければ、栄養情報をお返しします🍽️',
+      text: translateKey('chat.welcome'),
       createdAt: Date.now(),
     },
   ];
@@ -36,11 +42,12 @@ export const useChatStore = create<ChatState>()(
     (set, get) => ({
       messages: buildInitialMessages(),
       composingImageUri: null,
-      addUserMessage: (text) => {
+      addUserMessage: (text, options) => {
         const message: ChatMessage = {
           id: nanoid(),
           role: 'user',
           text,
+          imageUri: options?.imageUri ?? undefined,
           createdAt: Date.now(),
           status: 'sending',
         };
@@ -69,7 +76,29 @@ export const useChatStore = create<ChatState>()(
       },
       updateMessageStatus: (id, status) => {
         set({
-          messages: get().messages.map((message) => (message.id === id ? { ...message, status } : message)),
+          messages: get().messages.map((message) =>
+            message.id === id ? { ...message, status } : message,
+          ),
+        });
+      },
+      updateMessageIngest: (id, ingestUpdates) => {
+        set({
+          messages: get().messages.map((message) => {
+            if (message.id !== id) {
+              return message;
+            }
+            const currentIngest = message.ingest ?? null;
+            if (!currentIngest) {
+              return message;
+            }
+            return {
+              ...message,
+              ingest: {
+                ...currentIngest,
+                ...ingestUpdates,
+              },
+            };
+          }),
         });
       },
       attachCardToMessage: (id, card) => {
@@ -120,7 +149,10 @@ export const useChatStore = create<ChatState>()(
           const messages = Array.isArray(state.messages) ? (state.messages as ChatMessage[]) : [];
           const pending = Array.isArray(state.pendingIngests) ? state.pendingIngests : [];
           if (pending.length && messages.length) {
-            const ingestByAssistantId = new Map<string, { requestKey: string; userMessageId: string }>();
+            const ingestByAssistantId = new Map<
+              string,
+              { requestKey: string; userMessageId: string }
+            >();
             for (const entry of pending) {
               if (!entry) continue;
               if (typeof entry.assistantMessageId !== 'string') continue;
@@ -135,7 +167,10 @@ export const useChatStore = create<ChatState>()(
               if (!message || typeof message !== 'object') return message;
               const ingest = ingestByAssistantId.get((message as ChatMessage).id);
               if (!ingest) return message;
-              return { ...(message as ChatMessage), ingest: (message as ChatMessage).ingest ?? ingest };
+              return {
+                ...(message as ChatMessage),
+                ingest: (message as ChatMessage).ingest ?? ingest,
+              };
             });
             state.messages = migratedMessages;
           }

@@ -6,12 +6,15 @@ export interface ChatMessage {
   id: string;
   role: ChatRole;
   text: string;
+  imageUri?: string | null;
   createdAt: number;
   card?: NutritionCardPayload;
   status?: 'sending' | 'delivered' | 'error' | 'processing';
   ingest?: {
     requestKey: string;
     userMessageId: string;
+    nextCheckAt?: number | null;
+    deadlineAt?: number | null;
   };
 }
 

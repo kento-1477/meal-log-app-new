@@ -1,6 +1,7 @@
 import { API_BASE_URL } from './config';
+import Constants from 'expo-constants';
 import { z } from 'zod';
-import { getLocale } from '@/i18n';
+import { getLocale, translateKey } from '@/i18n';
 import { getDeviceTimezone } from '@/utils/timezone';
 import { getDeviceFingerprintId } from '@/services/device-fingerprint';
 import type { NutritionCardPayload } from '@/types/chat';
@@ -14,6 +15,8 @@ import type {
   UpdateMealLogRequest,
   AiUsageSummary,
   GeminiNutritionResponse,
+  AiReportPeriod,
+  AiReportApiResponse,
   FavoriteMeal,
   FavoriteMealDraft,
   FavoriteMealCreateRequest,
@@ -23,6 +26,10 @@ import type {
   UserProfile,
   UpdateUserProfileRequest,
   OnboardingStatus,
+  NotificationSettings,
+  NotificationSettingsUpdateRequest,
+  PushTokenRegisterRequest,
+  PushTokenDisableRequest,
 } from '@meal-log/shared';
 import {
   DashboardSummarySchema,
@@ -31,6 +38,11 @@ import {
   UserProfileResponseSchema,
   UpdateUserProfileRequestSchema,
   CalorieTrendResponseSchema,
+  AiReportApiResponseSchema,
+  NotificationSettingsResponseSchema,
+  NotificationSettingsUpdateRequestSchema,
+  PushTokenRegisterRequestSchema,
+  PushTokenDisableRequestSchema,
 } from '@meal-log/shared';
 
 const HTTP_STATUS = {
@@ -45,6 +57,44 @@ const HTTP_STATUS = {
 } as const;
 
 const responseCache = new Map<string, unknown>();
+const LOG_TIMEOUT_MS = 30_000;
+const IMAGE_LOG_TIMEOUT_MS = 30_000;
+const JAPANESE_CHAR_REGEX = /[ぁ-んァ-ヶ一-龯]/;
+const APP_VERSION =
+  Constants.nativeApplicationVersion ?? Constants.expoConfig?.version ?? null;
+
+function isJapaneseText(value: string) {
+  return JAPANESE_CHAR_REGEX.test(value);
+}
+
+function getApiFallbackMessage(status: number | undefined, locale: string) {
+  const fallbackMessages: Record<number, string> = {
+    [HTTP_STATUS.UNAUTHORIZED]: translateKey('api.error.unauthorized', undefined, locale),
+    [HTTP_STATUS.FORBIDDEN]: translateKey('api.error.forbidden', undefined, locale),
+    [HTTP_STATUS.NOT_FOUND]: translateKey('api.error.notFound', undefined, locale),
+    [HTTP_STATUS.BAD_REQUEST]: translateKey('api.error.badRequest', undefined, locale),
+    [HTTP_STATUS.TOO_MANY_REQUESTS]: translateKey('api.error.tooManyRequests', undefined, locale),
+    [HTTP_STATUS.INTERNAL_ERROR]: translateKey('api.error.internal', undefined, locale),
+    [HTTP_STATUS.NOT_IMPLEMENTED]: translateKey('api.error.notImplemented', undefined, locale),
+  };
+  return fallbackMessages[status ?? -1] ?? translateKey('api.error.unknown', undefined, locale);
+}
+
+function resolveApiErrorMessage(
+  rawMessage: string | undefined,
+  status: number | undefined,
+  statusText: string | undefined,
+  locale: string,
+) {
+  const fallback = getApiFallbackMessage(status, locale);
+  if (!rawMessage || (statusText && rawMessage === statusText)) {
+    return fallback;
+  }
+  const uiIsJapanese = locale.toLowerCase().startsWith('ja');
+  const messageHasJapanese = isJapaneseText(rawMessage);
+  const shouldUseRaw = uiIsJapanese ? messageHasJapanese : !messageHasJapanese;
+  return shouldUseRaw ? rawMessage : fallback;
+}
 
 function resolveFunctionPrefix(path: string): string {
   // Supabase Edge Functions are exposed under /{function-name}/...
@@ -72,9 +122,13 @@ function resolveFunctionPrefix(path: string): string {
   return '/meal-log';
 }
 
+function shouldUseFunctionPrefix(baseUrl: string): boolean {
+  return baseUrl.includes('.functions.supabase.co') || baseUrl.includes('/functions/');
+}
+
 function buildApiUrl(path: string): string {
   const base = API_BASE_URL.replace(/\/+$/, '');
-  const prefix = resolveFunctionPrefix(path);
+  const prefix = shouldUseFunctionPrefix(base) ? resolveFunctionPrefix(path) : '';
   return `${base}${prefix}${path}`;
 }
 
@@ -128,6 +182,9 @@ async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise
   if (!headers.has('X-Device-Id')) {
     headers.set('X-Device-Id', await getDeviceFingerprintId());
   }
+  if (!headers.has('X-App-Version') && APP_VERSION) {
+    headers.set('X-App-Version', APP_VERSION);
+  }
 
   let response: Response;
   try {
@@ -142,7 +199,7 @@ async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise
     );
   } catch (err) {
     if ((err as any)?.name === 'AbortError') {
-      const error = new Error('通信がタイムアウトしました。電波状況を確認して再度お試しください。') as ApiError;
+      const error = new Error(translateKey('api.error.timeout', undefined, appLocale)) as ApiError;
       error.code = 'network.timeout';
       throw error;
     }
@@ -176,7 +233,7 @@ async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise
       );
     } catch (err) {
       if ((err as any)?.name === 'AbortError') {
-        const error = new Error('通信がタイムアウトしました。電波状況を確認して再度お試しください。') as ApiError;
+        const error = new Error(translateKey('api.error.timeout', undefined, appLocale)) as ApiError;
         error.code = 'network.timeout';
         throw error;
       }
@@ -190,7 +247,8 @@ async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise
       } catch (_e) {
         // ignore json parse errors
       }
-      const error = new Error(message || '不明なエラーが発生しました') as ApiError;
+      const resolvedMessage = resolveApiErrorMessage(message, retry.status, retry.statusText, appLocale);
+      const error = new Error(resolvedMessage) as ApiError;
       error.status = retry.status;
       throw error;
     }
@@ -213,21 +271,9 @@ async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise
     } catch (_error) {
       // ignore json parse errors
     }
-    const fallbackMessages: Record<number, string> = {
-      [HTTP_STATUS.UNAUTHORIZED]: 'メールアドレスまたはパスワードが正しくありません',
-      [HTTP_STATUS.FORBIDDEN]: 'アクセスが許可されていません',
-      [HTTP_STATUS.NOT_FOUND]: 'リソースが見つかりません',
-      [HTTP_STATUS.BAD_REQUEST]: '入力内容が正しくありません',
-      [HTTP_STATUS.TOO_MANY_REQUESTS]: 'リクエストが多すぎます。時間をおいて再度お試しください',
-      [HTTP_STATUS.INTERNAL_ERROR]: 'サーバーでエラーが発生しました',
-      [HTTP_STATUS.NOT_IMPLEMENTED]: '未対応の機能です'
-    };
-    const error = new Error(message || fallbackMessages[response.status] || '不明なエラーが発生しました') as ApiError;
+    const resolvedMessage = resolveApiErrorMessage(message, response.status, response.statusText, appLocale);
+    const error = new Error(resolvedMessage) as ApiError;
     error.status = response.status;
-    if (response.status === HTTP_STATUS.UNAUTHORIZED && message === response.statusText) {
-      // サーバーがメッセージを返さなかった401は明示的に認証失敗メッセージをセット
-      error.message = fallbackMessages[HTTP_STATUS.UNAUTHORIZED];
-    }
     if (data && typeof data === 'object') {
       if (typeof data.code === 'string') {
         error.code = data.code;
@@ -340,6 +386,23 @@ export interface MealLogResponse {
 
 export type IngestStatusResponse =
   | { ok: true; status: 'processing'; requestKey: string; createdAt: string | null }
+  | {
+      ok: true;
+      status: 'deferred';
+      requestKey: string;
+      createdAt: string | null;
+      nextCheckAt: string | null;
+      deadlineAt: string | null;
+    }
+  | {
+      ok: true;
+      status: 'failed';
+      requestKey: string;
+      createdAt: string | null;
+      errorCode: string | null;
+      errorCategory: 'waitable' | 'actionable' | null;
+      message: string | null;
+    }
   | { ok: true; status: 'done'; requestKey: string; result: MealLogResponse };
 
 export async function getIngestStatus(requestKey: string) {
@@ -352,6 +415,7 @@ export async function getIngestStatus(requestKey: string) {
 
 export async function postMealLog(params: { message: string; imageUri?: string | null; idempotencyKey?: string }) {
   const form = new FormData();
+  const hasImage = Boolean(params.imageUri);
   if (params.message) {
     form.append('message', params.message);
   }
@@ -371,7 +435,11 @@ export async function postMealLog(params: { message: string; imageUri?: string |
   return apiFetch<MealLogResponse>('/log', {
     method: 'POST',
     body: form,
-    headers: { 'Idempotency-Key': params.idempotencyKey ?? `${Date.now()}-${Math.random()}` },
+    headers: {
+      'Idempotency-Key': params.idempotencyKey ?? `${Date.now()}-${Math.random()}`,
+      'X-Translation-Mode': 'defer',
+    },
+    timeoutMs: hasImage ? IMAGE_LOG_TIMEOUT_MS : LOG_TIMEOUT_MS,
   });
 }
 
@@ -396,6 +464,40 @@ export async function getMealLogs(options: { range?: MealLogRange; limit?: numbe
   const raw = await apiFetch<unknown>(appendLocale(path, locale), { method: 'GET' });
   const parsed = MealLogListResponseSchema.parse(raw);
   return parsed as MealLogListResponse;
+}
+
+export async function getNotificationSettings(): Promise<NotificationSettings> {
+  const raw = await apiFetch<unknown>('/api/notifications/settings', { method: 'GET' });
+  const parsed = NotificationSettingsResponseSchema.parse(raw);
+  return parsed.settings;
+}
+
+export async function updateNotificationSettings(
+  payload: NotificationSettingsUpdateRequest,
+): Promise<NotificationSettings> {
+  NotificationSettingsUpdateRequestSchema.parse(payload);
+  const raw = await apiFetch<unknown>('/api/notifications/settings', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+  const parsed = NotificationSettingsResponseSchema.parse(raw);
+  return parsed.settings;
+}
+
+export async function registerPushToken(payload: PushTokenRegisterRequest) {
+  PushTokenRegisterRequestSchema.parse(payload);
+  return apiFetch<{ ok: true }>('/api/notifications/token', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function disablePushToken(payload: PushTokenDisableRequest) {
+  PushTokenDisableRequestSchema.parse(payload);
+  return apiFetch<{ ok: true }>('/api/notifications/token', {
+    method: 'DELETE',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function getRecentLogs() {
@@ -463,6 +565,13 @@ export async function getMealLogDetail(logId: string) {
   const locale = getLocale();
   return apiFetch<{ ok: boolean; item: MealLogDetail }>(appendLocale(`/api/log/${logId}`, locale), {
     method: 'GET',
+  });
+}
+
+export async function translateMealLog(logId: string) {
+  const locale = getLocale();
+  return apiFetch<MealLogResponse>(appendLocale(`/api/log/${logId}/translate`, locale), {
+    method: 'POST',
   });
 }
 
@@ -539,6 +648,15 @@ export async function getDashboardTargets() {
   );
   const parsed = DashboardTargetsSchema.parse(response.targets);
   return parsed as DashboardTargets;
+}
+
+export async function createAiReport(period: AiReportPeriod) {
+  const response = await apiFetch<unknown>('/api/reports', {
+    method: 'POST',
+    body: JSON.stringify({ period }),
+  });
+  const parsed = AiReportApiResponseSchema.parse(response);
+  return parsed as AiReportApiResponse;
 }
 
 export type CalorieTrendMode = 'daily' | 'weekly' | 'monthly';
@@ -662,6 +780,7 @@ export async function getPremiumStatus(): Promise<PremiumStatusResponse> {
 export interface ReferralStatusResponse {
   inviteCode: string;
   inviteLink: string;
+  webLink: string;
   stats: {
     totalReferred: number;
     completedReferred: number;

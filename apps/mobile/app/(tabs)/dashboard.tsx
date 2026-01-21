@@ -257,8 +257,8 @@ export default function DashboardScreen() {
       queryClient.invalidateQueries({ queryKey: ['dashboardSummary', period, locale] });
     },
     onError: (error: unknown) => {
-      const message = error instanceof Error ? error.message : 'お気に入りの更新に失敗しました。';
-      Alert.alert('お気に入りの更新に失敗しました', message);
+      const message = error instanceof Error ? error.message : t('favorites.updateFailedMessage');
+      Alert.alert(t('favorites.updateFailedTitle'), message);
     },
     onSettled: () => {
       setFavoriteToggleId(null);
@@ -419,7 +419,7 @@ export default function DashboardScreen() {
                                 locale={locale}
                               />
                             ) : (
-                              <MonthlyDeficitLockedCard onUpgrade={() => router.push('/paywall')} />
+                              <MonthlyDeficitLockedCard onUpgrade={() => router.push('/paywall')} t={t} />
                             )}
                           </View>
                         </View>
@@ -497,7 +497,7 @@ interface MonthlyDeficitCardProps {
   locale: string;
 }
 
-function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProps) {
+function MonthlyDeficitCard({ summary, targets, locale, t }: MonthlyDeficitCardProps) {
   const [helpVisible, setHelpVisible] = useState(false);
   const timezone = summary.range.timezone ?? null;
 
@@ -533,10 +533,17 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
 
   const monthlySummary = monthlySummaryQuery.data ?? null;
   const dailyEntries = useMemo(() => monthlySummary?.calories.daily ?? [], [monthlySummary]);
+  const todayIso = today.toISODate();
+  const completeDayEntries = useMemo(() => {
+    if (!todayIso) {
+      return dailyEntries;
+    }
+    return dailyEntries.filter((entry) => entry.date !== todayIso);
+  }, [dailyEntries, todayIso]);
 
   const targetDaily = typeof targets.calories === 'number' ? targets.calories : 0;
 
-  const deficitKcal = dailyEntries.reduce((sum, entry) => {
+  const deficitKcal = completeDayEntries.reduce((sum, entry) => {
     if (entry.total <= 0) {
       return sum;
     }
@@ -563,7 +570,8 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
       return undefined;
     }
 
-    const entriesWithTotal = dailyEntries.filter(
+    const entriesForExample = completeDayEntries.length > 0 ? completeDayEntries : dailyEntries;
+    const entriesWithTotal = entriesForExample.filter(
       (entry) => typeof entry.total === 'number' && Number.isFinite(entry.total) && entry.total > 0,
     );
     if (entriesWithTotal.length === 0) {
@@ -585,7 +593,7 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
       burnKcal,
       monthlyTotalKcalText: displayDeficitKcal,
     };
-  }, [dailyEntries, displayDeficitKcal, hasMonthlyData, targetDaily]);
+  }, [completeDayEntries, dailyEntries, displayDeficitKcal, hasMonthlyData, targetDaily]);
 
   return (
     <View style={burningStyles.container}>
@@ -600,7 +608,7 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
         style={burningStyles.helpButtonAbsolute}
         onPress={() => setHelpVisible(true)}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        accessibilityLabel="月間脂肪燃焼量の説明"
+        accessibilityLabel={t('dashboard.monthlyFatBurn.helpLabel')}
         accessibilityRole="button"
       >
         <View style={burningStyles.helpCircle} pointerEvents="none">
@@ -618,7 +626,7 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
               adjustsFontSizeToFit
               minimumFontScale={0.8}
             >
-              月間脂肪燃焼量
+              {t('dashboard.monthlyFatBurn.title')}
             </Text>
           </View>
         </View>
@@ -628,9 +636,9 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
             <ActivityIndicator size="small" color="#FF7043" />
           ) : (
             <View style={burningStyles.heroStack}>
-              <Text style={burningStyles.heroLabel}>脂肪</Text>
+              <Text style={burningStyles.heroLabel}>{t('dashboard.monthlyFatBurn.heroLabel')}</Text>
               <Text style={burningStyles.heroValue}>{displayFatKg}</Text>
-              <Text style={burningStyles.heroUnit}>kg相当</Text>
+              <Text style={burningStyles.heroUnit}>{t('dashboard.monthlyFatBurn.heroUnit')}</Text>
             </View>
           )}
         </View>
@@ -638,7 +646,7 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
         {!isLoading && (
           <View style={burningStyles.cumulativeSection}>
             <Text style={burningStyles.cumulativeLabel} numberOfLines={2}>
-              今月の累計マイナスカロリー
+              {t('dashboard.monthlyFatBurn.cumulativeLabel')}
             </Text>
             <Text style={burningStyles.cumulativeValue}>{displayDeficitKcal}</Text>
           </View>
@@ -650,6 +658,7 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
           mode="unlocked"
           example={modalExample}
           locale={locale}
+          t={t}
         />
       </View>
     </View>
@@ -658,9 +667,10 @@ function MonthlyDeficitCard({ summary, targets, locale }: MonthlyDeficitCardProp
 
 interface MonthlyDeficitLockedCardProps {
   onUpgrade: () => void;
+  t: Translate;
 }
 
-function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) {
+function MonthlyDeficitLockedCard({ onUpgrade, t }: MonthlyDeficitLockedCardProps) {
   const [helpVisible, setHelpVisible] = useState(false);
 
   return (
@@ -679,12 +689,12 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
           <View style={burningStyles.fireIconContainer}>
             <Text style={burningStyles.fireIconSmall}>🔥</Text>
           </View>
-          <Text style={burningStyles.headerTitleText}>脂肪燃焼</Text>
+          <Text style={burningStyles.headerTitleText}>{t('dashboard.monthlyFatBurn.titleShort')}</Text>
         </View>
         <TouchableOpacity
           onPress={() => setHelpVisible(true)}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityLabel="月間脂肪燃焼量の説明"
+          accessibilityLabel={t('dashboard.monthlyFatBurn.helpLabel')}
           accessibilityRole="button"
         >
           <View style={burningStyles.helpCircle} pointerEvents="none">
@@ -694,20 +704,21 @@ function MonthlyDeficitLockedCard({ onUpgrade }: MonthlyDeficitLockedCardProps) 
       </View>
 
       {/* 質問テキスト */}
-      <Text style={burningStyles.questionText}>今月は何キロの{'\n'}脂肪落とした？</Text>
+      <Text style={burningStyles.questionText}>{t('dashboard.monthlyFatBurn.question')}</Text>
 
       {/* 大きな炎アイコン */}
       <Text style={burningStyles.fireBig}>🔥</Text>
 
       {/* CTAボタン */}
       <TouchableOpacity style={burningStyles.ctaButtonNew} onPress={onUpgrade} activeOpacity={0.8}>
-        <Text style={burningStyles.ctaLabelNew}>確認する →</Text>
+        <Text style={burningStyles.ctaLabelNew}>{t('dashboard.monthlyFatBurn.cta')}</Text>
       </TouchableOpacity>
 
       <MonthlyDeficitHelpModal
         visible={helpVisible}
         onClose={() => setHelpVisible(false)}
         mode="locked"
+        t={t}
       />
     </View>
   );
@@ -719,6 +730,7 @@ interface MonthlyDeficitHelpModalProps {
   mode?: 'locked' | 'unlocked';
   example?: MonthlyDeficitHelpExample;
   locale?: string;
+  t: Translate;
 }
 
 interface MonthlyDeficitHelpExample {
@@ -734,6 +746,7 @@ function MonthlyDeficitHelpModal({
   mode = 'unlocked',
   example,
   locale,
+  t,
 }: MonthlyDeficitHelpModalProps) {
   const resolvedExample: MonthlyDeficitHelpExample = example ?? {
     targetKcal: 2000,
@@ -758,7 +771,7 @@ function MonthlyDeficitHelpModal({
             end={{ x: 0.5, y: 1 }}
             style={burningStyles.modalGradient}
           >
-            <Text style={burningStyles.modalTitle}>🔥 月間脂肪燃焼量</Text>
+            <Text style={burningStyles.modalTitle}>{t('dashboard.monthlyFatBurn.modalTitle')}</Text>
 
             {/* Fat Illustration */}
             <View style={burningStyles.fatContainer}>
@@ -772,24 +785,29 @@ function MonthlyDeficitHelpModal({
             {/* Clear Explanation */}
             <View style={burningStyles.descriptionBox}>
               <Text style={burningStyles.descriptionText}>
-                毎日「目標カロリーより少なく食べられた分」を1ヶ月間積み上げた数値です。{'\n\n'}
-                <Text style={burningStyles.highlightText}>7,200kcal</Text> 貯まるごとに
-                <Text style={burningStyles.highlightText}>脂肪1kg</Text>の減少に相当します。
+                {t('dashboard.monthlyFatBurn.descriptionPrefix')}
+                {'\n\n'}
+                <Text style={burningStyles.highlightText}>7,200kcal</Text>
+                {t('dashboard.monthlyFatBurn.descriptionMiddle')}
+                <Text style={burningStyles.highlightText}>{t('dashboard.monthlyFatBurn.descriptionKg')}</Text>
+                {t('dashboard.monthlyFatBurn.descriptionSuffix')}
               </Text>
               {mode === 'locked' ? (
                 <Text style={burningStyles.descriptionNoteText}>
-                  <Text style={burningStyles.highlightText}>※PREMIUM</Text>
-                  であなたの数値・推移が表示されます。
+                  <Text style={burningStyles.highlightText}>
+                    {t('dashboard.monthlyFatBurn.premiumNotePrefix')}
+                  </Text>
+                  {t('dashboard.monthlyFatBurn.premiumNoteSuffix')}
                 </Text>
               ) : null}
             </View>
             {/* Compact Diagram */}
             <View style={burningStyles.diagramBox}>
-              <Text style={burningStyles.diagramTitle}>計算イメージ</Text>
+              <Text style={burningStyles.diagramTitle}>{t('dashboard.monthlyFatBurn.diagramTitle')}</Text>
 
               <View style={burningStyles.calculationRow}>
                 <View style={burningStyles.calcBox}>
-                  <Text style={burningStyles.calcLabel}>目標</Text>
+                  <Text style={burningStyles.calcLabel}>{t('dashboard.monthlyFatBurn.calcTarget')}</Text>
                   <Text
                     style={burningStyles.calcValue}
                     numberOfLines={1}
@@ -801,7 +819,7 @@ function MonthlyDeficitHelpModal({
                 </View>
                 <Text style={burningStyles.calcOperator}>−</Text>
                 <View style={burningStyles.calcBox}>
-                  <Text style={burningStyles.calcLabel}>摂取</Text>
+                  <Text style={burningStyles.calcLabel}>{t('dashboard.monthlyFatBurn.calcIntake')}</Text>
                   <Text
                     style={burningStyles.calcValue}
                     numberOfLines={1}
@@ -813,7 +831,7 @@ function MonthlyDeficitHelpModal({
                 </View>
                 <Text style={burningStyles.calcOperator}>=</Text>
                 <View style={burningStyles.calcBox}>
-                  <Text style={burningStyles.calcLabel}>燃焼</Text>
+                  <Text style={burningStyles.calcLabel}>{t('dashboard.monthlyFatBurn.calcBurn')}</Text>
                   <Text
                     style={burningStyles.calcValue}
                     numberOfLines={1}
@@ -825,13 +843,15 @@ function MonthlyDeficitHelpModal({
                 </View>
               </View>
               <View style={burningStyles.monthlyResultBox}>
-                <Text style={burningStyles.monthlyResultText}>月間合計 = {monthlyText} 🔥</Text>
+                <Text style={burningStyles.monthlyResultText}>
+                  {t('dashboard.monthlyFatBurn.monthlyTotal', { value: monthlyText })}
+                </Text>
               </View>
-              <Text style={burningStyles.noteText}>※一ヶ月分を積み上げたイメージ</Text>
+              <Text style={burningStyles.noteText}>{t('dashboard.monthlyFatBurn.noteText')}</Text>
             </View>
 
             <TouchableOpacity style={burningStyles.modalCloseBtn} onPress={onClose}>
-              <Text style={burningStyles.modalCloseBtnText}>閉じる</Text>
+              <Text style={burningStyles.modalCloseBtnText}>{t('common.close')}</Text>
             </TouchableOpacity>
           </LinearGradient>
         </View>

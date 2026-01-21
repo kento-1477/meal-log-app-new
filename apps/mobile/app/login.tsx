@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Image, Linking, Platform, SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Image, Linking, Platform, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -132,7 +132,7 @@ export default function LoginScreen() {
                 disabled={loading}
               />
             ) : (
-              <Text style={styles.unsupportedText}>現在このアプリはiOSのみ対応しています。</Text>
+              <Text style={styles.unsupportedText}>{t('login.unsupportedPlatform')}</Text>
             )}
           </View>
         </View>

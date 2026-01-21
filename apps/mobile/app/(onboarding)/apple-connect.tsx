@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, SafeAreaView, StyleSheet, Text, View, Platform, Image, Linking } from 'react-native';
+import { Alert, StyleSheet, Text, View, Platform, Image, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/theme/colors';
 import { textStyles } from '@/theme/typography';
@@ -117,10 +117,14 @@ export default function OnboardingAppleConnect() {
       resetDraft();
 
       if (profileResult.referralClaimed && profileResult.referralResult) {
-        Alert.alert(
-          '🎉 プレミアムを獲得しました！',
-          `${profileResult.referralResult.premiumDays}日間のプレミアムが付与されました。${profileResult.referralResult.referrerUsername ?? ''}`.trim(),
-        );
+        const referrerName = profileResult.referralResult.referrerUsername ?? '';
+        const rewardMessage = referrerName
+          ? t('referral.rewardMessageWithReferrer', {
+              days: profileResult.referralResult.premiumDays,
+              referrer: referrerName,
+            })
+          : t('referral.rewardMessage', { days: profileResult.referralResult.premiumDays });
+        Alert.alert(t('referral.rewardTitle'), rewardMessage);
         getPremiumStatus()
           .then((status) => setPremiumStatus(status))
           .catch((err) => console.warn('Failed to refresh premium status', err));
@@ -217,7 +221,7 @@ export default function OnboardingAppleConnect() {
                 disabled={loading}
               />
             ) : (
-              <Text style={styles.unsupportedText}>現在このアプリはiOSのみ対応しています。</Text>
+              <Text style={styles.unsupportedText}>{t('login.unsupportedPlatform')}</Text>
             )}
           </View>
         </View>
@@ -358,10 +362,17 @@ const styles = StyleSheet.create({
     width: 124,
     height: 124,
     borderRadius: 999,
-    backgroundColor: '#f2f4f7',
+    backgroundColor: colors.surfaceStrong,
+    borderWidth: 1,
+    borderColor: colors.cardHalo,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
   },
   logoHalo: {
     position: 'absolute',
@@ -371,8 +382,9 @@ const styles = StyleSheet.create({
     transform: [{ translateY: 12 }],
   },
   logo: {
-    width: 84,
-    height: 84,
+    width: 96,
+    height: 96,
+    opacity: 0.96,
   },
   benefits: {
     marginTop: 18,
