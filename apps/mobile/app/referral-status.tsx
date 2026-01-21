@@ -70,6 +70,8 @@ export default function ReferralStatusScreen() {
     [t],
   );
 
+  const shareLink = status?.webLink || status?.inviteLink || '';
+
   const handleCopyCode = () => {
     if (!status?.inviteCode) return;
 
@@ -85,11 +87,11 @@ export default function ReferralStatusScreen() {
   };
 
   const handleCopyLink = () => {
-    if (!status?.inviteLink) return;
+    if (!shareLink) return;
 
     try {
       setIsCopyingLink(true);
-      Clipboard.setString(status.inviteLink);
+      Clipboard.setString(shareLink);
       Alert.alert(t('referral.status.linkCopied'));
     } catch (err) {
       console.error('Failed to copy link:', err);
@@ -99,10 +101,10 @@ export default function ReferralStatusScreen() {
   };
 
   const handleShareLink = async () => {
-    if (!status?.inviteLink) return;
+    if (!shareLink) return;
 
     try {
-      const message = t('referral.share.message', { link: status.inviteLink });
+      const message = t('referral.share.message', { link: shareLink });
       await Share.share({
         title: t('referral.share.title'),
         message,

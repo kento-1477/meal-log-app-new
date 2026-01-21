@@ -46,8 +46,14 @@ export function useReferralDeepLink() {
       try {
         const parsed = new URL(url);
         
-        // meallog://invite?code=XXXXXX の形式を確認
-        if (parsed.hostname !== 'invite' && parsed.pathname !== '/invite') {
+        const normalizedPath = parsed.pathname.replace(/\/+$/, '');
+        const isAppInvite = parsed.protocol === 'meallog:' && parsed.hostname === 'invite';
+        const isWebInvite =
+          (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
+          (parsed.hostname === 'meal-log.app' || parsed.hostname === 'www.meal-log.app') &&
+          normalizedPath === '/invite';
+
+        if (!isAppInvite && !isWebInvite) {
           return;
         }
 

@@ -780,6 +780,7 @@ export async function getPremiumStatus(): Promise<PremiumStatusResponse> {
 export interface ReferralStatusResponse {
   inviteCode: string;
   inviteLink: string;
+  webLink: string;
   stats: {
     totalReferred: number;
     completedReferred: number;
