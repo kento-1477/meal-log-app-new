@@ -1507,10 +1507,14 @@ export default function ChatScreen() {
                       placeholder={t('chat.placeholder')}
                       value={input}
                       onChangeText={setInput}
-                      multiline
-                      submitBehavior="newline"
                       blurOnSubmit={false}
-                      returnKeyType="default"
+                      multiline={false}
+                      returnKeyType="send"
+                      onSubmitEditing={() => {
+                        if (!sendButtonDisabled) {
+                          void handleSend();
+                        }
+                      }}
                     />
                     <TouchableOpacity
                       onPress={() => {
