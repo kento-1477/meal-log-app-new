@@ -39,6 +39,7 @@ export default function ReportScreen() {
   const { t, locale } = useTranslation();
   const setUsage = useSessionStore((state) => state.setUsage);
   const [period, setPeriod] = useState<AiReportPeriod>('daily');
+  const [isGenerating, setIsGenerating] = useState(false);
   const [reports, setReports] = useState<ReportCache>(DEFAULT_CACHE);
   const report = reports[period];
 
@@ -72,12 +73,17 @@ export default function ReportScreen() {
       const message = apiError?.message ?? t('report.errorFallback');
       Alert.alert(t('report.errorTitle'), message);
     },
+    onSettled: () => {
+      setIsGenerating(false);
+    },
   });
 
   const handleGenerate = () => {
-    if (!mutation.isLoading) {
-      mutation.mutate(period);
+    if (mutation.isLoading || isGenerating) {
+      return;
     }
+    setIsGenerating(true);
+    mutation.mutate(period);
   };
 
   const formatPriority = (value: AiReportAdvice['priority']) => {
@@ -98,13 +104,19 @@ export default function ReportScreen() {
           <View style={styles.segmentGroup} accessibilityRole="tablist">
             {periodOptions.map((option) => {
               const active = option.key === period;
+              const disabled = mutation.isLoading || isGenerating;
               return (
                 <TouchableOpacity
                   key={option.key}
-                  style={[styles.segmentButton, active && styles.segmentButtonActive]}
+                  style={[
+                    styles.segmentButton,
+                    active && styles.segmentButtonActive,
+                    disabled && styles.segmentButtonDisabled,
+                  ]}
                   onPress={() => setPeriod(option.key)}
                   accessibilityRole="tab"
-                  accessibilityState={{ selected: active }}
+                  accessibilityState={{ selected: active, disabled }}
+                  disabled={disabled}
                 >
                   <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
                     {option.label}
@@ -123,11 +135,24 @@ export default function ReportScreen() {
           </View>
 
           <PrimaryButton
-            label={report ? t('report.generateAgain') : t('report.generate')}
+            label={
+              mutation.isLoading || isGenerating
+                ? t('report.generatingShort')
+                : report
+                  ? t('report.generateAgain')
+                  : t('report.generate')
+            }
             onPress={handleGenerate}
-            loading={mutation.isLoading}
+            loading={mutation.isLoading || isGenerating}
           />
-          <Text style={styles.tokenNote}>{t('report.tokenNote')}</Text>
+          {mutation.isLoading || isGenerating ? (
+            <View style={styles.loadingInline}>
+              <ActivityIndicator color={colors.textMuted} />
+              <Text style={styles.loadingInlineText}>{t('report.generating')}</Text>
+            </View>
+          ) : (
+            <Text style={styles.tokenNote}>{t('report.tokenNote')}</Text>
+          )}
 
           {!report ? (
             <GlassCard style={styles.card}>
@@ -200,12 +225,6 @@ export default function ReportScreen() {
             </>
           )}
 
-          {mutation.isLoading ? (
-            <View style={styles.loadingOverlay}>
-              <ActivityIndicator color={colors.accent} />
-              <Text style={styles.loadingText}>{t('report.generating')}</Text>
-            </View>
-          ) : null}
         </ScrollView>
       </SafeAreaView>
     </AuroraBackground>
@@ -248,6 +267,9 @@ const styles = StyleSheet.create({
   segmentButtonActive: {
     backgroundColor: colors.accent,
   },
+  segmentButtonDisabled: {
+    opacity: 0.6,
+  },
   segmentLabel: {
     ...textStyles.caption,
     fontWeight: '600',
@@ -278,6 +300,16 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textMuted,
     textAlign: 'center',
+  },
+  loadingInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  loadingInlineText: {
+    ...textStyles.caption,
+    color: colors.textMuted,
   },
   card: {
     marginTop: spacing.sm,
@@ -416,13 +448,5 @@ const styles = StyleSheet.create({
   adviceDetail: {
     ...textStyles.caption,
     color: colors.textSecondary,
-  },
-  loadingOverlay: {
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-  },
-  loadingText: {
-    ...textStyles.caption,
   },
 });
