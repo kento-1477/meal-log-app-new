@@ -1056,6 +1056,7 @@ app.post('/api/reports', requireAuth, async (c) => {
     summary: analysis.report.summary,
     metrics: analysis.report.metrics,
     advice: analysis.report.advice,
+    ingredients: analysis.report.ingredients,
     meta: { ...analysis.meta, attemptReports: analysis.attemptReports },
   };
 

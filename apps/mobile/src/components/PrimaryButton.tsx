@@ -29,7 +29,18 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({ label, onPress, lo
         style={[styles.gradient, isDisabled && styles.disabled]}
       >
         <View style={styles.content}>
-          {loading ? <ActivityIndicator color={colors.accentInk} /> : <Text style={styles.text}>{label}</Text>}
+          {loading ? (
+            <>
+              <ActivityIndicator color={colors.accentInk} />
+              <Text style={styles.text} numberOfLines={1} ellipsizeMode="tail">
+                {label}
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.text} numberOfLines={1} ellipsizeMode="tail">
+              {label}
+            </Text>
+          )}
         </View>
       </LinearGradient>
     </Pressable>
@@ -63,6 +74,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
   },
   text: {
     ...textStyles.titleMedium,
