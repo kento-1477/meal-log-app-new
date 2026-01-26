@@ -1,12 +1,24 @@
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DateTime } from 'luxon';
 import { useMutation } from '@tanstack/react-query';
-import type { AiReportAdvice, AiReportPeriod, AiReportResponse } from '@meal-log/shared';
+import type { AiReportAdvice, AiReportPeriod, AiReportResponse, DashboardPeriod } from '@meal-log/shared';
+import Svg, { Circle, Defs, G, LinearGradient, Line, Path, Stop } from 'react-native-svg';
+import { arc, area, curveMonotoneX, line } from 'd3-shape';
 import { AuroraBackground } from '@/components/AuroraBackground';
 import { GlassCard } from '@/components/GlassCard';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { useDashboardSummary, type ChartPoint, type MealPeriodBreakdown, type MacroStat } from '@/features/dashboard/useDashboardSummary';
 import { createAiReport, type ApiError } from '@/services/api';
 import { useTranslation } from '@/i18n';
 import { useSessionStore } from '@/store/session';
@@ -35,6 +47,46 @@ function formatReportRange(report: AiReportResponse, locale: string) {
   return `${from.toFormat(dateFormat)} - ${to.toFormat(dateFormat)}`;
 }
 
+function resolveDashboardParams(period: AiReportPeriod, report: AiReportResponse | null) {
+  if (!report) {
+    return { period: 'today' as DashboardPeriod, range: undefined };
+  }
+  if (period === 'monthly') {
+    const from = DateTime.fromISO(report.range.from).toISODate() ?? report.range.from.slice(0, 10);
+    const toDate = DateTime.fromISO(report.range.to).minus({ days: 1 });
+    const to = toDate.toISODate() ?? report.range.to.slice(0, 10);
+    return { period: 'custom' as DashboardPeriod, range: { from, to } };
+  }
+  return { period: (period === 'daily' ? 'today' : 'thisWeek') as DashboardPeriod, range: undefined };
+}
+
+function scoreEmoji(score: number) {
+  if (score >= 85) return '🔥';
+  if (score >= 70) return '👍';
+  if (score >= 55) return '🌤️';
+  return '🌱';
+}
+
+const MACRO_META: Record<MacroStat['key'], { emoji: string; color: string }> = {
+  protein_g: { emoji: '🥚', color: colors.ringProtein },
+  fat_g: { emoji: '🥑', color: colors.ringFat },
+  carbs_g: { emoji: '🍞', color: colors.ringCarb },
+};
+
+const MEAL_PERIOD_META: Record<MealPeriodBreakdown['key'], { emoji: string; color: string }> = {
+  breakfast: { emoji: '🌅', color: colors.accent },
+  lunch: { emoji: '☀️', color: '#FF9B5C' },
+  dinner: { emoji: '🌙', color: '#7BA7FF' },
+  snack: { emoji: '🍪', color: colors.accentSage },
+  unknown: { emoji: '❔', color: colors.border },
+};
+
+const HIGHLIGHT_TONES = [colors.accent, colors.accentSage, colors.ringCarb, colors.ringFat];
+
+function highlightTint(index: number) {
+  return HIGHLIGHT_TONES[index % HIGHLIGHT_TONES.length];
+}
+
 export default function ReportScreen() {
   const { t, locale } = useTranslation();
   const setUsage = useSessionStore((state) => state.setUsage);
@@ -42,6 +94,31 @@ export default function ReportScreen() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [reports, setReports] = useState<ReportCache>(DEFAULT_CACHE);
   const report = reports[period];
+  const dashboardParams = useMemo(() => resolveDashboardParams(period, report), [period, report]);
+  const dashboardSummary = useDashboardSummary(dashboardParams.period, {
+    enabled: Boolean(report),
+    range: dashboardParams.range,
+  });
+  const dashboard = dashboardSummary.data;
+
+  const summaryStats = useMemo(() => {
+    if (!dashboard) {
+      return null;
+    }
+    const dailyEntries = dashboard.summary.calories.daily;
+    const loggedDays = dailyEntries.filter((entry) => entry.total > 0).length;
+    const totalDays = dailyEntries.length;
+    const totalCalories = dailyEntries.reduce((sum, entry) => sum + entry.total, 0);
+    const averageCalories = loggedDays > 0 ? Math.round(totalCalories / loggedDays) : 0;
+    const targetCalories = dashboard.summary.macros.targets.calories;
+    const achievement = targetCalories > 0 ? Math.round((dashboard.summary.macros.total.calories / targetCalories) * 100) : 0;
+    return {
+      averageCalories,
+      loggedDays,
+      totalDays,
+      achievement,
+    };
+  }, [dashboard]);
 
   const periodOptions = useMemo(
     () => [
@@ -87,9 +164,15 @@ export default function ReportScreen() {
   };
 
   const formatPriority = (value: AiReportAdvice['priority']) => {
-    if (value === 'high') return t('report.priority.high');
-    if (value === 'medium') return t('report.priority.medium');
-    return t('report.priority.low');
+    if (value === 'high') return `🚨 ${t('report.priority.high')}`;
+    if (value === 'medium') return `⚡️ ${t('report.priority.medium')}`;
+    return `🌿 ${t('report.priority.low')}`;
+  };
+
+  const priorityBadgeStyle = (value: AiReportAdvice['priority']) => {
+    if (value === 'high') return styles.priorityBadgeHigh;
+    if (value === 'medium') return styles.priorityBadgeMedium;
+    return styles.priorityBadgeLow;
   };
 
   return (
@@ -162,27 +245,101 @@ export default function ReportScreen() {
           ) : (
             <>
               <GlassCard style={styles.card}>
-                <Text style={styles.cardTitle}>{t('report.section.summary')}</Text>
-                <View style={styles.summaryRow}>
-                  <View style={styles.summaryText}>
-                    <Text style={styles.summaryHeadline}>{report.summary.headline}</Text>
-                    <View style={styles.highlightRow}>
-                      {report.summary.highlights.map((highlight, index) => (
-                        <View key={`${highlight}-${index}`} style={styles.highlightChip}>
-                          <Text style={styles.highlightText}>{highlight}</Text>
-                        </View>
-                      ))}
+                <Text style={styles.cardTitle}>✨ {t('report.section.summary')}</Text>
+                <View style={styles.summaryHero}>
+                  <ScoreRing
+                    score={Math.round(report.summary.score)}
+                    label={t('report.scoreLabel')}
+                    emoji={scoreEmoji(report.summary.score)}
+                  />
+                  <View style={styles.heroStats}>
+                    <View style={styles.heroStat}>
+                      <Text style={styles.heroStatLabel}>🔥 {t('report.stat.averageCalories')}</Text>
+                      <Text style={styles.heroStatValue}>
+                        {summaryStats ? `${summaryStats.averageCalories} kcal` : '--'}
+                      </Text>
+                    </View>
+                    <View style={styles.heroStat}>
+                      <Text style={styles.heroStatLabel}>🗓️ {t('report.stat.loggedDays')}</Text>
+                      <Text style={styles.heroStatValue}>
+                        {summaryStats ? `${summaryStats.loggedDays} / ${summaryStats.totalDays}` : '--'}
+                      </Text>
+                    </View>
+                    <View style={styles.heroStat}>
+                      <Text style={styles.heroStatLabel}>🎯 {t('report.stat.achievement')}</Text>
+                      <Text style={styles.heroStatValue}>
+                        {summaryStats ? `${summaryStats.achievement}%` : '--'}
+                      </Text>
                     </View>
                   </View>
-                  <View style={styles.scoreBadge}>
-                    <Text style={styles.scoreValue}>{Math.round(report.summary.score)}</Text>
-                    <Text style={styles.scoreLabel}>{t('report.scoreLabel')}</Text>
-                  </View>
+                </View>
+                <Text style={styles.summaryHeadline}>{report.summary.headline}</Text>
+                <View style={styles.highlightRow}>
+                  {report.summary.highlights.map((highlight, index) => (
+                    <View
+                      key={`${highlight}-${index}`}
+                      style={[
+                        styles.highlightChip,
+                        { backgroundColor: `${highlightTint(index)}33` },
+                      ]}
+                    >
+                      <Text style={styles.highlightText}>{highlight}</Text>
+                    </View>
+                  ))}
                 </View>
               </GlassCard>
 
               <GlassCard style={styles.card}>
-                <Text style={styles.cardTitle}>{t('report.section.metrics')}</Text>
+                <Text style={styles.cardTitle}>📈 {t('report.section.trend')}</Text>
+                {dashboardSummary.isLoading && !dashboard ? (
+                  <ActivityIndicator color={colors.accent} />
+                ) : dashboard?.calories.points.length ? (
+                  <TrendLineChart points={dashboard.calories.points} target={dashboard.calories.targetLine} />
+                ) : (
+                  <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
+                )}
+                {dashboard?.calories.targetLine ? (
+                  <Text style={styles.trendNote}>
+                    {t('dashboard.chart.targetLabel', { value: Math.round(dashboard.calories.targetLine) })}
+                  </Text>
+                ) : null}
+              </GlassCard>
+
+              <GlassCard style={styles.card}>
+                <Text style={styles.cardTitle}>🥗 {t('report.section.macros')}</Text>
+                {dashboard ? (
+                  <View style={styles.macroWrap}>
+                    <MacroDonut macros={dashboard.macros} totalCalories={dashboard.summary.macros.total.calories} />
+                    <View style={styles.macroLegend}>
+                      {dashboard.macros.map((macro) => (
+                        <View key={macro.key} style={styles.macroLegendRow}>
+                          <View style={[styles.macroDot, { backgroundColor: MACRO_META[macro.key].color }]} />
+                          <Text style={styles.macroLegendText}>
+                            {MACRO_META[macro.key].emoji} {macro.label}
+                          </Text>
+                          <Text style={styles.macroLegendValue}>
+                            {Math.round(macro.actual)} / {Math.round(macro.target)}g
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                ) : (
+                  <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
+                )}
+              </GlassCard>
+
+              <GlassCard style={styles.card}>
+                <Text style={styles.cardTitle}>🍽️ {t('report.section.mealTiming')}</Text>
+                {dashboard ? (
+                  <MealTimingStack entries={dashboard.calories.mealPeriodBreakdown} />
+                ) : (
+                  <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
+                )}
+              </GlassCard>
+
+              <GlassCard style={styles.card}>
+                <Text style={styles.cardTitle}>📌 {t('report.section.metrics')}</Text>
                 <View style={styles.metricGrid}>
                   {report.metrics.map((metric, index) => (
                     <View key={`${metric.label}-${index}`} style={styles.metricItem}>
@@ -195,7 +352,7 @@ export default function ReportScreen() {
               </GlassCard>
 
               <GlassCard style={styles.card}>
-                <Text style={styles.cardTitle}>{t('report.section.ingredients')}</Text>
+                <Text style={styles.cardTitle}>🥦 {t('report.section.ingredients')}</Text>
                 <View style={styles.ingredientList}>
                   {report.ingredients.map((ingredient, index) => (
                     <View key={`${ingredient.name}-${index}`} style={styles.ingredientItem}>
@@ -207,12 +364,12 @@ export default function ReportScreen() {
               </GlassCard>
 
               <GlassCard style={styles.card}>
-                <Text style={styles.cardTitle}>{t('report.section.advice')}</Text>
+                <Text style={styles.cardTitle}>💡 {t('report.section.advice')}</Text>
                 <View style={styles.adviceList}>
                   {report.advice.map((advice, index) => (
                     <View key={`${advice.title}-${index}`} style={styles.adviceItem}>
                       <View style={styles.adviceHeader}>
-                        <View style={styles.priorityBadge}>
+                        <View style={[styles.priorityBadge, priorityBadgeStyle(advice.priority)]}>
                           <Text style={styles.priorityText}>{formatPriority(advice.priority)}</Text>
                         </View>
                         <Text style={styles.adviceTitle}>{advice.title}</Text>
@@ -229,6 +386,207 @@ export default function ReportScreen() {
       </SafeAreaView>
     </AuroraBackground>
   );
+}
+
+function ScoreRing({ score, label, emoji }: { score: number; label: string; emoji: string }) {
+  const size = 118;
+  const strokeWidth = 10;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progress = clamp(score / 100, 0, 1);
+  const dashOffset = circumference * (1 - progress);
+
+  return (
+    <View style={styles.scoreRing}>
+      <Svg width={size} height={size}>
+        <Defs>
+          <LinearGradient id="scoreGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor={colors.accent} />
+            <Stop offset="100%" stopColor={colors.ringFat} />
+          </LinearGradient>
+        </Defs>
+        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={colors.border} strokeWidth={strokeWidth} fill="none" />
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="url(#scoreGradient)"
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={dashOffset}
+          fill="none"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </Svg>
+      <View style={styles.scoreRingCenter}>
+        <Text style={styles.scoreRingValue}>{Math.round(score)}</Text>
+        <Text style={styles.scoreRingLabel}>
+          {label} {emoji}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function TrendLineChart({ points, target }: { points: ChartPoint[]; target: number }) {
+  const [width, setWidth] = useState(0);
+  const height = 140;
+  const padding = 12;
+  const handleLayout = (event: LayoutChangeEvent) => {
+    setWidth(event.nativeEvent.layout.width);
+  };
+
+  const chart = useMemo(() => {
+    if (width === 0 || points.length === 0) {
+      return null;
+    }
+    const maxValue = Math.max(target ?? 0, ...points.map((point) => point.value), 1);
+    const usableWidth = Math.max(1, width - padding * 2);
+    const usableHeight = Math.max(1, height - padding * 2);
+    const maxIndex = Math.max(points.length - 1, 1);
+    const data = points.map((point, index) => ({
+      x: padding + (usableWidth * index) / maxIndex,
+      y: height - padding - (point.value / maxValue) * usableHeight,
+    }));
+
+    const linePath = line<{ x: number; y: number }>()
+      .x((d) => d.x)
+      .y((d) => d.y)
+      .curve(curveMonotoneX)(data);
+
+    const areaPath = area<{ x: number; y: number }>()
+      .x((d) => d.x)
+      .y0(height - padding)
+      .y1((d) => d.y)
+      .curve(curveMonotoneX)(data);
+
+    const targetY = target ? height - padding - (target / maxValue) * usableHeight : null;
+
+    return {
+      data,
+      linePath: linePath ?? '',
+      areaPath: areaPath ?? '',
+      targetY,
+    };
+  }, [width, points, target]);
+
+  return (
+    <View style={styles.trendChart} onLayout={handleLayout}>
+      {chart ? (
+        <Svg width={width} height={height}>
+          <Defs>
+            <LinearGradient id="trendGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+              <Stop offset="0%" stopColor={`${colors.accent}66`} />
+              <Stop offset="100%" stopColor={`${colors.accent}00`} />
+            </LinearGradient>
+          </Defs>
+          {chart.targetY !== null ? (
+            <Line
+              x1={padding}
+              y1={chart.targetY}
+              x2={width - padding}
+              y2={chart.targetY}
+              stroke={colors.textMuted}
+              strokeDasharray="4 4"
+            />
+          ) : null}
+          {chart.areaPath ? <Path d={chart.areaPath} fill="url(#trendGradient)" /> : null}
+          {chart.linePath ? (
+            <Path d={chart.linePath} stroke={colors.accent} strokeWidth={3} fill="none" />
+          ) : null}
+          {chart.data.map((point, index) => (
+            <Circle
+              key={`trend-${index}`}
+              cx={point.x}
+              cy={point.y}
+              r={index === chart.data.length - 1 ? 3.5 : 2.5}
+              fill={colors.accent}
+            />
+          ))}
+        </Svg>
+      ) : null}
+    </View>
+  );
+}
+
+function MacroDonut({ macros, totalCalories }: { macros: MacroStat[]; totalCalories: number }) {
+  const size = 140;
+  const radius = size / 2;
+  const thickness = 16;
+  const total = macros.reduce((sum, macro) => sum + Math.max(macro.actual, 0), 0);
+  const safeTotal = total > 0 ? total : 1;
+  const arcGenerator = arc<any>().innerRadius(radius - thickness).outerRadius(radius);
+  let startAngle = -Math.PI / 2;
+  const segments = macros.map((macro) => {
+    const value = Math.max(macro.actual, 0);
+    const slice = (value / safeTotal) * Math.PI * 2;
+    const endAngle = startAngle + slice;
+    const path = arcGenerator({ startAngle, endAngle });
+    const segment = {
+      path,
+      color: MACRO_META[macro.key].color,
+    };
+    startAngle = endAngle;
+    return segment;
+  });
+
+  return (
+    <View style={styles.macroDonut}>
+      <Svg width={size} height={size}>
+        <G x={radius} y={radius}>
+          {total === 0 ? (
+            <Circle cx={0} cy={0} r={radius - thickness / 2} stroke={colors.border} strokeWidth={thickness} fill="none" />
+          ) : (
+            segments.map((segment, index) =>
+              segment.path ? <Path key={`macro-${index}`} d={segment.path} fill={segment.color} /> : null,
+            )
+          )}
+        </G>
+      </Svg>
+      <View style={styles.macroDonutCenter}>
+        <Text style={styles.macroDonutValue}>{Math.round(totalCalories)}</Text>
+        <Text style={styles.macroDonutLabel}>kcal</Text>
+      </View>
+    </View>
+  );
+}
+
+function MealTimingStack({ entries }: { entries: MealPeriodBreakdown[] }) {
+  const total = entries.reduce((sum, entry) => sum + entry.value, 0);
+  return (
+    <View style={styles.timingContainer}>
+      <View style={styles.timingBar}>
+        {entries.map((entry) => (
+          <View
+            key={entry.key}
+            style={[
+              styles.timingSegment,
+              {
+                flex: total > 0 ? entry.value : 1,
+                backgroundColor: MEAL_PERIOD_META[entry.key].color,
+              },
+            ]}
+          />
+        ))}
+      </View>
+      <View style={styles.timingLegend}>
+        {entries.map((entry) => (
+          <View key={`${entry.key}-legend`} style={styles.timingLegendRow}>
+            <View style={[styles.timingDot, { backgroundColor: MEAL_PERIOD_META[entry.key].color }]} />
+            <Text style={styles.timingLabel}>
+              {MEAL_PERIOD_META[entry.key].emoji} {entry.label}
+            </Text>
+            <Text style={styles.timingValue}>{total > 0 ? `${entry.percent}%` : '-'}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 const styles = StyleSheet.create({
@@ -317,6 +675,8 @@ const styles = StyleSheet.create({
   cardTitle: {
     ...textStyles.overline,
     marginBottom: spacing.md,
+    letterSpacing: 1.2,
+    textTransform: 'none',
   },
   emptyTitle: {
     ...textStyles.titleMedium,
@@ -325,18 +685,54 @@ const styles = StyleSheet.create({
   emptyBody: {
     ...textStyles.caption,
   },
-  summaryRow: {
+  summaryHero: {
     flexDirection: 'row',
     gap: spacing.md,
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
   },
-  summaryText: {
+  heroStats: {
     flex: 1,
     gap: spacing.sm,
   },
+  heroStat: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 14,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    gap: 4,
+  },
+  heroStatLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontWeight: '600',
+  },
+  heroStatValue: {
+    ...textStyles.titleMedium,
+    color: colors.textPrimary,
+  },
   summaryHeadline: {
     ...textStyles.titleMedium,
+  },
+  scoreRing: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreRingCenter: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreRingValue: {
+    ...textStyles.titleLarge,
+    fontSize: 26,
+  },
+  scoreRingLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
   },
   highlightRow: {
     flexDirection: 'row',
@@ -347,30 +743,104 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: `${colors.accent}22`,
   },
   highlightText: {
     ...textStyles.caption,
-    color: colors.accentInk,
+    color: colors.textPrimary,
     fontWeight: '600',
   },
-  scoreBadge: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceStrong,
-    borderRadius: 16,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+  trendChart: {
+    minHeight: 140,
   },
-  scoreValue: {
-    ...textStyles.titleLarge,
-    fontSize: 28,
-  },
-  scoreLabel: {
+  trendNote: {
     ...textStyles.caption,
     color: colors.textMuted,
+    marginTop: spacing.sm,
+  },
+  macroWrap: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  macroDonut: {
+    width: 140,
+    height: 140,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  macroDonutCenter: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  macroDonutValue: {
+    ...textStyles.titleMedium,
+    fontWeight: '700',
+  },
+  macroDonutLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+  },
+  macroLegend: {
+    flex: 1,
+    gap: spacing.sm,
+  },
+  macroLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  macroDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+  },
+  macroLegendText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  macroLegendValue: {
+    ...textStyles.caption,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  timingContainer: {
+    gap: spacing.md,
+  },
+  timingBar: {
+    flexDirection: 'row',
+    height: 14,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  timingSegment: {
+    height: '100%',
+  },
+  timingLegend: {
+    gap: spacing.sm,
+  },
+  timingLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  timingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+  },
+  timingLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  timingValue: {
+    ...textStyles.caption,
+    color: colors.textPrimary,
+    fontWeight: '600',
   },
   metricGrid: {
     flexDirection: 'row',
@@ -434,7 +904,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: `${colors.accentSage}22`,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  priorityBadgeHigh: {
+    backgroundColor: `${colors.error}22`,
+  },
+  priorityBadgeMedium: {
+    backgroundColor: `${colors.accent}22`,
+  },
+  priorityBadgeLow: {
+    backgroundColor: `${colors.success}22`,
   },
   priorityText: {
     ...textStyles.caption,
