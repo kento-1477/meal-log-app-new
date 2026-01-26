@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DateTime } from 'luxon';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import type { AiReportAdvice, AiReportPeriod, AiReportResponse, DashboardPeriod } from '@meal-log/shared';
 import Svg, { Circle, Defs, G, LinearGradient, Line, Path, Stop } from 'react-native-svg';
 import { arc, area, curveMonotoneX, line } from 'd3-shape';
@@ -19,20 +19,18 @@ import { AuroraBackground } from '@/components/AuroraBackground';
 import { GlassCard } from '@/components/GlassCard';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { useDashboardSummary, type ChartPoint, type MealPeriodBreakdown, type MacroStat } from '@/features/dashboard/useDashboardSummary';
-import { createAiReport, type ApiError } from '@/services/api';
+import { createAiReport, getDashboardSummary, type ApiError } from '@/services/api';
 import { useTranslation } from '@/i18n';
 import { useSessionStore } from '@/store/session';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 
-type ReportCache = Record<AiReportPeriod, AiReportResponse | null>;
+type ReportCache = Record<string, AiReportResponse>;
 
-const DEFAULT_CACHE: ReportCache = {
-  daily: null,
-  weekly: null,
-  monthly: null,
-};
+const DEFAULT_CACHE: ReportCache = {};
+
+type ReportRange = { from: string; to: string };
 
 function formatReportRange(report: AiReportResponse, locale: string) {
   const from = DateTime.fromISO(report.range.from).setZone(report.range.timezone);
@@ -47,17 +45,36 @@ function formatReportRange(report: AiReportResponse, locale: string) {
   return `${from.toFormat(dateFormat)} - ${to.toFormat(dateFormat)}`;
 }
 
+function formatSelectedRange(range: ReportRange, locale: string) {
+  const from = DateTime.fromISO(range.from);
+  const to = DateTime.fromISO(range.to);
+  if (!from.isValid || !to.isValid) {
+    return `${range.from} - ${range.to}`;
+  }
+  const dateFormat = locale.startsWith('ja') ? 'yyyy/MM/dd' : 'MMM dd, yyyy';
+  if (from.hasSame(to, 'day')) {
+    return from.toFormat(dateFormat);
+  }
+  return `${from.toFormat(dateFormat)} - ${to.toFormat(dateFormat)}`;
+}
+
+function buildReportKey(period: AiReportPeriod, range: ReportRange) {
+  return `${period}:${range.from}:${range.to}`;
+}
+
+function toISODateSafe(value: DateTime) {
+  return value.toISODate() ?? value.toFormat('yyyy-MM-dd');
+}
+
 function resolveDashboardParams(period: AiReportPeriod, report: AiReportResponse | null) {
   if (!report) {
-    return { period: 'today' as DashboardPeriod, range: undefined };
+    const fallback = period === 'weekly' ? 'thisWeek' : 'today';
+    return { period: fallback as DashboardPeriod, range: undefined };
   }
-  if (period === 'monthly') {
-    const from = DateTime.fromISO(report.range.from).toISODate() ?? report.range.from.slice(0, 10);
-    const toDate = DateTime.fromISO(report.range.to).minus({ days: 1 });
-    const to = toDate.toISODate() ?? report.range.to.slice(0, 10);
-    return { period: 'custom' as DashboardPeriod, range: { from, to } };
-  }
-  return { period: (period === 'daily' ? 'today' : 'thisWeek') as DashboardPeriod, range: undefined };
+  const from = DateTime.fromISO(report.range.from).toISODate() ?? report.range.from.slice(0, 10);
+  const toDate = DateTime.fromISO(report.range.to).minus({ days: 1 });
+  const to = toDate.toISODate() ?? report.range.to.slice(0, 10);
+  return { period: 'custom' as DashboardPeriod, range: { from, to } };
 }
 
 function scoreEmoji(score: number) {
@@ -90,10 +107,91 @@ function highlightTint(index: number) {
 export default function ReportScreen() {
   const { t, locale } = useTranslation();
   const setUsage = useSessionStore((state) => state.setUsage);
+  const today = useMemo(() => DateTime.now().startOf('day'), []);
+  const initialDate = useMemo(() => toISODateSafe(today), [today]);
+  const initialMonth = useMemo(() => toISODateSafe(today.startOf('month')), [today]);
   const [period, setPeriod] = useState<AiReportPeriod>('daily');
   const [isGenerating, setIsGenerating] = useState(false);
   const [reports, setReports] = useState<ReportCache>(DEFAULT_CACHE);
-  const report = reports[period];
+  const [dailySelected, setDailySelected] = useState<string | null>(initialDate);
+  const [weeklySelected, setWeeklySelected] = useState<string | null>(initialDate);
+  const [monthlyYear, setMonthlyYear] = useState(today.year);
+  const [monthlyMonth, setMonthlyMonth] = useState(today.month);
+  const [dailyViewMonth, setDailyViewMonth] = useState(initialMonth);
+  const [weeklyViewMonth, setWeeklyViewMonth] = useState(initialMonth);
+  const calendarViewMonth = period === 'weekly' ? weeklyViewMonth : dailyViewMonth;
+  const calendarViewDate = useMemo(() => DateTime.fromISO(calendarViewMonth), [calendarViewMonth]);
+  const calendarRange = useMemo(() => {
+    if (period === 'monthly') {
+      return null;
+    }
+    const monthStart = calendarViewDate.startOf('month');
+    return {
+      from: toISODateSafe(monthStart),
+      to: toISODateSafe(monthStart.endOf('month')),
+    };
+  }, [calendarViewDate, period]);
+  const calendarSummary = useQuery({
+    queryKey: ['reportCalendar', period, calendarViewMonth, locale],
+    queryFn: () => getDashboardSummary('custom', calendarRange ?? undefined),
+    enabled: period !== 'monthly' && Boolean(calendarRange),
+    staleTime: 1000 * 60 * 2,
+  });
+  const recordedDayList = useMemo(() => {
+    if (!calendarSummary.data) {
+      return [];
+    }
+    return calendarSummary.data.calories.daily.filter((entry) => entry.total > 0).map((entry) => entry.date);
+  }, [calendarSummary.data]);
+  const recordedDays = useMemo(() => new Set(recordedDayList), [recordedDayList]);
+  const hasRecordedDays = recordedDayList.length > 0;
+
+  useEffect(() => {
+    if (period !== 'daily' || !calendarSummary.data) {
+      return;
+    }
+    if (!hasRecordedDays) {
+      setDailySelected(null);
+      return;
+    }
+    if (!dailySelected || !recordedDays.has(dailySelected)) {
+      setDailySelected(recordedDayList[recordedDayList.length - 1]);
+    }
+  }, [calendarSummary.data, dailySelected, hasRecordedDays, period, recordedDayList, recordedDays]);
+
+  useEffect(() => {
+    if (period !== 'weekly' || !calendarSummary.data) {
+      return;
+    }
+    if (!hasRecordedDays) {
+      setWeeklySelected(null);
+      return;
+    }
+    if (!weeklySelected || !recordedDays.has(weeklySelected)) {
+      setWeeklySelected(recordedDayList[recordedDayList.length - 1]);
+    }
+  }, [calendarSummary.data, hasRecordedDays, period, recordedDayList, recordedDays, weeklySelected]);
+
+  const selectedRange = useMemo(() => {
+    if (period === 'daily') {
+      if (!dailySelected) return null;
+      return { from: dailySelected, to: dailySelected };
+    }
+    if (period === 'weekly') {
+      if (!weeklySelected) return null;
+      const anchor = DateTime.fromISO(weeklySelected).setLocale(locale);
+      const start = anchor.startOf('week');
+      const end = start.plus({ days: 6 });
+      return { from: toISODateSafe(start), to: toISODateSafe(end) };
+    }
+    const monthStart = DateTime.fromObject({ year: monthlyYear, month: monthlyMonth, day: 1 });
+    return { from: toISODateSafe(monthStart), to: toISODateSafe(monthStart.endOf('month')) };
+  }, [dailySelected, locale, monthlyMonth, monthlyYear, period, weeklySelected]);
+  const reportKey = useMemo(
+    () => (selectedRange ? buildReportKey(period, selectedRange) : null),
+    [period, selectedRange],
+  );
+  const report = reportKey ? reports[reportKey] ?? null : null;
   const dashboardParams = useMemo(() => resolveDashboardParams(period, report), [period, report]);
   const dashboardSummary = useDashboardSummary(dashboardParams.period, {
     enabled: Boolean(report),
@@ -136,11 +234,37 @@ export default function ReportScreen() {
     }),
     [t],
   );
+  const rangeLabel = useMemo(() => {
+    if (report) {
+      return formatReportRange(report, locale);
+    }
+    if (selectedRange) {
+      return formatSelectedRange(selectedRange, locale);
+    }
+    return t('report.rangePlaceholder');
+  }, [locale, report, selectedRange, t]);
+  const canGenerate = Boolean(selectedRange);
+  const handleDailyMonthShift = (delta: number) => {
+    setDailyViewMonth((prev) => toISODateSafe(DateTime.fromISO(prev).plus({ months: delta }).startOf('month')));
+  };
+  const handleWeeklyMonthShift = (delta: number) => {
+    setWeeklyViewMonth((prev) => toISODateSafe(DateTime.fromISO(prev).plus({ months: delta }).startOf('month')));
+  };
+  const handleDailySelect = (isoDate: string) => {
+    setDailySelected(isoDate);
+    setDailyViewMonth(toISODateSafe(DateTime.fromISO(isoDate).startOf('month')));
+  };
+  const handleWeeklySelect = (isoDate: string) => {
+    setWeeklySelected(isoDate);
+    setWeeklyViewMonth(toISODateSafe(DateTime.fromISO(isoDate).startOf('month')));
+  };
 
   const mutation = useMutation({
-    mutationFn: (targetPeriod: AiReportPeriod) => createAiReport(targetPeriod),
-    onSuccess: (response, targetPeriod) => {
-      setReports((prev) => ({ ...prev, [targetPeriod]: response.report }));
+    mutationFn: (payload: { period: AiReportPeriod; range: { from: string; to: string } }) =>
+      createAiReport(payload.period, payload.range),
+    onSuccess: (response, payload) => {
+      const cacheKey = buildReportKey(payload.period, payload.range);
+      setReports((prev) => ({ ...prev, [cacheKey]: response.report }));
       if (response.usage) {
         setUsage(response.usage);
       }
@@ -159,8 +283,12 @@ export default function ReportScreen() {
     if (mutation.isLoading || isGenerating) {
       return;
     }
+    if (!selectedRange) {
+      Alert.alert(t('report.errorTitle'), t('report.rangeMissing'));
+      return;
+    }
     setIsGenerating(true);
-    mutation.mutate(period);
+    mutation.mutate({ period, range: selectedRange });
   };
 
   const formatPriority = (value: AiReportAdvice['priority']) => {
@@ -212,10 +340,74 @@ export default function ReportScreen() {
 
           <View style={styles.rangeRow}>
             <Text style={styles.rangeLabel}>{t('report.rangeLabel')}</Text>
-            <Text style={styles.rangeValue}>
-              {report ? formatReportRange(report, locale) : t('report.rangePlaceholder')}
-            </Text>
+            <Text style={styles.rangeValue}>{rangeLabel}</Text>
           </View>
+
+          <GlassCard style={styles.card}>
+            <Text style={styles.cardTitle}>📅 {t('report.section.rangeSelect')}</Text>
+            {period === 'daily' ? (
+              <>
+                <Text style={styles.calendarHint}>{t('report.calendar.hint.daily')}</Text>
+                {calendarSummary.isLoading ? (
+                  <ActivityIndicator color={colors.accent} />
+                ) : (
+                  <>
+                    <ReportCalendar
+                      locale={locale}
+                      month={DateTime.fromISO(dailyViewMonth)}
+                      mode="daily"
+                      recordedDates={recordedDays}
+                      selectedDate={dailySelected}
+                      selectedWeekAnchor={null}
+                      onSelectDate={handleDailySelect}
+                      onSelectWeek={handleWeeklySelect}
+                      onPrevMonth={() => handleDailyMonthShift(-1)}
+                      onNextMonth={() => handleDailyMonthShift(1)}
+                    />
+                    {!hasRecordedDays ? (
+                      <Text style={styles.calendarEmpty}>{t('report.calendar.empty')}</Text>
+                    ) : null}
+                  </>
+                )}
+              </>
+            ) : period === 'weekly' ? (
+              <>
+                <Text style={styles.calendarHint}>{t('report.calendar.hint.weekly')}</Text>
+                {calendarSummary.isLoading ? (
+                  <ActivityIndicator color={colors.accent} />
+                ) : (
+                  <>
+                    <ReportCalendar
+                      locale={locale}
+                      month={DateTime.fromISO(weeklyViewMonth)}
+                      mode="weekly"
+                      recordedDates={recordedDays}
+                      selectedDate={null}
+                      selectedWeekAnchor={weeklySelected}
+                      onSelectDate={handleWeeklySelect}
+                      onSelectWeek={handleWeeklySelect}
+                      onPrevMonth={() => handleWeeklyMonthShift(-1)}
+                      onNextMonth={() => handleWeeklyMonthShift(1)}
+                    />
+                    {!hasRecordedDays ? (
+                      <Text style={styles.calendarEmpty}>{t('report.calendar.empty')}</Text>
+                    ) : null}
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <Text style={styles.calendarHint}>{t('report.calendar.hint.monthly')}</Text>
+                <MonthPicker
+                  locale={locale}
+                  year={monthlyYear}
+                  month={monthlyMonth}
+                  onYearChange={(next) => setMonthlyYear(next)}
+                  onMonthChange={(next) => setMonthlyMonth(next)}
+                />
+              </>
+            )}
+          </GlassCard>
 
           <PrimaryButton
             label={
@@ -227,6 +419,7 @@ export default function ReportScreen() {
             }
             onPress={handleGenerate}
             loading={mutation.isLoading || isGenerating}
+            disabled={!canGenerate}
           />
           {mutation.isLoading || isGenerating ? (
             <View style={styles.loadingInline}>
@@ -385,6 +578,176 @@ export default function ReportScreen() {
         </ScrollView>
       </SafeAreaView>
     </AuroraBackground>
+  );
+}
+
+type CalendarMode = 'daily' | 'weekly';
+
+function ReportCalendar({
+  locale,
+  month,
+  mode,
+  recordedDates,
+  selectedDate,
+  selectedWeekAnchor,
+  onSelectDate,
+  onSelectWeek,
+  onPrevMonth,
+  onNextMonth,
+}: {
+  locale: string;
+  month: DateTime;
+  mode: CalendarMode;
+  recordedDates: Set<string>;
+  selectedDate: string | null;
+  selectedWeekAnchor: string | null;
+  onSelectDate: (isoDate: string) => void;
+  onSelectWeek: (isoDate: string) => void;
+  onPrevMonth: () => void;
+  onNextMonth: () => void;
+}) {
+  const weeks = useMemo(() => buildCalendarWeeks(month, locale), [locale, month]);
+  const weekdays = useMemo(() => buildWeekdayLabels(month, locale), [locale, month]);
+  const selectedWeekStart = selectedWeekAnchor
+    ? DateTime.fromISO(selectedWeekAnchor).setLocale(locale).startOf('week')
+    : null;
+
+  return (
+    <View style={styles.calendarContainer}>
+      <View style={styles.calendarHeader}>
+        <TouchableOpacity style={styles.calendarNavButton} onPress={onPrevMonth}>
+          <Text style={styles.calendarNavText}>{'<'}</Text>
+        </TouchableOpacity>
+        <Text style={styles.calendarMonthLabel}>{formatCalendarMonth(month, locale)}</Text>
+        <TouchableOpacity style={styles.calendarNavButton} onPress={onNextMonth}>
+          <Text style={styles.calendarNavText}>{'>'}</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.calendarWeekdays}>
+        {weekdays.map((label, index) => (
+          <Text key={`${label}-${index}`} style={styles.calendarWeekday}>
+            {label}
+          </Text>
+        ))}
+      </View>
+      <View style={styles.calendarGrid}>
+        {weeks.map((week, rowIndex) => {
+          const weekHasData = week.some((day) => recordedDates.has(toISODateSafe(day)));
+          const isSelectedWeek =
+            selectedWeekStart != null ? week.some((day) => day.hasSame(selectedWeekStart, 'week')) : false;
+          return (
+            <View
+              key={`week-${rowIndex}`}
+              style={[
+                styles.calendarRow,
+                mode === 'weekly' && isSelectedWeek && styles.calendarRowSelected,
+                mode === 'weekly' && !weekHasData && styles.calendarRowDisabled,
+              ]}
+            >
+              {week.map((day) => {
+                const isoDate = toISODateSafe(day);
+                const isOutside = !day.hasSame(month, 'month');
+                const isRecorded = recordedDates.has(isoDate);
+                const isSelected = mode === 'daily' && selectedDate === isoDate;
+                const isInSelectedWeek = mode === 'weekly' && isSelectedWeek;
+                const isDisabled = isOutside || (mode === 'daily' ? !isRecorded : !weekHasData);
+                const handlePress = () => {
+                  if (mode === 'daily') {
+                    onSelectDate(isoDate);
+                  } else {
+                    onSelectWeek(isoDate);
+                  }
+                };
+                return (
+                  <TouchableOpacity
+                    key={isoDate}
+                    style={styles.calendarCell}
+                    onPress={handlePress}
+                    disabled={isDisabled}
+                  >
+                    <View
+                      style={[
+                        styles.calendarDay,
+                        isOutside && styles.calendarDayOutside,
+                        isRecorded && styles.calendarDayRecorded,
+                        isSelected && styles.calendarDaySelected,
+                        isInSelectedWeek && styles.calendarDayWeekSelected,
+                        isDisabled && styles.calendarDayDisabled,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.calendarDayLabel,
+                          (isOutside || (mode === 'daily' && !isRecorded)) && styles.calendarDayLabelMuted,
+                          (isSelected || isInSelectedWeek) && styles.calendarDayLabelSelected,
+                        ]}
+                      >
+                        {day.day}
+                      </Text>
+                      {isRecorded ? <View style={styles.calendarDot} /> : null}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function MonthPicker({
+  locale,
+  year,
+  month,
+  onYearChange,
+  onMonthChange,
+}: {
+  locale: string;
+  year: number;
+  month: number;
+  onYearChange: (value: number) => void;
+  onMonthChange: (value: number) => void;
+}) {
+  const months = useMemo(
+    () =>
+      Array.from({ length: 12 }, (_, index) => {
+        const dt = DateTime.fromObject({ year, month: index + 1, day: 1 }).setLocale(locale);
+        const label = locale.startsWith('ja') ? dt.toFormat('LL月') : dt.toFormat('MMM');
+        return { value: index + 1, label };
+      }),
+    [locale, year],
+  );
+
+  return (
+    <View style={styles.monthPicker}>
+      <View style={styles.calendarHeader}>
+        <TouchableOpacity style={styles.calendarNavButton} onPress={() => onYearChange(year - 1)}>
+          <Text style={styles.calendarNavText}>{'<'}</Text>
+        </TouchableOpacity>
+        <Text style={styles.calendarMonthLabel}>{year}</Text>
+        <TouchableOpacity style={styles.calendarNavButton} onPress={() => onYearChange(year + 1)}>
+          <Text style={styles.calendarNavText}>{'>'}</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.monthGrid}>
+        {months.map((item) => {
+          const isSelected = item.value === month;
+          return (
+            <TouchableOpacity
+              key={`${item.value}-${year}`}
+              style={styles.monthCell}
+              onPress={() => onMonthChange(item.value)}
+            >
+              <View style={[styles.monthChip, isSelected && styles.monthChipSelected]}>
+                <Text style={[styles.monthLabel, isSelected && styles.monthLabelSelected]}>{item.label}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -589,6 +952,32 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+function buildCalendarWeeks(month: DateTime, locale: string) {
+  const anchor = month.setLocale(locale).startOf('month');
+  const start = anchor.startOf('week');
+  const end = anchor.endOf('month').endOf('week');
+  const weeks: DateTime[][] = [];
+  let cursor = start;
+  while (cursor <= end) {
+    const week: DateTime[] = [];
+    for (let day = 0; day < 7; day += 1) {
+      week.push(cursor);
+      cursor = cursor.plus({ days: 1 });
+    }
+    weeks.push(week);
+  }
+  return weeks;
+}
+
+function buildWeekdayLabels(month: DateTime, locale: string) {
+  const start = month.setLocale(locale).startOf('week');
+  return Array.from({ length: 7 }, (_, index) => start.plus({ days: index }).toFormat('ccc'));
+}
+
+function formatCalendarMonth(month: DateTime, locale: string) {
+  return month.setLocale(locale).toFormat(locale.startsWith('ja') ? 'yyyy年LL月' : 'LLLL yyyy');
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -748,6 +1137,140 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textPrimary,
     fontWeight: '600',
+  },
+  calendarHint: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    marginBottom: spacing.xs,
+  },
+  calendarEmpty: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
+    textAlign: 'center',
+  },
+  calendarContainer: {
+    gap: spacing.sm,
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  calendarNavButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  calendarNavText: {
+    ...textStyles.caption,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  calendarMonthLabel: {
+    ...textStyles.titleMedium,
+  },
+  calendarWeekdays: {
+    flexDirection: 'row',
+  },
+  calendarWeekday: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    flex: 1,
+  },
+  calendarGrid: {
+    gap: spacing.xs,
+  },
+  calendarRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  calendarRowSelected: {
+    backgroundColor: `${colors.accentSoft}66`,
+    borderRadius: 16,
+    padding: 2,
+  },
+  calendarRowDisabled: {
+    opacity: 0.5,
+  },
+  calendarCell: {
+    flex: 1,
+  },
+  calendarDay: {
+    aspectRatio: 1,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  calendarDayOutside: {
+    opacity: 0.35,
+  },
+  calendarDayRecorded: {
+    backgroundColor: colors.accentSoft,
+  },
+  calendarDaySelected: {
+    backgroundColor: colors.accent,
+  },
+  calendarDayWeekSelected: {
+    backgroundColor: `${colors.accentSoft}AA`,
+  },
+  calendarDayDisabled: {
+    opacity: 0.5,
+  },
+  calendarDayLabel: {
+    ...textStyles.caption,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  calendarDayLabelMuted: {
+    color: colors.textMuted,
+  },
+  calendarDayLabelSelected: {
+    color: colors.accentInk,
+  },
+  calendarDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    marginTop: 2,
+    backgroundColor: colors.accent,
+  },
+  monthPicker: {
+    gap: spacing.md,
+  },
+  monthGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+  },
+  monthCell: {
+    flexBasis: '30%',
+    flexGrow: 1,
+  },
+  monthChip: {
+    paddingVertical: spacing.sm,
+    borderRadius: 14,
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  monthChipSelected: {
+    backgroundColor: colors.accent,
+  },
+  monthLabel: {
+    ...textStyles.caption,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  monthLabelSelected: {
+    color: colors.accentInk,
   },
   trendChart: {
     minHeight: 140,

@@ -225,8 +225,16 @@ export type AiUsageSummary = z.infer<typeof AiUsageSummarySchema>;
 export const AiReportPeriodSchema = z.enum(['daily', 'weekly', 'monthly']);
 export type AiReportPeriod = z.infer<typeof AiReportPeriodSchema>;
 
+export const AiReportRangeSchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+});
+
+export type AiReportRange = z.infer<typeof AiReportRangeSchema>;
+
 export const AiReportRequestSchema = z.object({
   period: AiReportPeriodSchema,
+  range: AiReportRangeSchema.optional(),
 });
 
 export type AiReportRequest = z.infer<typeof AiReportRequestSchema>;

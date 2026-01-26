@@ -1039,7 +1039,7 @@ app.post('/api/reports', requireAuth, async (c) => {
   }
 
   const locale = resolveRequestLocale(c.req.raw);
-  const reportParams = resolveReportSummaryParams(parsed.data.period);
+  const reportParams = resolveReportSummaryParams(parsed.data.period, parsed.data.range);
   const summary = await getDashboardSummary({
     userId: user.id,
     period: reportParams.period,
@@ -3338,7 +3338,13 @@ function resolveWeekRange(period: string, timezone: string) {
   };
 }
 
-function resolveReportSummaryParams(period: AiReportPeriod) {
+function resolveReportSummaryParams(
+  period: AiReportPeriod,
+  range?: { from: string; to: string },
+) {
+  if (range?.from && range?.to) {
+    return { period: 'custom' as const, from: range.from, to: range.to };
+  }
   if (period === 'daily') {
     return { period: 'today' as const };
   }
