@@ -650,10 +650,10 @@ export async function getDashboardTargets() {
   return parsed as DashboardTargets;
 }
 
-export async function createAiReport(period: AiReportPeriod) {
+export async function createAiReport(period: AiReportPeriod, range?: { from: string; to: string }) {
   const response = await apiFetch<unknown>('/api/reports', {
     method: 'POST',
-    body: JSON.stringify({ period }),
+    body: JSON.stringify({ period, range }),
   });
   const parsed = AiReportApiResponseSchema.parse(response);
   return parsed as AiReportApiResponse;
