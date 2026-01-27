@@ -307,6 +307,25 @@ export const AiReportApiResponseSchema = z.object({
 
 export type AiReportApiResponse = z.infer<typeof AiReportApiResponseSchema>;
 
+export const ReportCalendarDaySchema = z.object({
+  date: z.string(),
+  count: z.number().int().nonnegative(),
+});
+
+export type ReportCalendarDay = z.infer<typeof ReportCalendarDaySchema>;
+
+export const ReportCalendarResponseSchema = z.object({
+  ok: z.literal(true),
+  range: z.object({
+    from: z.string(),
+    to: z.string(),
+    timezone: z.string(),
+  }),
+  days: z.array(ReportCalendarDaySchema),
+});
+
+export type ReportCalendarResponse = z.infer<typeof ReportCalendarResponseSchema>;
+
 export const IapPurchaseRequestSchema = z.object({
   platform: IapPlatformSchema,
   productId: z.string().min(1),

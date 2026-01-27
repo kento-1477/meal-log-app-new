@@ -30,6 +30,7 @@ import type {
   NotificationSettingsUpdateRequest,
   PushTokenRegisterRequest,
   PushTokenDisableRequest,
+  ReportCalendarResponse,
 } from '@meal-log/shared';
 import {
   DashboardSummarySchema,
@@ -43,6 +44,7 @@ import {
   NotificationSettingsUpdateRequestSchema,
   PushTokenRegisterRequestSchema,
   PushTokenDisableRequestSchema,
+  ReportCalendarResponseSchema,
 } from '@meal-log/shared';
 
 const HTTP_STATUS = {
@@ -657,6 +659,15 @@ export async function createAiReport(period: AiReportPeriod, range?: { from: str
   });
   const parsed = AiReportApiResponseSchema.parse(response);
   return parsed as AiReportApiResponse;
+}
+
+export async function getReportCalendar(range: { from: string; to: string }) {
+  const params = new URLSearchParams({ from: range.from, to: range.to });
+  const response = await apiFetch<unknown>(`/api/reports/calendar?${params.toString()}`, {
+    method: 'GET',
+  });
+  const parsed = ReportCalendarResponseSchema.parse(response);
+  return parsed as ReportCalendarResponse;
 }
 
 export type CalorieTrendMode = 'daily' | 'weekly' | 'monthly';

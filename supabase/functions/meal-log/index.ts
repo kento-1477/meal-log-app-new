@@ -183,6 +183,11 @@ const dashboardQuerySchema = z.object({
   to: z.string().optional(),
 });
 
+const reportCalendarQuerySchema = z.object({
+  from: z.string(),
+  to: z.string(),
+});
+
 const calorieQuerySchema = z.object({
   range: z.coerce
     .number()
@@ -1022,6 +1027,61 @@ app.get('/api/dashboard/summary', requireAuth, async (c) => {
   });
   const payload = { ok: true, summary } as const;
   DashboardSummarySchema.parse(summary);
+  return respondWithCache(c, payload);
+});
+
+app.get('/api/reports/calendar', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const url = new URL(c.req.url);
+  const params = Object.fromEntries(url.searchParams.entries());
+  const parsed = reportCalendarQuerySchema.safeParse(params);
+  if (!parsed.success) {
+    throw new HttpError('invalid query', { status: HTTP_STATUS.BAD_REQUEST, expose: true, data: parsed.error.flatten() });
+  }
+
+  const timezone = resolveRequestTimezone(c.req.raw, { queryField: 'timezone', fallback: DASHBOARD_TIMEZONE });
+  const fromDate = DateTime.fromISO(parsed.data.from, { zone: timezone }).startOf('day');
+  const toDate = DateTime.fromISO(parsed.data.to, { zone: timezone }).startOf('day').plus({ days: 1 });
+  if (!fromDate.isValid || !toDate.isValid) {
+    throw new HttpError('日付形式が正しくありません', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
+  }
+  if (toDate <= fromDate) {
+    throw new HttpError('終了日は開始日より後の日付にしてください', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
+  }
+
+  const { data: logs, error } = await supabaseAdmin
+    .from('MealLog')
+    .select('createdAt')
+    .eq('userId', user.id)
+    .is('deletedAt', null)
+    .gte('createdAt', fromDate.toISO() ?? fromDate.toString())
+    .lt('createdAt', toDate.toISO() ?? toDate.toString());
+
+  if (error) {
+    console.error('report calendar: failed to fetch logs', error);
+    throw new HttpError('カレンダーの取得に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  const counts = new Map<string, number>();
+  for (const log of logs ?? []) {
+    const key = DateTime.fromJSDate(new Date(log.createdAt), { zone: timezone }).startOf('day').toISODate();
+    if (!key) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const days = Array.from(counts.entries())
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const payload = {
+    ok: true,
+    range: {
+      from: parsed.data.from,
+      to: parsed.data.to,
+      timezone,
+    },
+    days,
+  } as const;
+
   return respondWithCache(c, payload);
 });
 
