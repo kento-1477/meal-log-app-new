@@ -101,6 +101,8 @@ const NETWORK_HINT_DELAY_TEXT_MS = 15000;
 const PENDING_INGEST_STALE_MS = 1000 * 60 * 10;
 const PENDING_INGEST_STALE_MS_IMAGE = 1000 * 60 * 15;
 const PENDING_INGEST_NOT_FOUND_MS = 1000 * 60 * 2;
+const COMPOSER_MIN_HEIGHT = 44;
+const COMPOSER_MAX_HEIGHT = 120;
 const NETWORK_ERROR_PATTERNS = [
   'Network request failed',
   'The network connection was lost',
@@ -148,6 +150,7 @@ export default function ChatScreen() {
   const queryClient = useQueryClient();
   const { t, locale } = useTranslation();
   const [input, setInput] = useState('');
+  const [inputHeight, setInputHeight] = useState(COMPOSER_MIN_HEIGHT);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [analysisRequestInFlight, setAnalysisRequestInFlight] = useState(false);
@@ -800,6 +803,7 @@ export default function ChatScreen() {
   const analysisInProgress = analysisRequestInFlight || pendingIngests.length > 0;
   const sendButtonDisabled = analysisInProgress ? false : sending || !canSend || !canSubmitMessage;
   const sendLabel = analysisInProgress ? t('common.cancel') : canSend ? t('chat.send') : t('chat.send.limit');
+  const inputExpanded = inputHeight > COMPOSER_MIN_HEIGHT + 1;
 
   const reviewPromptBlocked =
     reviewModalVisible ||
@@ -839,6 +843,12 @@ export default function ChatScreen() {
     favoritesVisible ||
     sending ||
     isLimitReached;
+
+  useEffect(() => {
+    if (input.length === 0 && inputHeight !== COMPOSER_MIN_HEIGHT) {
+      setInputHeight(COMPOSER_MIN_HEIGHT);
+    }
+  }, [input, inputHeight]);
 
   useEffect(() => {
     if (!notificationPromptPending || notificationPromptBlocked) {
@@ -1548,13 +1558,25 @@ export default function ChatScreen() {
                 >
                   <View style={styles.inputRow}>
                     <TextInput
-                      style={[styles.textInput, styles.textInputMultiline]}
+                      style={[
+                        styles.textInput,
+                        inputExpanded && styles.textInputExpanded,
+                        { height: inputHeight },
+                      ]}
                       placeholder={t('chat.placeholder')}
                       value={input}
                       onChangeText={setInput}
                       blurOnSubmit={false}
                       multiline
                       returnKeyType="default"
+                      onContentSizeChange={(event) => {
+                        const nextHeight = Math.min(
+                          COMPOSER_MAX_HEIGHT,
+                          Math.max(COMPOSER_MIN_HEIGHT, event.nativeEvent.contentSize.height),
+                        );
+                        setInputHeight((prev) => (Math.abs(prev - nextHeight) < 1 ? prev : nextHeight));
+                      }}
+                      scrollEnabled={inputHeight >= COMPOSER_MAX_HEIGHT}
                     />
                     <TouchableOpacity
                       onPress={() => {
@@ -2035,12 +2057,11 @@ const styles = StyleSheet.create({
   },
   inputRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     gap: 10,
   },
   textInput: {
     flex: 1,
-    height: 44,
     borderRadius: 14,
     backgroundColor: '#fff',
     paddingHorizontal: 16,
@@ -2050,10 +2071,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlignVertical: 'center',
   },
-  textInputMultiline: {
-    height: 80,
-    minHeight: 50,
-    maxHeight: 120,
+  textInputExpanded: {
     paddingVertical: 12,
     textAlignVertical: 'top',
   },
