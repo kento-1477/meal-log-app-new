@@ -201,6 +201,11 @@ async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise
     );
   } catch (err) {
     if ((err as any)?.name === 'AbortError') {
+      if (options.signal?.aborted) {
+        const error = new Error(translateKey('api.error.canceled', undefined, appLocale)) as ApiError;
+        error.code = 'request.canceled';
+        throw error;
+      }
       const error = new Error(translateKey('api.error.timeout', undefined, appLocale)) as ApiError;
       error.code = 'network.timeout';
       throw error;
@@ -415,7 +420,12 @@ export async function getIngestStatus(requestKey: string) {
   return apiFetch<IngestStatusResponse>(`/api/ingest/${encoded}`, { method: 'GET' });
 }
 
-export async function postMealLog(params: { message: string; imageUri?: string | null; idempotencyKey?: string }) {
+export async function postMealLog(params: {
+  message: string;
+  imageUri?: string | null;
+  idempotencyKey?: string;
+  signal?: AbortSignal;
+}) {
   const form = new FormData();
   const hasImage = Boolean(params.imageUri);
   if (params.message) {
@@ -437,6 +447,7 @@ export async function postMealLog(params: { message: string; imageUri?: string |
   return apiFetch<MealLogResponse>('/log', {
     method: 'POST',
     body: form,
+    signal: params.signal,
     headers: {
       'Idempotency-Key': params.idempotencyKey ?? `${Date.now()}-${Math.random()}`,
       'X-Translation-Mode': 'defer',

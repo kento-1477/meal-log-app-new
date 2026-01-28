@@ -150,6 +150,7 @@ export default function ChatScreen() {
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [analysisRequestInFlight, setAnalysisRequestInFlight] = useState(false);
   const [sharingId, setSharingId] = useState<string | null>(null);
   const [favoritesVisible, setFavoritesVisible] = useState(false);
   const [addingFavoriteId, setAddingFavoriteId] = useState<string | null>(null);
@@ -165,6 +166,8 @@ export default function ChatScreen() {
   const [bottomSectionHeight, setBottomSectionHeight] = useState(0);
   const [usageResetHasPassed, setUsageResetHasPassed] = useState(false);
   const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeRequestRef = useRef<AbortController | null>(null);
+  const cancelRequestedRef = useRef(false);
   const reviewPromptQueueRef = useRef(Promise.resolve());
   const translationInFlightRef = useRef(new Set<string>());
   const logToAssistantIdRef = useRef(new Map<string, string>());
@@ -794,7 +797,9 @@ export default function ChatScreen() {
   const hasTypedInput = input.trim().length > 0;
   const hasAttachment = Boolean(composingImageUri);
   const canSubmitMessage = hasTypedInput || hasAttachment;
-  const sendButtonDisabled = sending || !canSend || !canSubmitMessage;
+  const analysisInProgress = analysisRequestInFlight || pendingIngests.length > 0;
+  const sendButtonDisabled = analysisInProgress ? false : sending || !canSend || !canSubmitMessage;
+  const sendLabel = analysisInProgress ? t('common.cancel') : canSend ? t('chat.send') : t('chat.send.limit');
 
   const reviewPromptBlocked =
     reviewModalVisible ||
@@ -886,7 +891,6 @@ export default function ChatScreen() {
   }, []);
 
   const favoritesList = favoritesQuery.data ?? [];
-  const sendLabel = canSend ? t('chat.send') : t('chat.send.limit');
 
   const resetComposer = () => {
     setInput('');
@@ -921,7 +925,12 @@ export default function ChatScreen() {
 
     clearNetworkHintTimer();
     setSending(true);
+    setAnalysisRequestInFlight(true);
     setError(null);
+
+    cancelRequestedRef.current = false;
+    const abortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    activeRequestRef.current = abortController;
 
     const displayMessage = trimmedMessage || (hasImage ? '' : rawMessage);
 
@@ -953,6 +962,7 @@ export default function ChatScreen() {
             message: trimmedMessage || rawMessage,
             imageUri: options.imageUri ?? undefined,
             idempotencyKey: requestKey ?? undefined,
+            signal: abortController?.signal ?? undefined,
           }));
       const response = await requestFn();
       updateMessageStatus(userMessage.id, 'delivered');
@@ -973,7 +983,12 @@ export default function ChatScreen() {
       if (__DEV__) {
         console.warn('[chat] submitMeal failed', { requestKey, apiError });
       }
-      if (apiError.code === 'AI_USAGE_LIMIT') {
+      if (cancelRequestedRef.current || apiError.code === 'request.canceled') {
+        updateMessageStatus(userMessage.id, 'delivered');
+        updateMessageStatus(assistantPlaceholder.id, 'delivered');
+        setMessageText(assistantPlaceholder.id, t('chat.analysisCanceled'));
+        setError(null);
+      } else if (apiError.code === 'AI_USAGE_LIMIT') {
         updateMessageStatus(userMessage.id, 'error');
         updateMessageStatus(assistantPlaceholder.id, 'error');
         const payload = apiError.data as AiUsageSummary | undefined;
@@ -1024,9 +1039,39 @@ export default function ChatScreen() {
     } finally {
       clearNetworkHintTimer();
       setSending(false);
+      setAnalysisRequestInFlight(false);
+      activeRequestRef.current = null;
+      cancelRequestedRef.current = false;
       scrollToEnd();
     }
   };
+
+  const handleCancelAnalysis = useCallback(() => {
+    if (analysisRequestInFlight && activeRequestRef.current) {
+      cancelRequestedRef.current = true;
+      clearNetworkHintTimer();
+      activeRequestRef.current.abort();
+      return;
+    }
+    if (!pendingIngests.length) {
+      return;
+    }
+    const latestIngest = pendingIngests[pendingIngests.length - 1];
+    updateMessageStatus(latestIngest.userMessageId, 'delivered');
+    updateMessageStatus(latestIngest.assistantMessageId, 'delivered');
+    setMessageText(latestIngest.assistantMessageId, t('chat.analysisCanceled'));
+    setError(null);
+    scrollToEnd();
+  }, [
+    analysisRequestInFlight,
+    clearNetworkHintTimer,
+    pendingIngests,
+    scrollToEnd,
+    setError,
+    setMessageText,
+    t,
+    updateMessageStatus,
+  ]);
 
   const handleAddFavoriteFromCard = useCallback(
     async (cardId: string, draft: FavoriteMealDraft) => {
@@ -1513,14 +1558,24 @@ export default function ChatScreen() {
                     />
                     <TouchableOpacity
                       onPress={() => {
+                        if (analysisInProgress) {
+                          handleCancelAnalysis();
+                          return;
+                        }
                         if (!sendButtonDisabled) {
                           void handleSend();
                         }
                       }}
-                      disabled={sendButtonDisabled}
-                      style={[styles.sendButton, sendButtonDisabled && styles.sendButtonDisabled]}
+                      disabled={!analysisInProgress && sendButtonDisabled}
+                      style={[
+                        styles.sendButton,
+                        analysisInProgress && styles.cancelButton,
+                        !analysisInProgress && sendButtonDisabled && styles.sendButtonDisabled,
+                      ]}
                     >
-                      {sending ? (
+                      {analysisInProgress ? (
+                        <Text style={styles.sendLabel}>{sendLabel}</Text>
+                      ) : sending ? (
                         <ActivityIndicator color="#fff" />
                       ) : (
                         <Text style={styles.sendLabel}>{sendLabel}</Text>
@@ -2009,6 +2064,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  cancelButton: {
+    backgroundColor: colors.error,
   },
   sendButtonDisabled: {
     backgroundColor: colors.border,
