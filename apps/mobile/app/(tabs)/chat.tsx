@@ -41,6 +41,7 @@ import { useSessionStore } from '@/store/session';
 import {
   createFavoriteMeal,
   createLogFromFavorite,
+  deleteFavoriteMeal,
   getFavorites,
   getMealLogShare,
   getIngestStatus,
@@ -103,6 +104,7 @@ const PENDING_INGEST_STALE_MS_IMAGE = 1000 * 60 * 15;
 const PENDING_INGEST_NOT_FOUND_MS = 1000 * 60 * 2;
 const COMPOSER_MIN_HEIGHT = 44;
 const COMPOSER_MAX_HEIGHT = 120;
+const COMPOSER_LINE_HEIGHT = 22;
 const NETWORK_ERROR_PATTERNS = [
   'Network request failed',
   'The network connection was lost',
@@ -145,6 +147,7 @@ export default function ChatScreen() {
   const inset = useSafeAreaInsets();
   const router = useRouter();
   const listRef = useRef<FlatList<TimelineItemMessage | TimelineItemCard>>(null);
+  const inputRef = useRef<TextInput>(null);
   const tabBarHeight = useBottomTabBarHeight();
   const windowHeight = useWindowDimensions().height;
   const queryClient = useQueryClient();
@@ -532,6 +535,17 @@ export default function ChatScreen() {
       queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
     },
   });
+  const deleteFavoriteMutation = useMutation({
+    mutationFn: (id: number) => deleteFavoriteMeal(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['favorites'] });
+      Alert.alert(t('favorites.deleteSuccess'));
+    },
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : t('favorites.deleteFailedMessage');
+      Alert.alert(t('favorites.deleteFailedTitle'), message);
+    },
+  });
 
   useEffect(() => {
     if (favoritesVisible) {
@@ -803,7 +817,8 @@ export default function ChatScreen() {
   const analysisInProgress = analysisRequestInFlight || pendingIngests.length > 0;
   const sendButtonDisabled = analysisInProgress ? false : sending || !canSend || !canSubmitMessage;
   const sendLabel = analysisInProgress ? t('common.cancel') : canSend ? t('chat.send') : t('chat.send.limit');
-  const inputExpanded = inputHeight > COMPOSER_MIN_HEIGHT + 1;
+  const inputExpanded =
+    inputHeight > COMPOSER_MIN_HEIGHT + 1 || input.includes('\n');
 
   const reviewPromptBlocked =
     reviewModalVisible ||
@@ -901,6 +916,77 @@ export default function ChatScreen() {
   }, []);
 
   const favoritesList = favoritesQuery.data ?? [];
+  const sampleFavorites = useMemo(
+    () => [
+      {
+        id: 'coffee',
+        icon: '☕️',
+        title: t('favorites.sample.coffee.title'),
+        description: t('favorites.sample.coffee.description'),
+        draft: {
+          name: t('favorites.sample.coffee.name'),
+          notes: null,
+          totals: { kcal: 180, protein_g: 22, fat_g: 4, carbs_g: 10 },
+          items: [
+            {
+              name: t('favorites.sample.coffee.item1'),
+              grams: 200,
+              calories: 2,
+              protein_g: 0,
+              fat_g: 0,
+              carbs_g: 0,
+            },
+            {
+              name: t('favorites.sample.coffee.item2'),
+              grams: 30,
+              calories: 120,
+              protein_g: 20,
+              fat_g: 2,
+              carbs_g: 4,
+            },
+            {
+              name: t('favorites.sample.coffee.item3'),
+              grams: 100,
+              calories: 58,
+              protein_g: 2,
+              fat_g: 2,
+              carbs_g: 6,
+            },
+          ],
+        },
+      },
+      {
+        id: 'banana',
+        icon: '🍌',
+        title: t('favorites.sample.banana.title'),
+        description: t('favorites.sample.banana.description'),
+        draft: {
+          name: t('favorites.sample.banana.name'),
+          notes: null,
+          totals: { kcal: 220, protein_g: 25, fat_g: 3, carbs_g: 27 },
+          items: [
+            {
+              name: t('favorites.sample.banana.item1'),
+              grams: 300,
+              calories: 120,
+              protein_g: 23,
+              fat_g: 1,
+              carbs_g: 4,
+            },
+            {
+              name: t('favorites.sample.banana.item2'),
+              grams: 100,
+              calories: 100,
+              protein_g: 1,
+              fat_g: 0,
+              carbs_g: 23,
+            },
+          ],
+        },
+      },
+    ],
+    [t, locale],
+  );
 
   const resetComposer = () => {
     setInput('');
@@ -1558,6 +1644,7 @@ export default function ChatScreen() {
                 >
                   <View style={styles.inputRow}>
                     <TextInput
+                      ref={inputRef}
                       style={[
                         styles.textInput,
                         inputExpanded && styles.textInputExpanded,
@@ -1570,9 +1657,16 @@ export default function ChatScreen() {
                       multiline
                       returnKeyType="default"
                       onContentSizeChange={(event) => {
+                        const lineCount = input.split('\n').length;
+                        const minExpandedHeight =
+                          COMPOSER_MIN_HEIGHT +
+                          Math.max(0, lineCount - 1) * COMPOSER_LINE_HEIGHT;
                         const nextHeight = Math.min(
                           COMPOSER_MAX_HEIGHT,
-                          Math.max(COMPOSER_MIN_HEIGHT, event.nativeEvent.contentSize.height),
+                          Math.max(
+                            minExpandedHeight,
+                            Math.max(COMPOSER_MIN_HEIGHT, event.nativeEvent.contentSize.height),
+                          ),
                         );
                         setInputHeight((prev) => (Math.abs(prev - nextHeight) < 1 ? prev : nextHeight));
                       }}
@@ -1650,25 +1744,128 @@ export default function ChatScreen() {
                 showsVerticalScrollIndicator={false}
               >
                 {favoritesList.map((favorite) => (
-                  <TouchableOpacity
-                    key={favorite.id}
-                    style={styles.favoritesItem}
-                    onPress={() => handleFavoriteSelect(favorite)}
-                  >
-                    <Text style={styles.favoritesItemName}>{favorite.name}</Text>
-                    <Text style={styles.favoritesItemMeta}>
-                      {Math.round(favorite.totals.kcal)} kcal ／ P{' '}
-                      {formatMacro(favorite.totals.protein_g)}g ／ F{' '}
-                      {formatMacro(favorite.totals.fat_g)}g ／ C{' '}
-                      {formatMacro(favorite.totals.carbs_g)}g
-                    </Text>
-                  </TouchableOpacity>
+                  <View key={favorite.id} style={styles.favoritesItem}>
+                    <TouchableOpacity
+                      style={styles.favoritesItemBody}
+                      onPress={() => handleFavoriteSelect(favorite)}
+                    >
+                      <Text style={styles.favoritesItemName}>{favorite.name}</Text>
+                      <Text style={styles.favoritesItemMeta}>
+                        {Math.round(favorite.totals.kcal)} kcal ／ P{' '}
+                        {formatMacro(favorite.totals.protein_g)}g ／ F{' '}
+                        {formatMacro(favorite.totals.fat_g)}g ／ C{' '}
+                        {formatMacro(favorite.totals.carbs_g)}g
+                      </Text>
+                    </TouchableOpacity>
+                    <View style={styles.favoritesItemActions}>
+                      <TouchableOpacity
+                        style={styles.favoritesItemAction}
+                        onPress={() => {
+                          setFavoritesVisible(false);
+                          router.push(`/favorites/${favorite.id}`);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('common.edit')}
+                      >
+                        <Feather name="edit-2" size={16} color={colors.textPrimary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.favoritesItemAction}
+                        onPress={() => {
+                          Alert.alert(
+                            t('favorites.deleteConfirmTitle'),
+                            t('favorites.deleteConfirmMessage'),
+                            [
+                              { text: t('common.cancel'), style: 'cancel' },
+                              {
+                                text: t('common.delete'),
+                                style: 'destructive',
+                                onPress: () => deleteFavoriteMutation.mutate(favorite.id),
+                              },
+                            ],
+                          );
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('favorites.deleteButton')}
+                      >
+                        <Feather name="trash-2" size={16} color={colors.error} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 ))}
               </ScrollView>
             ) : (
-              <View style={styles.favoritesEmpty}>
-                <Text style={styles.favoritesEmptyText}>{t('favorites.empty')}</Text>
-              </View>
+              <ScrollView
+                contentContainerStyle={[
+                  styles.favoritesEmpty,
+                  { paddingBottom: Math.max(inset.bottom, 16) + 24 },
+                ]}
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.favoritesSampleSection}>
+                  <Text style={styles.favoritesSampleSectionTitle}>
+                    {t('favorites.sample.sectionTitle')}
+                  </Text>
+                  {sampleFavorites.map((sample) => (
+                    <View key={sample.id} style={styles.favoritesSampleCard}>
+                      <View style={styles.favoritesSampleRibbon} pointerEvents="none">
+                        <Text style={styles.favoritesSampleRibbonText}>
+                          {t('favorites.sample.badge')}
+                        </Text>
+                      </View>
+                      <View style={styles.favoritesSampleRow}>
+                        <View style={styles.favoritesSampleIcon}>
+                          <Text style={styles.favoritesSampleIconText}>{sample.icon}</Text>
+                        </View>
+                        <View style={styles.favoritesSampleCopy}>
+                          <Text style={styles.favoritesSampleTitle}>{sample.title}</Text>
+                          <Text style={styles.favoritesSampleDescription}>
+                            {sample.description}
+                          </Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.favoritesSampleCta}
+                        onPress={async () => {
+                          try {
+                            await createFavoriteMutation.mutateAsync(sample.draft);
+                            Alert.alert(t('favorites.addedTitle'));
+                          } catch (error) {
+                            const message =
+                              error instanceof Error
+                                ? error.message
+                                : t('favorites.saveFailedMessage');
+                            Alert.alert(t('favorites.saveFailedTitle'), message);
+                          }
+                        }}
+                        disabled={createFavoriteMutation.isPending}
+                      >
+                        <Text style={styles.favoritesSampleCtaText}>
+                          {t('favorites.sample.cta')}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+                <View style={styles.favoritesSampleFooter}>
+                  <TouchableOpacity
+                    style={styles.favoritesSampleFooterButton}
+                    onPress={() => {
+                      setFavoritesVisible(false);
+                      setTimeout(() => {
+                        inputRef.current?.focus();
+                      }, 250);
+                    }}
+                  >
+                    <Text style={styles.favoritesSampleFooterButtonText}>
+                      {t('favorites.sample.manualCta')}
+                    </Text>
+                  </TouchableOpacity>
+                  <Text style={styles.favoritesSampleFooterNote}>
+                    {t('favorites.sample.manualNote')}
+                  </Text>
+                </View>
+              </ScrollView>
             )}
           </SafeAreaView>
         </Modal>
@@ -2065,10 +2262,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: '#fff',
     paddingHorizontal: 16,
-    paddingVertical: 0,
+    paddingVertical: 10,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     fontSize: 16,
+    lineHeight: COMPOSER_LINE_HEIGHT,
     textAlignVertical: 'center',
   },
   textInputExpanded: {
@@ -2185,7 +2383,13 @@ const styles = StyleSheet.create({
   favoritesItem: {
     backgroundColor: colors.surface,
     borderRadius: 12,
-    padding: 16,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  favoritesItemBody: {
+    flex: 1,
     gap: 6,
   },
   favoritesItemName: {
@@ -2197,14 +2401,127 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textSecondary,
   },
-  favoritesEmpty: {
-    flex: 1,
+  favoritesItemActions: {
+    gap: 8,
+  },
+  favoritesItemAction: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.backgroundMuted,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 32,
   },
-  favoritesEmptyText: {
+  favoritesEmpty: {
+    flexGrow: 1,
+    alignItems: 'stretch',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    paddingTop: 8,
+    paddingVertical: 24,
+    gap: 18,
+  },
+  favoritesSampleSection: {
+    backgroundColor: 'transparent',
+    gap: 16,
+  },
+  favoritesSampleSectionTitle: {
+    ...textStyles.titleMedium,
+    color: colors.textPrimary,
+    letterSpacing: 0.2,
+  },
+  favoritesSampleCard: {
+    backgroundColor: colors.surfaceStrong,
+    borderRadius: 16,
+    padding: 16,
+    paddingTop: 22,
+    gap: 12,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  favoritesSampleRibbon: {
+    position: 'absolute',
+    left: -22,
+    top: 12,
+    backgroundColor: colors.backgroundMuted,
+    paddingVertical: 4,
+    paddingHorizontal: 32,
+    transform: [{ rotate: '-35deg' }],
+    borderRadius: 10,
+  },
+  favoritesSampleRibbonText: {
     ...textStyles.caption,
     color: colors.textSecondary,
+    fontWeight: '700',
+  },
+  favoritesSampleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingLeft: 8,
+  },
+  favoritesSampleIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  favoritesSampleIconText: {
+    fontSize: 24,
+  },
+  favoritesSampleCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  favoritesSampleTitle: {
+    ...textStyles.body,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  favoritesSampleDescription: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  favoritesSampleCta: {
+    backgroundColor: colors.backgroundMuted,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  favoritesSampleCtaText: {
+    ...textStyles.caption,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  favoritesSampleFooter: {
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 6,
+    paddingBottom: 16,
+  },
+  favoritesSampleFooterButton: {
+    width: '100%',
+    backgroundColor: '#2F6FED',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  favoritesSampleFooterButtonText: {
+    ...textStyles.body,
+    color: '#fff',
+    fontWeight: '700',
+  },
+  favoritesSampleFooterNote: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
 });
