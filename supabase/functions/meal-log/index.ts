@@ -3080,9 +3080,13 @@ async function logFavoriteMeal(userId: number, favoriteId: number) {
     translations: { [DEFAULT_LOCALE]: cloneResponse(baseResponse) },
   };
 
+  const logId = crypto.randomUUID();
+  const nowIso = new Date().toISOString();
+
   const { data: createdLog, error: insertLogError } = await supabaseAdmin
     .from('MealLog')
     .insert({
+      id: logId,
       userId,
       foodItem: baseResponse.dish,
       calories: baseResponse.totals.kcal,
@@ -3093,6 +3097,8 @@ async function logFavoriteMeal(userId: number, favoriteId: number) {
       zeroFloored: false,
       guardrailNotes: null,
       landingType: baseResponse.landing_type ?? null,
+      createdAt: nowIso,
+      updatedAt: nowIso,
     })
     .select('id')
     .single();
@@ -3102,10 +3108,10 @@ async function logFavoriteMeal(userId: number, favoriteId: number) {
     throw new HttpError('食事記録を作成できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
   }
 
-  const logId = createdLog.id;
+  const resolvedLogId = createdLog?.id ?? logId;
 
   const { error: historyError } = await supabaseAdmin.from('MealLogPeriodHistory').insert({
-    mealLogId: logId,
+    mealLogId: resolvedLogId,
     previousMealPeriod: null,
     nextMealPeriod: null,
     source: 'favorite',
@@ -3122,7 +3128,7 @@ async function logFavoriteMeal(userId: number, favoriteId: number) {
     totals: translation.totals,
     items: translation.items,
     fallbackDish: translation.dish,
-    sourceMealLogId: logId,
+    sourceMealLogId: resolvedLogId,
   });
 
   return {
@@ -3130,7 +3136,7 @@ async function logFavoriteMeal(userId: number, favoriteId: number) {
     success: true,
     idempotent: false,
     idempotency_key: `favorite-${favoriteId}-${Date.now()}`,
-    logId,
+    logId: resolvedLogId,
     requestLocale: localization.requestedLocale,
     locale: localization.resolvedLocale,
     translations,
