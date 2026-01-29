@@ -985,7 +985,7 @@ export default function ChatScreen() {
         },
       },
     ],
-    [t, locale],
+    [t],
   );
 
   const resetComposer = () => {
