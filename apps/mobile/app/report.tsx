@@ -1,8 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
+  Animated,
   Alert,
   AppState,
+  Easing,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,6 +19,8 @@ import { DateTime } from 'luxon';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   AiReportAdvice,
+  AiReportComparisonMetric,
+  AiReportPreferenceInput,
   AiReportPeriod,
   AiReportResponse,
   AiReportRequestStatus,
@@ -22,7 +28,9 @@ import type {
   ReportCalendarResponse,
 } from '@meal-log/shared';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Svg, { Circle, Defs, G, LinearGradient, Line, Path, Stop } from 'react-native-svg';
+import * as Sharing from 'expo-sharing';
+import { cacheDirectory, deleteAsync, EncodingType, writeAsStringAsync } from 'expo-file-system/legacy';
+import Svg, { Circle, Defs, G, LinearGradient, Line, Path, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { arc, area, curveMonotoneX, line } from 'd3-shape';
 import { AuroraBackground } from '@/components/AuroraBackground';
 import { GlassCard } from '@/components/GlassCard';
@@ -30,9 +38,12 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { useDashboardSummary, type ChartPoint, type MealPeriodBreakdown, type MacroStat } from '@/features/dashboard/useDashboardSummary';
 import {
   createAiReport,
+  getAiReportPreference,
   getAiReportRequest,
   getReportCalendar,
+  getStreak,
   listAiReportRequests,
+  updateAiReportPreference,
   type ApiError,
 } from '@/services/api';
 import { useTranslation } from '@/i18n';
@@ -55,6 +66,10 @@ type ReportHistoryItem = {
   score: number;
   report: AiReportResponse;
 };
+
+type ReportFocusOption = AiReportPreferenceInput['focusAreas'][number];
+type ReportAdviceStyleOption = AiReportPreferenceInput['adviceStyle'];
+type ReportScoreEffect = 'celebration' | 'encourage' | 'neutral';
 
 function formatReportRange(report: AiReportResponse, locale: string) {
   const from = DateTime.fromISO(report.range.from).setZone(report.range.timezone);
@@ -157,6 +172,49 @@ function scoreEmoji(score: number) {
   return '🌱';
 }
 
+function formatComparisonValue(metric: AiReportComparisonMetric) {
+  if (metric.unit === 'kcal') {
+    return `${Math.round(metric.current)} kcal`;
+  }
+  if (metric.unit === 'g') {
+    return `${Math.round(metric.current * 10) / 10} g`;
+  }
+  if (metric.unit === '%') {
+    return `${Math.round(metric.current)}%`;
+  }
+  if (metric.unit === 'days') {
+    return `${Math.round(metric.current)}`;
+  }
+  return `${Math.round(metric.current * 10) / 10} ${metric.unit}`.trim();
+}
+
+function formatDeltaValue(metric: AiReportComparisonMetric) {
+  const sign = metric.delta > 0 ? '+' : metric.delta < 0 ? '-' : '±';
+  const absolute = Math.abs(metric.delta);
+  if (metric.unit === 'kcal') {
+    return `${sign}${Math.round(absolute)} kcal`;
+  }
+  if (metric.unit === 'g') {
+    return `${sign}${Math.round(absolute * 10) / 10} g`;
+  }
+  if (metric.unit === '%') {
+    return `${sign}${Math.round(absolute)}%`;
+  }
+  if (metric.unit === 'days') {
+    return `${sign}${Math.round(absolute)}`;
+  }
+  return `${sign}${Math.round(absolute * 10) / 10} ${metric.unit}`.trim();
+}
+
+function isMetricImproved(metric: AiReportComparisonMetric) {
+  if (metric.betterWhen === 'higher') return metric.delta > 0;
+  if (metric.betterWhen === 'lower') return metric.delta < 0;
+  if (metric.target == null) return Math.abs(metric.delta) < 1;
+  const currentDistance = Math.abs(metric.current - metric.target);
+  const previousDistance = Math.abs(metric.previous - metric.target);
+  return currentDistance < previousDistance;
+}
+
 const MACRO_META: Record<MacroStat['key'], { emoji: string; color: string }> = {
   protein_g: { emoji: '🥚', color: colors.ringProtein },
   fat_g: { emoji: '🥑', color: colors.ringFat },
@@ -180,6 +238,30 @@ const REPORT_MIN_LOG_DAYS = {
 const REPORT_HISTORY_LIMIT = 12;
 const REPORT_HISTORY_STORAGE_PREFIX = 'meal-log.report-history:';
 const REPORT_CALENDAR_CACHE_PREFIX = 'meal-log.report-calendar:';
+const REPORT_PENDING_STALE_MS = 1000 * 60 * 10;
+const DEFAULT_REPORT_PREFERENCE: AiReportPreferenceInput = {
+  goal: 'maintain',
+  focusAreas: ['habit'],
+  adviceStyle: 'concrete',
+};
+const SHARE_IMAGE_WIDTH = 1080;
+const SHARE_IMAGE_HEIGHT = 1350;
+
+function wrapShareLines(value: string, maxChars: number, maxLines: number) {
+  const source = Array.from(value.trim());
+  if (!source.length || maxChars <= 0 || maxLines <= 0) {
+    return ['-'];
+  }
+  const lines: string[] = [];
+  for (let index = 0; index < source.length && lines.length < maxLines; index += maxChars) {
+    lines.push(source.slice(index, index + maxChars).join(''));
+  }
+  if (source.length > maxChars * maxLines && lines.length) {
+    const last = lines.length - 1;
+    lines[last] = `${lines[last].slice(0, Math.max(0, maxChars - 1))}…`;
+  }
+  return lines;
+}
 
 function highlightTint(index: number) {
   return HIGHLIGHT_TONES[index % HIGHLIGHT_TONES.length];
@@ -201,6 +283,15 @@ export default function ReportScreen() {
   const lastRequestStatusRef = useRef<string | null>(null);
   const [reports, setReports] = useState<ReportCache>(DEFAULT_CACHE);
   const [reportHistory, setReportHistory] = useState<ReportHistoryItem[]>([]);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [showPreferenceModal, setShowPreferenceModal] = useState(false);
+  const [draftPreference, setDraftPreference] = useState<AiReportPreferenceInput>(DEFAULT_REPORT_PREFERENCE);
+  const [scoreEffect, setScoreEffect] = useState<ReportScoreEffect | null>(null);
+  const [scoreEffectMessage, setScoreEffectMessage] = useState('');
+  const scoreEffectOpacity = useRef(new Animated.Value(0)).current;
+  const playedEffectReportKeyRef = useRef<string | null>(null);
+  const pendingGenerateRef = useRef<{ period: AiReportPeriod; range: ReportRange } | null>(null);
+  const shareSvgRef = useRef<React.ComponentRef<typeof Svg> | null>(null);
   const historyStorageKey = useMemo(
     () => (userId ? `${REPORT_HISTORY_STORAGE_PREFIX}${userId}` : null),
     [userId],
@@ -234,6 +325,21 @@ export default function ReportScreen() {
     [calendarRange, userId],
   );
   const [calendarSnapshot, setCalendarSnapshot] = useState<ReportCalendarResponse | null>(null);
+  const preferenceQuery = useQuery({
+    queryKey: ['reportPreference', userId ?? 'anon'],
+    queryFn: () => getAiReportPreference(),
+    enabled: Boolean(userId),
+    staleTime: 1000 * 60 * 10,
+    onSuccess: (data) => {
+      setDraftPreference(data.preference);
+    },
+  });
+  const streakQuery = useQuery({
+    queryKey: ['streak', userId ?? 'anon'],
+    queryFn: () => getStreak(),
+    enabled: Boolean(userId),
+    staleTime: 1000 * 60,
+  });
   const calendarSummary = useQuery({
     queryKey: calendarQueryKey,
     queryFn: () => {
@@ -331,13 +437,78 @@ export default function ReportScreen() {
     queryKey: ['reportRequests', userId ?? 'anon'],
     queryFn: () => listAiReportRequests({ limit: REPORT_HISTORY_LIMIT }),
     enabled: Boolean(userId),
+    refetchInterval: activeRequestId ? 3000 : false,
     onSuccess: (data) => {
-      const pending = data.items.find((item) => item.status === 'processing' || item.status === 'queued') ?? null;
-      if (pending && !activeRequestId) {
-        setActiveRequestId(pending.id);
-        setActiveRequestStatus(pending.status);
-        setActiveRequestRange({ from: pending.range.from, to: pending.range.to });
-        setActiveRequestPeriod(pending.period);
+      const activeItem = activeRequestId ? data.items.find((item) => item.id === activeRequestId) ?? null : null;
+      if (activeItem) {
+        setActiveRequestStatus((prev) => (prev === activeItem.status ? prev : activeItem.status));
+        setActiveRequestRange((prev) =>
+          prev && prev.from === activeItem.range.from && prev.to === activeItem.range.to
+            ? prev
+            : { from: activeItem.range.from, to: activeItem.range.to },
+        );
+        setActiveRequestPeriod((prev) => (prev === activeItem.period ? prev : activeItem.period));
+
+        if (activeItem.status === 'done' && activeItem.report) {
+          const cacheKey = buildReportKey(activeItem.period, {
+            from: activeItem.range.from,
+            to: activeItem.range.to,
+          });
+          setReports((prev) => ({ ...prev, [cacheKey]: activeItem.report! }));
+          const historyItem = mapRequestToHistoryItem({
+            id: activeItem.id,
+            period: activeItem.period,
+            range: { from: activeItem.range.from, to: activeItem.range.to },
+            report: activeItem.report ?? null,
+            createdAt: activeItem.createdAt,
+          });
+          if (historyItem) {
+            setReportHistory((prev) => {
+              const next = [historyItem, ...prev.filter((entry) => entry.key !== cacheKey)].slice(0, REPORT_HISTORY_LIMIT);
+              if (historyStorageKey) {
+                AsyncStorage.setItem(historyStorageKey, JSON.stringify(next)).catch((error) => {
+                  console.warn('Failed to persist report history', error);
+                });
+              }
+              return next;
+            });
+          }
+          if (activeItem.usage) {
+            setUsage(activeItem.usage);
+          }
+          lastRequestStatusRef.current = `${activeItem.id}:${activeItem.status}`;
+          setActiveRequestId(null);
+        } else if (activeItem.status === 'failed') {
+          Alert.alert(t('report.errorTitle'), activeItem.errorMessage ?? t('report.errorFallback'));
+          setActiveRequestId(null);
+        } else if (activeItem.status === 'canceled') {
+          Alert.alert(t('report.errorTitle'), t('report.canceledMessage'));
+          setActiveRequestId(null);
+        }
+      }
+
+      const nowMs = Date.now();
+      const pending = data.items.find((item) => {
+        if (!(item.status === 'processing' || item.status === 'queued')) {
+          return false;
+        }
+        const updatedAtMs = DateTime.fromISO(item.updatedAt ?? item.createdAt ?? '').toMillis();
+        if (!Number.isFinite(updatedAtMs)) {
+          return false;
+        }
+        return nowMs - updatedAtMs <= REPORT_PENDING_STALE_MS;
+      }) ?? null;
+      if (!activeRequestId) {
+        if (pending) {
+          setActiveRequestId(pending.id);
+          setActiveRequestStatus(pending.status);
+          setActiveRequestRange({ from: pending.range.from, to: pending.range.to });
+          setActiveRequestPeriod(pending.period);
+        } else {
+          setActiveRequestStatus(null);
+          setActiveRequestRange(null);
+          setActiveRequestPeriod(null);
+        }
       }
 
       const historyItems = data.items
@@ -368,6 +539,9 @@ export default function ReportScreen() {
         }
       }
     },
+    onError: (error) => {
+      console.error('Failed to load report requests', error);
+    },
   });
 
   const reportRequestQuery = useQuery({
@@ -377,6 +551,9 @@ export default function ReportScreen() {
     refetchInterval: (data) => {
       const status = data?.request?.status;
       return status === 'queued' || status === 'processing' ? 3000 : false;
+    },
+    onError: (error) => {
+      console.error('Failed to load report request status', error);
     },
   });
 
@@ -393,10 +570,11 @@ export default function ReportScreen() {
     );
     setActiveRequestPeriod((prev) => (prev === request.period ? prev : request.period));
 
-    if (request.status === lastRequestStatusRef.current) {
+    const statusKey = `${request.id}:${request.status}`;
+    if (statusKey === lastRequestStatusRef.current) {
       return;
     }
-    lastRequestStatusRef.current = request.status;
+    lastRequestStatusRef.current = statusKey;
 
     if (request.status === 'done' && request.report) {
       const cacheKey = buildReportKey(request.period, {
@@ -650,6 +828,69 @@ export default function ReportScreen() {
       achievement,
     };
   }, [dashboard]);
+  const streakDays = streakQuery.data?.streak.current ?? report?.uiMeta?.streakDays ?? 0;
+  const showWeeklyPrompt = period === 'daily' && streakDays >= 7;
+
+  useEffect(() => {
+    setDetailsExpanded(false);
+  }, [reportKey]);
+
+  useEffect(() => {
+    if (!report || !reportKey) {
+      return;
+    }
+    if (playedEffectReportKeyRef.current === reportKey) {
+      return;
+    }
+    const resolvedEffect: ReportScoreEffect =
+      report.uiMeta?.effect ??
+      (report.summary.score >= 85 ? 'celebration' : report.summary.score <= 45 ? 'encourage' : 'neutral');
+    if (resolvedEffect === 'neutral') {
+      playedEffectReportKeyRef.current = reportKey;
+      return;
+    }
+
+    let active = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((reduceMotion) => {
+        if (!active || reduceMotion) {
+          playedEffectReportKeyRef.current = reportKey;
+          return;
+        }
+        const message =
+          resolvedEffect === 'celebration'
+            ? t('report.effect.celebration')
+            : t('report.effect.encourage');
+        setScoreEffect(resolvedEffect);
+        setScoreEffectMessage(message);
+        scoreEffectOpacity.setValue(0);
+        Animated.sequence([
+          Animated.timing(scoreEffectOpacity, {
+            toValue: 1,
+            duration: 220,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.delay(1300),
+          Animated.timing(scoreEffectOpacity, {
+            toValue: 0,
+            duration: 260,
+            easing: Easing.in(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          setScoreEffect(null);
+          playedEffectReportKeyRef.current = reportKey;
+        });
+      })
+      .catch(() => {
+        playedEffectReportKeyRef.current = reportKey;
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [report, reportKey, scoreEffectOpacity, t]);
 
   const periodOptions = useMemo(
     () => [
@@ -667,15 +908,88 @@ export default function ReportScreen() {
     }),
     [t],
   );
+  const preferenceConfigured = preferenceQuery.data?.configured ?? false;
+  const activePreference = preferenceQuery.data?.preference ?? draftPreference;
+  const updatePreferenceMutation = useMutation({
+    mutationFn: (payload: AiReportPreferenceInput) => updateAiReportPreference(payload),
+    onSuccess: (response) => {
+      setDraftPreference(response.preference);
+      queryClient.setQueryData(['reportPreference', userId ?? 'anon'], {
+        ok: true,
+        preference: response.preference,
+        configured: true,
+      });
+      setShowPreferenceModal(false);
+      const pending = pendingGenerateRef.current;
+      if (pending) {
+        pendingGenerateRef.current = null;
+        createReportMutation.mutate({
+          period: pending.period,
+          range: pending.range,
+          preferenceOverride: response.preference,
+        });
+      }
+    },
+    onError: (error) => {
+      const apiError = error as ApiError;
+      Alert.alert(t('report.errorTitle'), apiError?.message ?? t('report.errorFallback'));
+    },
+  });
   const createReportMutation = useMutation({
-    mutationFn: (payload: { period: AiReportPeriod; range: { from: string; to: string } }) =>
-      createAiReport(payload.period, payload.range),
+    mutationFn: (payload: {
+      period: AiReportPeriod;
+      range: { from: string; to: string };
+      preferenceOverride: AiReportPreferenceInput;
+    }) => createAiReport(payload.period, payload.range, payload.preferenceOverride),
     onSuccess: (response, payload) => {
       setActiveRequestId(response.requestId);
       setActiveRequestStatus(response.status);
       setActiveRequestRange(payload.range);
       setActiveRequestPeriod(payload.period);
-      lastRequestStatusRef.current = response.status;
+      lastRequestStatusRef.current = null;
+      queryClient.invalidateQueries({ queryKey: ['reportRequests', userId ?? 'anon'] }).catch(() => {
+        // no-op
+      });
+      if (response.status === 'done') {
+        getAiReportRequest(response.requestId)
+          .then((result) => {
+            const doneRequest = result.request;
+            if (doneRequest.status !== 'done' || !doneRequest.report) {
+              return;
+            }
+            const cacheKey = buildReportKey(doneRequest.period, {
+              from: doneRequest.range.from,
+              to: doneRequest.range.to,
+            });
+            setReports((prev) => ({ ...prev, [cacheKey]: doneRequest.report! }));
+            const historyItem = mapRequestToHistoryItem({
+              id: doneRequest.id,
+              period: doneRequest.period,
+              range: { from: doneRequest.range.from, to: doneRequest.range.to },
+              report: doneRequest.report ?? null,
+              createdAt: doneRequest.createdAt,
+            });
+            if (historyItem) {
+              setReportHistory((prev) => {
+                const next = [historyItem, ...prev.filter((entry) => entry.key !== cacheKey)].slice(0, REPORT_HISTORY_LIMIT);
+                if (historyStorageKey) {
+                  AsyncStorage.setItem(historyStorageKey, JSON.stringify(next)).catch((error) => {
+                    console.warn('Failed to persist report history', error);
+                  });
+                }
+                return next;
+              });
+            }
+            if (doneRequest.usage) {
+              setUsage(doneRequest.usage);
+            }
+            lastRequestStatusRef.current = `${doneRequest.id}:${doneRequest.status}`;
+            setActiveRequestId(null);
+          })
+          .catch((error) => {
+            console.error('Failed to hydrate immediate done report', error);
+          });
+      }
     },
     onError: (error) => {
       const apiError = error as ApiError;
@@ -693,6 +1007,23 @@ export default function ReportScreen() {
     }
     return t('report.rangePlaceholder');
   }, [locale, report, selectedRange, t]);
+  const shareHeadlineLines = useMemo(
+    () => (report ? wrapShareLines(report.summary.headline, 24, 3) : []),
+    [report],
+  );
+  const shareHighlights = useMemo(
+    () =>
+      report
+        ? report.summary.highlights
+            .slice(0, 3)
+            .map((item) => wrapShareLines(item, 30, 1).join(''))
+        : [],
+    [report],
+  );
+  const shareComparisonMetrics = useMemo(
+    () => (report?.comparison?.metrics ?? []).slice(0, 3),
+    [report],
+  );
   const isGenerating =
     createReportMutation.isLoading ||
     activeRequestStatus === 'queued' ||
@@ -746,7 +1077,62 @@ export default function ReportScreen() {
       Alert.alert(t('report.errorTitle'), t('report.rangeMissing'));
       return;
     }
-    createReportMutation.mutate({ period, range: selectedRange });
+    if (!preferenceConfigured) {
+      pendingGenerateRef.current = { period, range: selectedRange };
+      setShowPreferenceModal(true);
+      return;
+    }
+    createReportMutation.mutate({
+      period,
+      range: selectedRange,
+      preferenceOverride: activePreference,
+    });
+  };
+
+  const handleSavePreference = () => {
+    updatePreferenceMutation.mutate(draftPreference);
+  };
+
+  const handleShareReport = async () => {
+    if (!report) return;
+    try {
+      if (!cacheDirectory) {
+        Alert.alert(t('report.errorTitle'), t('report.shareFailed'));
+        return;
+      }
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert(t('report.errorTitle'), t('report.shareUnavailable'));
+        return;
+      }
+      const svgNode = shareSvgRef.current;
+      if (!svgNode || typeof svgNode.toDataURL !== 'function') {
+        Alert.alert(t('report.errorTitle'), t('report.shareFailed'));
+        return;
+      }
+      const pngBase64 = await new Promise<string>((resolve, reject) => {
+        svgNode.toDataURL((data) => {
+          if (data) {
+            resolve(data);
+            return;
+          }
+          reject(new Error('Missing image payload'));
+        });
+      });
+      const fileUri = `${cacheDirectory}ai-report-${Date.now()}.png`;
+      await writeAsStringAsync(fileUri, pngBase64, { encoding: EncodingType.Base64 });
+      try {
+        await Sharing.shareAsync(fileUri, {
+          dialogTitle: t('report.shareButton'),
+          mimeType: 'image/png',
+          UTI: 'public.png',
+        });
+      } finally {
+        await deleteAsync(fileUri, { idempotent: true });
+      }
+    } catch (error) {
+      console.error('Failed to share report', error);
+      Alert.alert(t('report.errorTitle'), t('report.shareFailed'));
+    }
   };
 
   const formatPriority = (value: AiReportAdvice['priority']) => {
@@ -764,7 +1150,10 @@ export default function ReportScreen() {
   return (
     <AuroraBackground style={styles.container}>
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.header}>
             <Text style={styles.title}>{t('report.header')}</Text>
             <Text style={styles.subtitle}>{t('report.subtitle')}</Text>
@@ -800,6 +1189,22 @@ export default function ReportScreen() {
             <Text style={styles.rangeLabel}>{t('report.rangeLabel')}</Text>
             <Text style={styles.rangeValue}>{rangeLabel}</Text>
           </View>
+
+          <GlassCard style={styles.card}>
+            <View style={styles.preferenceHeader}>
+              <Text style={styles.cardTitle}>🎛️ {t('report.preference.title')}</Text>
+              <TouchableOpacity style={styles.preferenceEditButton} onPress={() => setShowPreferenceModal(true)}>
+                <Text style={styles.preferenceEditLabel}>{t('report.preference.edit')}</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.preferenceSummary}>
+              {activePreference.focusAreas.map((focus) => t(`report.preference.focus.${focus}`)).join(', ')} /{' '}
+              {t(`report.preference.style.${activePreference.adviceStyle}`)}
+            </Text>
+            {!preferenceConfigured ? (
+              <Text style={styles.preferenceNotice}>{t('report.preference.required')}</Text>
+            ) : null}
+          </GlassCard>
 
           <GlassCard style={styles.card}>
             <Text style={styles.cardTitle}>📅 {t('report.section.rangeSelect')}</Text>
@@ -893,6 +1298,60 @@ export default function ReportScreen() {
             <Text style={styles.tokenNote}>{t('report.tokenNote')}</Text>
           )}
 
+          {report ? (
+            <GlassCard style={styles.card}>
+                <Text style={styles.cardTitle}>✨ {t('report.section.summary')}</Text>
+                <View style={styles.summaryHero}>
+                  <ScoreRing
+                    score={Math.round(report.summary.score)}
+                    label={t('report.scoreLabel')}
+                    emoji={scoreEmoji(report.summary.score)}
+                  />
+                  <View style={styles.heroStats}>
+                    <View style={styles.heroStat}>
+                      <Text style={styles.heroStatLabel}>🔥 {t('report.stat.averageCalories')}</Text>
+                      <Text style={styles.heroStatValue}>{summaryStats ? `${summaryStats.averageCalories} kcal` : '--'}</Text>
+                    </View>
+                    <View style={styles.heroStat}>
+                      <Text style={styles.heroStatLabel}>🗓️ {t('report.stat.loggedDays')}</Text>
+                      <Text style={styles.heroStatValue}>{summaryStats ? `${summaryStats.loggedDays} / ${summaryStats.totalDays}` : '--'}</Text>
+                    </View>
+                    <View style={styles.heroStat}>
+                      <Text style={styles.heroStatLabel}>🔥 {t('report.streakLabel')}</Text>
+                      <Text style={styles.heroStatValue}>{streakDays}</Text>
+                    </View>
+                  </View>
+                </View>
+                <Text style={styles.summaryHeadline}>{report.summary.headline}</Text>
+                <View style={styles.highlightRow}>
+                  {report.summary.highlights.map((highlight, index) => (
+                    <View
+                      key={`${highlight}-${index}`}
+                      style={[styles.highlightChip, { backgroundColor: `${highlightTint(index)}33` }]}
+                    >
+                      <Text style={styles.highlightText}>{highlight}</Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={styles.summaryActionRow}>
+                  {detailsExpanded ? (
+                    <TouchableOpacity
+                      style={[styles.summaryActionButton, styles.summaryActionButtonMuted]}
+                      onPress={() => setDetailsExpanded(false)}
+                    >
+                      <Text style={styles.summaryActionText}>{t('report.hideDetails')}</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  <TouchableOpacity
+                    style={[styles.summaryActionButton, styles.summaryActionButtonPrimary]}
+                    onPress={handleShareReport}
+                  >
+                    <Text style={[styles.summaryActionText, styles.summaryActionTextStrong]}>{t('report.shareButton')}</Text>
+                  </TouchableOpacity>
+                </View>
+            </GlassCard>
+          ) : null}
+
           {!report ? (
             <GlassCard style={styles.card}>
               <Text style={styles.emptyTitle}>{t('report.emptyTitle')}</Text>
@@ -902,11 +1361,7 @@ export default function ReportScreen() {
                   <Text style={styles.historyTitle}>{t('report.history.title')}</Text>
                   <View style={styles.historyList}>
                     {reportHistory.map((item) => (
-                      <TouchableOpacity
-                        key={item.key}
-                        style={styles.historyItem}
-                        onPress={() => handleHistorySelect(item)}
-                      >
+                      <TouchableOpacity key={item.key} style={styles.historyItem} onPress={() => handleHistorySelect(item)}>
                         <View style={styles.historyHeader}>
                           <Text style={styles.historyRange}>{formatSelectedRange(item.range, locale)}</Text>
                           <View style={styles.historyPill}>
@@ -931,152 +1386,377 @@ export default function ReportScreen() {
             </GlassCard>
           ) : (
             <>
-              <GlassCard style={styles.card}>
-                <Text style={styles.cardTitle}>✨ {t('report.section.summary')}</Text>
-                <View style={styles.summaryHero}>
-                  <ScoreRing
-                    score={Math.round(report.summary.score)}
-                    label={t('report.scoreLabel')}
-                    emoji={scoreEmoji(report.summary.score)}
-                  />
-                  <View style={styles.heroStats}>
-                    <View style={styles.heroStat}>
-                      <Text style={styles.heroStatLabel}>🔥 {t('report.stat.averageCalories')}</Text>
-                      <Text style={styles.heroStatValue}>
-                        {summaryStats ? `${summaryStats.averageCalories} kcal` : '--'}
-                      </Text>
-                    </View>
-                    <View style={styles.heroStat}>
-                      <Text style={styles.heroStatLabel}>🗓️ {t('report.stat.loggedDays')}</Text>
-                      <Text style={styles.heroStatValue}>
-                        {summaryStats ? `${summaryStats.loggedDays} / ${summaryStats.totalDays}` : '--'}
-                      </Text>
-                    </View>
-                    <View style={styles.heroStat}>
-                      <Text style={styles.heroStatLabel}>🎯 {t('report.stat.achievement')}</Text>
-                      <Text style={styles.heroStatValue}>
-                        {summaryStats ? `${summaryStats.achievement}%` : '--'}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-                <Text style={styles.summaryHeadline}>{report.summary.headline}</Text>
-                <View style={styles.highlightRow}>
-                  {report.summary.highlights.map((highlight, index) => (
-                    <View
-                      key={`${highlight}-${index}`}
-                      style={[
-                        styles.highlightChip,
-                        { backgroundColor: `${highlightTint(index)}33` },
-                      ]}
-                    >
-                      <Text style={styles.highlightText}>{highlight}</Text>
-                    </View>
-                  ))}
-                </View>
-              </GlassCard>
+              {showWeeklyPrompt ? (
+                <GlassCard style={styles.card}>
+                  <Text style={styles.cardTitle}>🧭 {t('report.weeklyPrompt.title')}</Text>
+                  <Text style={styles.emptyBody}>{t('report.weeklyPrompt.body', { days: streakDays })}</Text>
+                  <TouchableOpacity style={styles.summaryActionButton} onPress={() => setPeriod('weekly')}>
+                    <Text style={styles.summaryActionText}>{t('report.weeklyPrompt.cta')}</Text>
+                  </TouchableOpacity>
+                </GlassCard>
+              ) : null}
 
-              <GlassCard style={styles.card}>
-                <Text style={styles.cardTitle}>📈 {t('report.section.trend')}</Text>
-                {dashboardSummary.isLoading && !dashboard ? (
-                  <ActivityIndicator color={colors.accent} />
-                ) : dashboard?.calories.points.length ? (
-                  <TrendLineChart
-                    points={dashboard.calories.points}
-                    target={dashboard.calories.targetLine}
-                    axisLabelY={t('dashboard.chart.axisY')}
-                    axisLabelX={t('dashboard.chart.axisX')}
-                  />
-                ) : (
-                  <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
-                )}
-                {dashboard?.calories.targetLine ? (
-                  <Text style={styles.trendNote}>
-                    {t('dashboard.chart.targetLabel', { value: Math.round(dashboard.calories.targetLine) })}
-                  </Text>
-                ) : null}
-              </GlassCard>
+              {!detailsExpanded ? (
+                <GlassCard style={styles.card}>
+                  <Text style={styles.emptyBody}>{t('report.detailsCollapsed')}</Text>
+                  <TouchableOpacity
+                    style={[styles.summaryActionButton, styles.detailsPromptButton, styles.summaryActionButtonPrimary]}
+                    onPress={() => setDetailsExpanded(true)}
+                  >
+                    <Text style={[styles.summaryActionText, styles.summaryActionTextStrong]}>{t('report.showDetails')}</Text>
+                  </TouchableOpacity>
+                </GlassCard>
+              ) : (
+                <>
+                  {report.comparison?.metrics?.length ? (
+                    <GlassCard style={styles.card}>
+                      <Text style={styles.cardTitle}>📊 {t('report.section.comparison')}</Text>
+                      {typeof report.comparison.scoreDelta === 'number' ? (
+                        <Text style={styles.comparisonScoreDelta}>
+                          {t('report.comparison.scoreDelta', {
+                            value:
+                              report.comparison.scoreDelta > 0
+                                ? `+${report.comparison.scoreDelta}`
+                                : `${report.comparison.scoreDelta}`,
+                          })}
+                        </Text>
+                      ) : null}
+                      <View style={styles.comparisonList}>
+                        {report.comparison.metrics.map((metric) => {
+                          const improved = isMetricImproved(metric);
+                          return (
+                            <View key={metric.key} style={styles.comparisonItem}>
+                              <View style={styles.comparisonItemTop}>
+                                <Text style={styles.comparisonLabel}>{metric.label}</Text>
+                                <Text style={styles.comparisonValue}>{formatComparisonValue(metric)}</Text>
+                              </View>
+                              <Text
+                                style={[
+                                  styles.comparisonDelta,
+                                  improved ? styles.comparisonDeltaGood : styles.comparisonDeltaBad,
+                                ]}
+                              >
+                                {formatDeltaValue(metric)}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </GlassCard>
+                  ) : null}
 
-              <GlassCard style={styles.card}>
-                <Text style={styles.cardTitle}>🥗 {t('report.section.macros')}</Text>
-                {dashboard ? (
-                  <View style={styles.macroWrap}>
-                    <MacroDonut macros={dashboard.macros} totalCalories={dashboard.summary.macros.total.calories} />
-                    <View style={styles.macroLegend}>
-                      {dashboard.macros.map((macro) => (
-                        <View key={macro.key} style={styles.macroLegendRow}>
-                          <View style={[styles.macroDot, { backgroundColor: MACRO_META[macro.key].color }]} />
-                          <Text style={styles.macroLegendText}>
-                            {MACRO_META[macro.key].emoji} {macro.label}
-                          </Text>
-                          <Text style={styles.macroLegendValue}>
-                            {Math.round(macro.actual)} / {Math.round(macro.target)}g
-                          </Text>
+                  <GlassCard style={styles.card}>
+                    <Text style={styles.cardTitle}>📈 {t('report.section.trend')}</Text>
+                    {dashboardSummary.isLoading && !dashboard ? (
+                      <ActivityIndicator color={colors.accent} />
+                    ) : dashboard?.calories.points.length ? (
+                      <TrendLineChart
+                        points={dashboard.calories.points}
+                        target={dashboard.calories.targetLine}
+                        axisLabelY={t('dashboard.chart.axisY')}
+                        axisLabelX={t('dashboard.chart.axisX')}
+                      />
+                    ) : (
+                      <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
+                    )}
+                    {dashboard?.calories.targetLine ? (
+                      <Text style={styles.trendNote}>
+                        {t('dashboard.chart.targetLabel', { value: Math.round(dashboard.calories.targetLine) })}
+                      </Text>
+                    ) : null}
+                  </GlassCard>
+
+                  <GlassCard style={styles.card}>
+                    <Text style={styles.cardTitle}>🥗 {t('report.section.macros')}</Text>
+                    {dashboard ? (
+                      <View style={styles.macroWrap}>
+                        <MacroDonut macros={dashboard.macros} totalCalories={dashboard.summary.macros.total.calories} />
+                        <View style={styles.macroLegend}>
+                          {dashboard.macros.map((macro) => (
+                            <View key={macro.key} style={styles.macroLegendRow}>
+                              <View style={[styles.macroDot, { backgroundColor: MACRO_META[macro.key].color }]} />
+                              <Text style={styles.macroLegendText}>
+                                {MACRO_META[macro.key].emoji} {macro.label}
+                              </Text>
+                              <Text style={styles.macroLegendValue}>
+                                {Math.round(macro.actual)} / {Math.round(macro.target)}g
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    ) : (
+                      <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
+                    )}
+                  </GlassCard>
+
+                  <GlassCard style={styles.card}>
+                    <Text style={styles.cardTitle}>🍽️ {t('report.section.mealTiming')}</Text>
+                    {dashboard ? (
+                      <MealTimingStack entries={dashboard.calories.mealPeriodBreakdown} />
+                    ) : (
+                      <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
+                    )}
+                  </GlassCard>
+
+                  <GlassCard style={styles.card}>
+                    <Text style={styles.cardTitle}>📌 {t('report.section.metrics')}</Text>
+                    <View style={styles.metricGrid}>
+                      {report.metrics.map((metric, index) => (
+                        <View key={`${metric.label}-${index}`} style={styles.metricItem}>
+                          <Text style={styles.metricLabel}>{metric.label}</Text>
+                          <Text style={styles.metricValue}>{metric.value}</Text>
+                          {metric.note ? <Text style={styles.metricNote}>{metric.note}</Text> : null}
                         </View>
                       ))}
                     </View>
-                  </View>
-                ) : (
-                  <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
-                )}
-              </GlassCard>
+                  </GlassCard>
 
-              <GlassCard style={styles.card}>
-                <Text style={styles.cardTitle}>🍽️ {t('report.section.mealTiming')}</Text>
-                {dashboard ? (
-                  <MealTimingStack entries={dashboard.calories.mealPeriodBreakdown} />
-                ) : (
-                  <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
-                )}
-              </GlassCard>
-
-              <GlassCard style={styles.card}>
-                <Text style={styles.cardTitle}>📌 {t('report.section.metrics')}</Text>
-                <View style={styles.metricGrid}>
-                  {report.metrics.map((metric, index) => (
-                    <View key={`${metric.label}-${index}`} style={styles.metricItem}>
-                      <Text style={styles.metricLabel}>{metric.label}</Text>
-                      <Text style={styles.metricValue}>{metric.value}</Text>
-                      {metric.note ? <Text style={styles.metricNote}>{metric.note}</Text> : null}
-                    </View>
-                  ))}
-                </View>
-              </GlassCard>
-
-              <GlassCard style={styles.card}>
-                <Text style={styles.cardTitle}>🥦 {t('report.section.ingredients')}</Text>
-                <View style={styles.ingredientList}>
-                  {report.ingredients.map((ingredient, index) => (
-                    <View key={`${ingredient.name}-${index}`} style={styles.ingredientItem}>
-                      <Text style={styles.ingredientName}>{ingredient.name}</Text>
-                      <Text style={styles.ingredientReason}>{ingredient.reason}</Text>
-                    </View>
-                  ))}
-                </View>
-              </GlassCard>
-
-              <GlassCard style={styles.card}>
-                <Text style={styles.cardTitle}>💡 {t('report.section.advice')}</Text>
-                <View style={styles.adviceList}>
-                  {report.advice.map((advice, index) => (
-                    <View key={`${advice.title}-${index}`} style={styles.adviceItem}>
-                      <View style={styles.adviceHeader}>
-                        <View style={[styles.priorityBadge, priorityBadgeStyle(advice.priority)]}>
-                          <Text style={styles.priorityText}>{formatPriority(advice.priority)}</Text>
+                  <GlassCard style={styles.card}>
+                    <Text style={styles.cardTitle}>🥦 {t('report.section.ingredients')}</Text>
+                    <View style={styles.ingredientList}>
+                      {report.ingredients.map((ingredient, index) => (
+                        <View key={`${ingredient.name}-${index}`} style={styles.ingredientItem}>
+                          <Text style={styles.ingredientName}>{ingredient.name}</Text>
+                          <Text style={styles.ingredientReason}>{ingredient.reason}</Text>
                         </View>
-                        <Text style={styles.adviceTitle}>{advice.title}</Text>
-                      </View>
-                      <Text style={styles.adviceDetail}>{advice.detail}</Text>
+                      ))}
                     </View>
-                  ))}
-                </View>
-              </GlassCard>
+                  </GlassCard>
+
+                  <GlassCard style={styles.card}>
+                    <Text style={styles.cardTitle}>💡 {t('report.section.advice')}</Text>
+                    <View style={styles.adviceList}>
+                      {report.advice.map((advice, index) => (
+                        <View key={`${advice.title}-${index}`} style={styles.adviceItem}>
+                          <View style={styles.adviceHeader}>
+                            <View style={[styles.priorityBadge, priorityBadgeStyle(advice.priority)]}>
+                              <Text style={styles.priorityText}>{formatPriority(advice.priority)}</Text>
+                            </View>
+                            <Text style={styles.adviceTitle}>{advice.title}</Text>
+                          </View>
+                          <Text style={styles.adviceDetail}>{advice.detail}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </GlassCard>
+                </>
+              )}
             </>
           )}
-
         </ScrollView>
+        {report ? (
+          <View pointerEvents="none" style={styles.shareRenderTarget}>
+            <Svg ref={shareSvgRef} width={SHARE_IMAGE_WIDTH} height={SHARE_IMAGE_HEIGHT}>
+              <Defs>
+                <LinearGradient id="shareBg" x1="0" y1="0" x2="1" y2="1">
+                  <Stop offset="0" stopColor="#FFF4DE" />
+                  <Stop offset="0.5" stopColor="#EFF8FF" />
+                  <Stop offset="1" stopColor="#EFFFF2" />
+                </LinearGradient>
+              </Defs>
+              <Rect x={0} y={0} width={SHARE_IMAGE_WIDTH} height={SHARE_IMAGE_HEIGHT} fill="url(#shareBg)" />
+              <Rect
+                x={56}
+                y={56}
+                width={SHARE_IMAGE_WIDTH - 112}
+                height={SHARE_IMAGE_HEIGHT - 112}
+                rx={42}
+                fill="rgba(255,255,255,0.95)"
+                stroke="rgba(31,36,44,0.08)"
+                strokeWidth={2}
+              />
+
+              <SvgText x={96} y={128} fill={colors.textPrimary} fontSize={52} fontWeight="700">
+                {t('report.header')}
+              </SvgText>
+              <SvgText x={96} y={178} fill={colors.textMuted} fontSize={30}>
+                {rangeLabel}
+              </SvgText>
+
+              <SvgText x={96} y={300} fill={colors.accent} fontSize={140} fontWeight="800">
+                {Math.round(report.summary.score)}
+              </SvgText>
+              <SvgText x={292} y={285} fill={colors.textSecondary} fontSize={34} fontWeight="600">
+                {t('report.scoreLabel')}
+              </SvgText>
+
+              <Rect x={96} y={336} width={280} height={112} rx={24} fill="rgba(245,178,37,0.15)" />
+              <Rect x={400} y={336} width={280} height={112} rx={24} fill="rgba(116,210,194,0.16)" />
+              <Rect x={704} y={336} width={280} height={112} rx={24} fill="rgba(156,124,255,0.14)" />
+              <SvgText x={124} y={378} fill={colors.textMuted} fontSize={22}>
+                {t('report.stat.averageCalories')}
+              </SvgText>
+              <SvgText x={124} y={422} fill={colors.textPrimary} fontSize={34} fontWeight="700">
+                {summaryStats ? `${summaryStats.averageCalories} kcal` : '--'}
+              </SvgText>
+              <SvgText x={428} y={378} fill={colors.textMuted} fontSize={22}>
+                {t('report.stat.loggedDays')}
+              </SvgText>
+              <SvgText x={428} y={422} fill={colors.textPrimary} fontSize={34} fontWeight="700">
+                {summaryStats ? `${summaryStats.loggedDays}/${summaryStats.totalDays}` : '--'}
+              </SvgText>
+              <SvgText x={732} y={378} fill={colors.textMuted} fontSize={22}>
+                {t('report.streakLabel')}
+              </SvgText>
+              <SvgText x={732} y={422} fill={colors.textPrimary} fontSize={34} fontWeight="700">
+                {`${streakDays}`}
+              </SvgText>
+
+              <SvgText x={96} y={510} fill={colors.textSecondary} fontSize={24} fontWeight="700">
+                {t('report.section.summary')}
+              </SvgText>
+              {shareHeadlineLines.map((lineText, index) => (
+                <SvgText
+                  key={`share-headline-${index}`}
+                  x={96}
+                  y={566 + index * 50}
+                  fill={colors.textPrimary}
+                  fontSize={44}
+                  fontWeight="700"
+                >
+                  {lineText}
+                </SvgText>
+              ))}
+
+              <SvgText x={96} y={740} fill={colors.textSecondary} fontSize={24} fontWeight="700">
+                Highlights
+              </SvgText>
+              {shareHighlights.map((item, index) => (
+                <G key={`share-highlight-${index}`}>
+                  <Circle cx={108} cy={790 + index * 62} r={7} fill={highlightTint(index)} />
+                  <SvgText x={132} y={798 + index * 62} fill={colors.textPrimary} fontSize={30} fontWeight="600">
+                    {item}
+                  </SvgText>
+                </G>
+              ))}
+
+              {shareComparisonMetrics.length ? (
+                <>
+                  <Line x1={96} y1={992} x2={984} y2={992} stroke="rgba(31,36,44,0.12)" strokeWidth={2} />
+                  <SvgText x={96} y={1042} fill={colors.textSecondary} fontSize={24} fontWeight="700">
+                    {t('report.section.comparison')}
+                  </SvgText>
+                  {shareComparisonMetrics.map((metric, index) => (
+                    <G key={`share-comparison-${metric.key}`}>
+                      <SvgText x={96} y={1102 + index * 58} fill={colors.textPrimary} fontSize={28}>
+                        {wrapShareLines(metric.label, 26, 1).join('')}
+                      </SvgText>
+                      <SvgText
+                        x={984}
+                        y={1102 + index * 58}
+                        fill={isMetricImproved(metric) ? colors.success : colors.error}
+                        fontSize={28}
+                        fontWeight="700"
+                        textAnchor="end"
+                      >
+                        {formatDeltaValue(metric)}
+                      </SvgText>
+                    </G>
+                  ))}
+                </>
+              ) : null}
+            </Svg>
+          </View>
+        ) : null}
+        {scoreEffect ? (
+          <Animated.View style={[styles.effectOverlay, { opacity: scoreEffectOpacity }]}>
+            <Text style={styles.effectEmoji}>{scoreEffect === 'celebration' ? '🎉' : '☁️'}</Text>
+            <Text style={styles.effectMessage}>{scoreEffectMessage}</Text>
+          </Animated.View>
+        ) : null}
+        <ReportPreferenceModal
+          visible={showPreferenceModal}
+          onClose={() => {
+            pendingGenerateRef.current = null;
+            setShowPreferenceModal(false);
+          }}
+          preference={draftPreference}
+          onChange={setDraftPreference}
+          onSave={handleSavePreference}
+          loading={updatePreferenceMutation.isLoading}
+          t={t}
+        />
       </SafeAreaView>
     </AuroraBackground>
+  );
+}
+
+function ReportPreferenceModal({
+  visible,
+  onClose,
+  preference,
+  onChange,
+  onSave,
+  loading,
+  t,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  preference: AiReportPreferenceInput;
+  onChange: (next: AiReportPreferenceInput) => void;
+  onSave: () => void;
+  loading: boolean;
+  t: (key: string, values?: Record<string, unknown>) => string;
+}) {
+  const focusOptions: ReportFocusOption[] = ['weight', 'bodyFat', 'wellness', 'muscle', 'habit'];
+  const styleOptions: ReportAdviceStyleOption[] = ['simple', 'concrete', 'motivational'];
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>{t('report.preference.title')}</Text>
+
+          <Text style={styles.modalLabel}>{t('report.preference.question.focus')}</Text>
+          <View style={styles.modalOptionRow}>
+            {focusOptions.map((option) => {
+              const selected = preference.focusAreas.includes(option);
+              return (
+                <TouchableOpacity
+                  key={option}
+                  style={[styles.modalOptionChip, selected && styles.modalOptionChipActive]}
+                  onPress={() => onChange({ ...preference, focusAreas: [option] })}
+                >
+                  <Text style={[styles.modalOptionText, selected && styles.modalOptionTextActive]}>
+                    {t(`report.preference.focus.${option}`)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={styles.modalLabel}>{t('report.preference.question.style')}</Text>
+          <View style={styles.modalOptionRow}>
+            {styleOptions.map((option) => (
+              <TouchableOpacity
+                key={option}
+                style={[styles.modalOptionChip, preference.adviceStyle === option && styles.modalOptionChipActive]}
+                onPress={() => onChange({ ...preference, adviceStyle: option })}
+              >
+                <Text
+                  style={[
+                    styles.modalOptionText,
+                    preference.adviceStyle === option && styles.modalOptionTextActive,
+                  ]}
+                >
+                  {t(`report.preference.style.${option}`)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.modalActions}>
+            <TouchableOpacity style={styles.modalActionGhost} onPress={onClose} disabled={loading}>
+              <Text style={styles.modalActionGhostText}>{t('common.close')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalActionPrimary} onPress={onSave} disabled={loading}>
+              {loading ? <ActivityIndicator color={colors.accentInk} /> : <Text style={styles.modalActionPrimaryText}>{t('common.done')}</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1519,6 +2199,12 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
     gap: spacing.lg,
   },
+  shareRenderTarget: {
+    position: 'absolute',
+    left: -10000,
+    top: -10000,
+    opacity: 0,
+  },
   header: {
     gap: 6,
   },
@@ -1574,6 +2260,34 @@ const styles = StyleSheet.create({
   rangeValue: {
     ...textStyles.caption,
     fontWeight: '600',
+  },
+  preferenceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  preferenceEditButton: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+  },
+  preferenceEditLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  preferenceSummary: {
+    ...textStyles.caption,
+    color: colors.textPrimary,
+  },
+  preferenceNotice: {
+    ...textStyles.caption,
+    color: colors.error,
+    marginTop: spacing.xs,
   },
   tokenNote: {
     ...textStyles.caption,
@@ -1734,6 +2448,40 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: '600',
   },
+  summaryActionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  summaryActionButton: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryActionButtonPrimary: {
+    backgroundColor: colors.accent,
+    borderColor: 'rgba(245,178,37,0.7)',
+  },
+  summaryActionButtonMuted: {
+    backgroundColor: colors.surfaceStrong,
+    borderColor: 'rgba(17,19,24,0.16)',
+  },
+  summaryActionText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontWeight: '700',
+  },
+  summaryActionTextStrong: {
+    color: colors.accentInk,
+  },
+  detailsPromptButton: {
+    marginTop: spacing.sm,
+  },
   calendarHint: {
     ...textStyles.caption,
     color: colors.textMuted,
@@ -1885,6 +2633,49 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textMuted,
     marginTop: spacing.sm,
+  },
+  comparisonScoreDelta: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  comparisonList: {
+    gap: spacing.sm,
+  },
+  comparisonItem: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 14,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    gap: 4,
+  },
+  comparisonItemTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  comparisonLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  comparisonValue: {
+    ...textStyles.caption,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  comparisonDelta: {
+    ...textStyles.caption,
+    fontWeight: '700',
+  },
+  comparisonDeltaGood: {
+    color: colors.success,
+  },
+  comparisonDeltaBad: {
+    color: colors.error,
   },
   macroWrap: {
     flexDirection: 'row',
@@ -2057,5 +2848,114 @@ const styles = StyleSheet.create({
   adviceDetail: {
     ...textStyles.caption,
     color: colors.textSecondary,
+  },
+  effectOverlay: {
+    position: 'absolute',
+    left: spacing.lg,
+    right: spacing.lg,
+    top: spacing.xl * 2,
+    backgroundColor: colors.surfaceStrong,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  effectEmoji: {
+    fontSize: 24,
+  },
+  effectMessage: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(17, 19, 24, 0.36)',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  modalCard: {
+    borderRadius: 20,
+    backgroundColor: colors.surfaceStrong,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  modalTitle: {
+    ...textStyles.titleMedium,
+    fontWeight: '700',
+  },
+  modalLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontWeight: '700',
+  },
+  modalOptionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  modalOptionChip: {
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  modalOptionChipActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  modalOptionText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  modalOptionTextActive: {
+    color: colors.accentInk,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  modalActionGhost: {
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  modalActionGhostText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontWeight: '700',
+  },
+  modalActionPrimary: {
+    borderRadius: 10,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.accent,
+    minWidth: 74,
+    alignItems: 'center',
+  },
+  modalActionPrimaryText: {
+    ...textStyles.caption,
+    color: colors.accentInk,
+    fontWeight: '700',
   },
 });

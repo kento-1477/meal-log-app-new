@@ -20,6 +20,9 @@ import type {
   AiReportRequestStatusResponse,
   AiReportRequestListResponse,
   AiReportRequestStatus,
+  AiReportPreferenceInput,
+  AiReportPreferenceResponse,
+  AiReportPreferenceUpdateResponse,
   FavoriteMeal,
   FavoriteMealDraft,
   FavoriteMealCreateRequest,
@@ -45,6 +48,8 @@ import {
   AiReportRequestCreateResponseSchema,
   AiReportRequestStatusResponseSchema,
   AiReportRequestListResponseSchema,
+  AiReportPreferenceResponseSchema,
+  AiReportPreferenceUpdateResponseSchema,
   NotificationSettingsResponseSchema,
   NotificationSettingsUpdateRequestSchema,
   PushTokenRegisterRequestSchema,
@@ -678,17 +683,24 @@ export async function getDashboardTargets() {
   return parsed as DashboardTargets;
 }
 
-export async function createAiReport(period: AiReportPeriod, range?: { from: string; to: string }) {
+export async function createAiReport(
+  period: AiReportPeriod,
+  range?: { from: string; to: string },
+  preferenceOverride?: AiReportPreferenceInput,
+) {
   const response = await apiFetch<unknown>('/api/reports', {
     method: 'POST',
-    body: JSON.stringify({ period, range }),
+    body: JSON.stringify({ period, range, preferenceOverride }),
   });
   const parsed = AiReportRequestCreateResponseSchema.parse(response);
   return parsed as AiReportRequestCreateResponse;
 }
 
 export async function getAiReportRequest(requestId: string) {
-  const response = await apiFetch<unknown>(`/api/reports/${encodeURIComponent(requestId)}`, { method: 'GET' });
+  const response = await apiFetch<unknown>(
+    `/api/reports/${encodeURIComponent(requestId)}?_ts=${Date.now()}`,
+    { method: 'GET' },
+  );
   const parsed = AiReportRequestStatusResponseSchema.parse(response);
   return parsed as AiReportRequestStatusResponse;
 }
@@ -706,6 +718,7 @@ export async function listAiReportRequests(params: {
   if (params.from) search.set('from', params.from);
   if (params.to) search.set('to', params.to);
   if (typeof params.limit === 'number') search.set('limit', String(params.limit));
+  search.set('_ts', String(Date.now()));
   const query = search.toString();
   const response = await apiFetch<unknown>(`/api/reports${query ? `?${query}` : ''}`, { method: 'GET' });
   const parsed = AiReportRequestListResponseSchema.parse(response);
@@ -716,6 +729,21 @@ export async function cancelAiReportRequest(requestId: string) {
   return apiFetch<{ ok: boolean; status: string }>(`/api/reports/${encodeURIComponent(requestId)}/cancel`, {
     method: 'POST',
   });
+}
+
+export async function getAiReportPreference() {
+  const response = await apiFetch<unknown>('/api/reports/preferences', { method: 'GET' });
+  const parsed = AiReportPreferenceResponseSchema.parse(response);
+  return parsed as AiReportPreferenceResponse;
+}
+
+export async function updateAiReportPreference(preference: AiReportPreferenceInput) {
+  const response = await apiFetch<unknown>('/api/reports/preferences', {
+    method: 'PUT',
+    body: JSON.stringify(preference),
+  });
+  const parsed = AiReportPreferenceUpdateResponseSchema.parse(response);
+  return parsed as AiReportPreferenceUpdateResponse;
 }
 
 export async function getReportCalendar(range: { from: string; to: string }) {
