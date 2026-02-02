@@ -327,7 +327,7 @@ export default function ReportScreen() {
   );
   const hasEligibleWeeks = weeklyEligibleDates.length > 0;
 
-  const reportListQuery = useQuery({
+  useQuery({
     queryKey: ['reportRequests', userId ?? 'anon'],
     queryFn: () => listAiReportRequests({ limit: REPORT_HISTORY_LIMIT }),
     enabled: Boolean(userId),
