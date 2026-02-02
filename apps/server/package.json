@@ -10,7 +10,8 @@
     "postinstall": "prisma generate",
     "migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
     "migrate:reset": "prisma migrate reset --force --skip-generate --skip-seed",
-    "test": "node --loader ./tests/ts-loader.mjs --test --test-concurrency=1 tests/*.test.js"
+    "test": "node --loader ./tests/ts-loader.mjs --test --test-concurrency=1 tests/*.test.js",
+    "notifications:dispatch:once": "tsx scripts/dispatch-notifications-once.ts"
   },
   "dependencies": {
     "@meal-log/shared": "*",
