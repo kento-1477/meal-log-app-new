@@ -232,9 +232,68 @@ export const AiReportRangeSchema = z.object({
 
 export type AiReportRange = z.infer<typeof AiReportRangeSchema>;
 
+export const AiReportGoalSchema = z.enum(['cut', 'maintain', 'bulk']);
+export type AiReportGoal = z.infer<typeof AiReportGoalSchema>;
+
+export const AiReportFocusAreaSchema = z.enum([
+  'weight',
+  'bodyFat',
+  'wellness',
+  'muscle',
+  'habit',
+]);
+export type AiReportFocusArea = z.infer<typeof AiReportFocusAreaSchema>;
+
+export const AiReportAdviceStyleSchema = z.enum(['simple', 'concrete', 'motivational']);
+export type AiReportAdviceStyle = z.infer<typeof AiReportAdviceStyleSchema>;
+
+export const AiReportPreferenceSchema = z.object({
+  goal: AiReportGoalSchema,
+  focusAreas: z.array(AiReportFocusAreaSchema).min(1).max(3),
+  adviceStyle: AiReportAdviceStyleSchema,
+  updatedAt: z.string().optional(),
+});
+export type AiReportPreference = z.infer<typeof AiReportPreferenceSchema>;
+
+export const AiReportPreferenceInputSchema = AiReportPreferenceSchema.omit({
+  updatedAt: true,
+});
+export type AiReportPreferenceInput = z.infer<typeof AiReportPreferenceInputSchema>;
+
+export const AiReportComparisonMetricSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  current: z.number(),
+  previous: z.number(),
+  delta: z.number(),
+  unit: z.string().min(1),
+  betterWhen: z.enum(['higher', 'lower', 'target']),
+  target: z.number().nullable().optional(),
+});
+export type AiReportComparisonMetric = z.infer<typeof AiReportComparisonMetricSchema>;
+
+export const AiReportComparisonSchema = z.object({
+  baseline: z.object({
+    from: z.string(),
+    to: z.string(),
+  }),
+  scoreDelta: z.number().nullable().optional(),
+  metrics: z.array(AiReportComparisonMetricSchema).min(1).max(6),
+});
+export type AiReportComparison = z.infer<typeof AiReportComparisonSchema>;
+
+export const AiReportUiMetaSchema = z.object({
+  effect: z.enum(['celebration', 'encourage', 'neutral']),
+  lowData: z.boolean(),
+  streakDays: z.number().int().nonnegative(),
+  weeklyPrompt: z.boolean(),
+});
+export type AiReportUiMeta = z.infer<typeof AiReportUiMetaSchema>;
+
 export const AiReportRequestSchema = z.object({
   period: AiReportPeriodSchema,
   range: AiReportRangeSchema.optional(),
+  preferenceOverride: AiReportPreferenceInputSchema.optional(),
 });
 
 export type AiReportRequest = z.infer<typeof AiReportRequestSchema>;
@@ -286,6 +345,9 @@ export const AiReportResponseSchema = AiReportContentSchema.extend({
     to: z.string(),
     timezone: z.string(),
   }),
+  preference: AiReportPreferenceSchema.optional(),
+  comparison: AiReportComparisonSchema.optional(),
+  uiMeta: AiReportUiMetaSchema.optional(),
   meta: z
     .object({
       model: z.string().optional(),
@@ -325,6 +387,7 @@ export const AiReportRequestRecordSchema = z.object({
     timezone: z.string(),
   }),
   status: AiReportRequestStatusSchema,
+  preference: AiReportPreferenceSchema.optional(),
   report: AiReportResponseSchema.nullable().optional(),
   usage: AiUsageSummarySchema.optional(),
   errorCode: z.string().nullable().optional(),
@@ -352,6 +415,19 @@ export const AiReportRequestListResponseSchema = z.object({
   items: z.array(AiReportRequestRecordSchema),
 });
 export type AiReportRequestListResponse = z.infer<typeof AiReportRequestListResponseSchema>;
+
+export const AiReportPreferenceResponseSchema = z.object({
+  ok: z.literal(true),
+  preference: AiReportPreferenceSchema,
+  configured: z.boolean(),
+});
+export type AiReportPreferenceResponse = z.infer<typeof AiReportPreferenceResponseSchema>;
+
+export const AiReportPreferenceUpdateResponseSchema = z.object({
+  ok: z.literal(true),
+  preference: AiReportPreferenceSchema,
+});
+export type AiReportPreferenceUpdateResponse = z.infer<typeof AiReportPreferenceUpdateResponseSchema>;
 
 export const ReportCalendarDaySchema = z.object({
   date: z.string(),

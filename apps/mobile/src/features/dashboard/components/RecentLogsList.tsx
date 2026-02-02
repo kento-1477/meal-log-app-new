@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import type { MealLogSummary, MealLogRange } from '@meal-log/shared';
 import { useRouter } from 'expo-router';
-import { cacheDirectory, deleteAsync, EncodingType, writeAsStringAsync } from 'expo-file-system';
+import { cacheDirectory, deleteAsync, EncodingType, writeAsStringAsync } from 'expo-file-system/legacy';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { useState } from 'react';

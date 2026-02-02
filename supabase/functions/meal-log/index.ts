@@ -15,8 +15,12 @@ import type {
   NutritionPlanInput,
   DashboardSummary,
   AiReportPeriod,
+  AiReportRequestStatus,
   AiReportContent,
   AiReportResponse,
+  AiReportPreferenceInput,
+  AiReportGoal,
+  AiReportComparison,
   HedgeAttemptReport,
 } from '@shared/index.js';
 import {
@@ -40,6 +44,9 @@ import {
   computeNutritionPlan,
   AiReportRequestSchema,
   AiReportContentSchema,
+  AiReportPreferenceInputSchema,
+  AiReportPreferenceResponseSchema,
+  AiReportPreferenceUpdateResponseSchema,
 } from '@shared/index.js';
 import type { Context } from 'hono';
 import { createApp, HTTP_STATUS, HttpError } from '../_shared/http.ts';
@@ -98,6 +105,14 @@ const REPORT_WORKER_BATCH_SIZE = Number(Deno.env.get('REPORT_WORKER_BATCH_SIZE')
 const REPORT_WORKER_SECRET = Deno.env.get('REPORT_WORKER_SECRET') ?? '';
 const REPORT_WORKER_ALLOW_ANON = (Deno.env.get('REPORT_WORKER_ALLOW_ANON') ?? '').toLowerCase() === 'true';
 const REPORT_RETRY_MAX = 2;
+const REPORT_PROCESSING_STALE_MS = Number(Deno.env.get('REPORT_PROCESSING_STALE_MS') ?? '180000');
+const DEFAULT_REPORT_PREFERENCE: AiReportPreferenceInput = {
+  goal: 'maintain',
+  focusAreas: ['habit'],
+  adviceStyle: 'concrete',
+};
+const REPORT_LOW_SCORE_THRESHOLD = 45;
+const REPORT_HIGH_SCORE_THRESHOLD = 85;
 
 const SHARE_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 const FOOD_CATALOGUE = [
@@ -1138,6 +1153,40 @@ app.get('/api/reports/calendar', requireAuth, async (c) => {
   return respondWithCache(c, payload);
 });
 
+app.get('/api/reports/preferences', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const preferenceResult = await getUserReportPreference(user.id);
+  const payload = {
+    ok: true,
+    preference: {
+      ...preferenceResult.preference,
+      updatedAt: preferenceResult.updatedAt,
+    },
+    configured: preferenceResult.configured,
+  } as const;
+  AiReportPreferenceResponseSchema.parse(payload);
+  return c.json(payload);
+});
+
+app.put('/api/reports/preferences', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  const parsed = AiReportPreferenceInputSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new HttpError('invalid payload', { status: HTTP_STATUS.BAD_REQUEST, expose: true, data: parsed.error.flatten() });
+  }
+  const saved = await upsertUserReportPreference(user.id, parsed.data);
+  const payload = {
+    ok: true,
+    preference: {
+      ...saved.preference,
+      updatedAt: saved.updatedAt,
+    },
+  } as const;
+  AiReportPreferenceUpdateResponseSchema.parse(payload);
+  return c.json(payload);
+});
+
 app.post('/api/reports', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
   const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
@@ -1153,16 +1202,66 @@ app.post('/api/reports', requireAuth, async (c) => {
 
   const locale = resolveRequestLocale(c.req.raw);
   const resolvedRange = resolveReportRange(parsed.data.period, parsed.data.range);
+  let preferenceSnapshot: AiReportPreferenceInput = DEFAULT_REPORT_PREFERENCE;
+  if (parsed.data.preferenceOverride) {
+    preferenceSnapshot = parsed.data.preferenceOverride;
+    await upsertUserReportPreference(user.id, parsed.data.preferenceOverride);
+  } else {
+    const preference = await getUserReportPreference(user.id);
+    preferenceSnapshot = preference.preference;
+  }
   const requestKey = buildReportRequestKey({
     userId: user.id,
     period: parsed.data.period,
     from: resolvedRange.from,
     to: resolvedRange.to,
   });
+  let execution:
+    | {
+      waitUntil?: (promise: Promise<unknown>) => void;
+    }
+    | null = null;
+  try {
+    execution = (c as unknown as { executionCtx?: { waitUntil?: (promise: Promise<unknown>) => void } }).executionCtx ?? null;
+  } catch {
+    execution = null;
+  }
+  const triggerReportWorker = async (requestId: string) => {
+    try {
+      const processed = await runReportWorkerForRequest(requestId);
+      if (!processed) {
+        const processedBatch = await runReportWorker(1);
+        if (processedBatch <= 0 && execution?.waitUntil) {
+          execution.waitUntil(
+            runReportWorkerForRequest(requestId).catch((error) => {
+              console.error('report worker background retry failed', error);
+            }),
+          );
+        }
+      }
+    } catch (error) {
+      console.error('report worker inline run failed', error);
+      try {
+        const processedBatch = await runReportWorker(1);
+        if (processedBatch > 0) {
+          return;
+        }
+      } catch (batchError) {
+        console.error('report worker inline batch fallback failed', batchError);
+      }
+      if (execution?.waitUntil) {
+        execution.waitUntil(
+          runReportWorkerForRequest(requestId).catch((backgroundError) => {
+            console.error('report worker background fallback failed', backgroundError);
+          }),
+        );
+      }
+    }
+  };
 
   const { data: existing, error: existingError } = await supabaseAdmin
     .from('AiReportRequest')
-    .select('id, status')
+    .select('id, status, updatedAt')
     .eq('userId', user.id)
     .eq('period', parsed.data.period)
     .eq('rangeStart', resolvedRange.from)
@@ -1178,7 +1277,50 @@ app.post('/api/reports', requireAuth, async (c) => {
   }
 
   if (existing?.id) {
-    return c.json({ ok: true, requestId: existing.id, status: existing.status });
+    if (existing.status === 'queued') {
+      await triggerReportWorker(existing.id);
+    } else if (existing.status === 'processing') {
+      const updatedAtMs = DateTime.fromISO(String(existing.updatedAt ?? '')).toMillis();
+      const staleThresholdMs = Number.isFinite(REPORT_PROCESSING_STALE_MS)
+        ? Math.max(30_000, REPORT_PROCESSING_STALE_MS)
+        : 180_000;
+      const isStale = !Number.isFinite(updatedAtMs) || Date.now() - updatedAtMs > staleThresholdMs;
+      if (isStale) {
+        const nowIso = new Date().toISOString();
+        const { data: revived, error: reviveError } = await supabaseAdmin
+          .from('AiReportRequest')
+          .update({
+            status: 'queued',
+            updatedAt: nowIso,
+            errorCode: null,
+            errorMessage: null,
+            nextAttemptAt: null,
+          })
+          .eq('id', existing.id)
+          .eq('status', 'processing')
+          .select('id, status')
+          .maybeSingle();
+        if (reviveError) {
+          console.error('report request: stale revive failed', reviveError);
+        } else if (revived?.id) {
+          await triggerReportWorker(revived.id);
+          const { data: refreshed } = await supabaseAdmin
+            .from('AiReportRequest')
+            .select('status')
+            .eq('id', revived.id)
+            .eq('userId', user.id)
+            .maybeSingle();
+          return c.json({ ok: true, requestId: revived.id, status: (refreshed?.status ?? revived.status) as AiReportRequestStatus });
+        }
+      }
+    }
+    const { data: refreshed } = await supabaseAdmin
+      .from('AiReportRequest')
+      .select('status')
+      .eq('id', existing.id)
+      .eq('userId', user.id)
+      .maybeSingle();
+    return c.json({ ok: true, requestId: existing.id, status: (refreshed?.status ?? existing.status) as AiReportRequestStatus });
   }
 
   const nowIso = new Date().toISOString();
@@ -1193,6 +1335,7 @@ app.post('/api/reports', requireAuth, async (c) => {
       timezone: resolvedRange.timezone,
       status: 'queued',
       requestKey,
+      preferenceSnapshot,
       attempts: 0,
       createdAt: nowIso,
       updatedAt: nowIso,
@@ -1205,12 +1348,15 @@ app.post('/api/reports', requireAuth, async (c) => {
     throw new HttpError('レポートの作成に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
   }
 
-  const execution = (c as any).executionCtx;
-  if (execution?.waitUntil) {
-    execution.waitUntil(runReportWorker(1));
-  }
+  await triggerReportWorker(inserted.id);
+  const { data: refreshed } = await supabaseAdmin
+    .from('AiReportRequest')
+    .select('status')
+    .eq('id', inserted.id)
+    .eq('userId', user.id)
+    .maybeSingle();
 
-  return c.json({ ok: true, requestId: inserted.id, status: inserted.status });
+  return c.json({ ok: true, requestId: inserted.id, status: (refreshed?.status ?? inserted.status) as AiReportRequestStatus });
 });
 
 app.get('/api/reports', requireAuth, async (c) => {
@@ -1226,7 +1372,7 @@ app.get('/api/reports', requireAuth, async (c) => {
   let query = supabaseAdmin
     .from('AiReportRequest')
     .select(
-      'id, period, rangeStart, rangeEnd, timezone, status, report, errorCode, errorMessage, usageSnapshot, createdAt, updatedAt',
+      'id, period, rangeStart, rangeEnd, timezone, status, preferenceSnapshot, report, errorCode, errorMessage, usageSnapshot, createdAt, updatedAt',
     )
     .eq('userId', user.id);
 
@@ -1264,11 +1410,11 @@ app.post('/api/reports/worker/run', async (c) => {
 app.get('/api/reports/:id', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
   const id = c.req.param('id');
+  const selectClause =
+    'id, period, rangeStart, rangeEnd, timezone, status, preferenceSnapshot, report, errorCode, errorMessage, usageSnapshot, createdAt, updatedAt';
   const { data, error } = await supabaseAdmin
     .from('AiReportRequest')
-    .select(
-      'id, period, rangeStart, rangeEnd, timezone, status, report, errorCode, errorMessage, usageSnapshot, createdAt, updatedAt',
-    )
+    .select(selectClause)
     .eq('id', id)
     .eq('userId', user.id)
     .maybeSingle();
@@ -1280,7 +1426,63 @@ app.get('/api/reports/:id', requireAuth, async (c) => {
   if (!data) {
     throw new HttpError('レポートが見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
   }
-  return c.json({ ok: true, request: mapReportRequestRow(data) });
+
+  let requestRow = data;
+  if (requestRow.status === 'queued') {
+    await runReportWorkerForRequest(requestRow.id);
+    const { data: refreshed, error: refreshError } = await supabaseAdmin
+      .from('AiReportRequest')
+      .select(selectClause)
+      .eq('id', id)
+      .eq('userId', user.id)
+      .maybeSingle();
+    if (refreshError) {
+      console.error('report status: refresh after queued trigger failed', refreshError);
+    } else if (refreshed) {
+      requestRow = refreshed;
+    }
+  }
+  if (requestRow.status === 'processing') {
+    const updatedAtMs = DateTime.fromISO(String(requestRow.updatedAt ?? '')).toMillis();
+    const staleThresholdMs = Number.isFinite(REPORT_PROCESSING_STALE_MS)
+      ? Math.max(30_000, REPORT_PROCESSING_STALE_MS)
+      : 180_000;
+    const isStale = !Number.isFinite(updatedAtMs) || Date.now() - updatedAtMs > staleThresholdMs;
+    if (isStale) {
+      const nowIso = new Date().toISOString();
+      const { data: revived, error: reviveError } = await supabaseAdmin
+        .from('AiReportRequest')
+        .update({
+          status: 'queued',
+          updatedAt: nowIso,
+          errorCode: null,
+          errorMessage: null,
+          nextAttemptAt: null,
+        })
+        .eq('id', id)
+        .eq('userId', user.id)
+        .eq('status', 'processing')
+        .select('id')
+        .maybeSingle();
+      if (reviveError) {
+        console.error('report status: stale revive failed', reviveError);
+      } else if (revived?.id) {
+        await runReportWorkerForRequest(revived.id);
+        const { data: refreshed, error: refreshError } = await supabaseAdmin
+          .from('AiReportRequest')
+          .select(selectClause)
+          .eq('id', id)
+          .eq('userId', user.id)
+          .maybeSingle();
+        if (refreshError) {
+          console.error('report status: refresh after revive failed', refreshError);
+        } else if (refreshed) {
+          requestRow = refreshed;
+        }
+      }
+    }
+  }
+  return c.json({ ok: true, request: mapReportRequestRow(requestRow) });
 });
 
 app.post('/api/reports/:id/cancel', requireAuth, async (c) => {
@@ -1960,6 +2162,7 @@ async function deleteUserAccount(userId: number) {
     { label: 'favorites', promise: supabaseAdmin.from('FavoriteMeal').delete().eq('userId', userId) },
     { label: 'ingest', promise: supabaseAdmin.from('IngestRequest').delete().eq('userId', userId) },
     { label: 'reports', promise: supabaseAdmin.from('AiReportRequest').delete().eq('userId', userId) },
+    { label: 'report preferences', promise: supabaseAdmin.from('UserReportPreference').delete().eq('userId', userId) },
     { label: 'ai usage', promise: supabaseAdmin.from('AiUsageCounter').delete().eq('userId', userId) },
     { label: 'iap', promise: supabaseAdmin.from('IapReceipt').delete().eq('userId', userId) },
     { label: 'premium', promise: supabaseAdmin.from('PremiumGrant').delete().eq('userId', userId) },
@@ -3669,6 +3872,7 @@ function mapReportRequestRow(row: {
   rangeEnd: string;
   timezone: string;
   status: string;
+  preferenceSnapshot?: unknown | null;
   report?: unknown | null;
   errorCode?: string | null;
   errorMessage?: string | null;
@@ -3685,12 +3889,414 @@ function mapReportRequestRow(row: {
       timezone: row.timezone,
     },
     status: row.status,
+    preference: normalizeReportPreference(row.preferenceSnapshot),
     report: (row.report ?? null) as AiReportResponse | null,
     usage: (row.usageSnapshot ?? undefined) as ReturnType<typeof summarizeUsageStatus> | undefined,
     errorCode: row.errorCode ?? null,
     errorMessage: row.errorMessage ?? null,
     createdAt: row.createdAt ?? undefined,
     updatedAt: row.updatedAt ?? undefined,
+  };
+}
+
+function normalizeReportPreference(value: unknown): AiReportPreferenceInput {
+  const parsed = AiReportPreferenceInputSchema.safeParse(value);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  return DEFAULT_REPORT_PREFERENCE;
+}
+
+function derivePreferenceFromOnboardingGoals(goals: unknown): AiReportPreferenceInput | null {
+  if (!Array.isArray(goals)) {
+    return null;
+  }
+  const normalized = goals.filter((item): item is string => typeof item === 'string').map((item) => item.trim().toUpperCase());
+  if (normalized.length === 0) {
+    return null;
+  }
+
+  const goal: AiReportGoal = normalized.includes('WEIGHT_LOSS')
+    ? 'cut'
+    : normalized.includes('MUSCLE_GAIN')
+      ? 'bulk'
+      : 'maintain';
+
+  const focusAreas = new Set<AiReportPreferenceInput['focusAreas'][number]>();
+  if (normalized.includes('WEIGHT_LOSS') || normalized.includes('WEIGHT_MAINTENANCE')) {
+    focusAreas.add('weight');
+  }
+  if (normalized.includes('WEIGHT_LOSS')) {
+    focusAreas.add('bodyFat');
+  }
+  if (normalized.includes('MUSCLE_GAIN')) {
+    focusAreas.add('muscle');
+  }
+  if (normalized.includes('STRESS_MANAGEMENT')) {
+    focusAreas.add('wellness');
+  }
+  if (normalized.includes('HABIT_BUILDING')) {
+    focusAreas.add('habit');
+  }
+  if (focusAreas.size === 0) {
+    focusAreas.add('habit');
+  }
+
+  const adviceStyle: AiReportPreferenceInput['adviceStyle'] = normalized.includes('STRESS_MANAGEMENT')
+    ? 'motivational'
+    : normalized.includes('HABIT_BUILDING')
+      ? 'simple'
+      : 'concrete';
+
+  return {
+    goal,
+    focusAreas: Array.from(focusAreas).slice(0, 3),
+    adviceStyle,
+  };
+}
+
+async function getDerivedPreferenceFromProfile(userId: number): Promise<{ preference: AiReportPreferenceInput; updatedAt?: string } | null> {
+  const { data: profile, error } = await supabaseAdmin
+    .from('UserProfile')
+    .select('goals, updatedAt')
+    .eq('userId', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('report preference: profile fetch failed', error);
+    return null;
+  }
+  if (!profile) {
+    return null;
+  }
+  const derived = derivePreferenceFromOnboardingGoals((profile as { goals?: unknown }).goals);
+  if (!derived) {
+    return null;
+  }
+  return {
+    preference: derived,
+    updatedAt: (profile as { updatedAt?: string | null }).updatedAt ?? undefined,
+  };
+}
+
+async function getUserReportPreference(userId: number): Promise<{
+  preference: AiReportPreferenceInput;
+  configured: boolean;
+  updatedAt?: string;
+}> {
+  const { data, error } = await supabaseAdmin
+    .from('UserReportPreference')
+    .select('goal, focusAreas, adviceStyle, updatedAt')
+    .eq('userId', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('report preference: fetch failed', error);
+    const derived = await getDerivedPreferenceFromProfile(userId);
+    if (derived) {
+      return {
+        preference: derived.preference,
+        configured: true,
+        updatedAt: derived.updatedAt,
+      };
+    }
+    return {
+      preference: DEFAULT_REPORT_PREFERENCE,
+      configured: false,
+    };
+  }
+
+  if (!data) {
+    const derived = await getDerivedPreferenceFromProfile(userId);
+    if (derived) {
+      return {
+        preference: derived.preference,
+        configured: true,
+        updatedAt: derived.updatedAt,
+      };
+    }
+    return {
+      preference: DEFAULT_REPORT_PREFERENCE,
+      configured: false,
+    };
+  }
+
+  return {
+    preference: normalizeReportPreference({
+      goal: data.goal,
+      focusAreas: data.focusAreas,
+      adviceStyle: data.adviceStyle,
+    }),
+    configured: true,
+    updatedAt: data.updatedAt ?? undefined,
+  };
+}
+
+async function upsertUserReportPreference(userId: number, preference: AiReportPreferenceInput): Promise<{
+  preference: AiReportPreferenceInput;
+  updatedAt: string;
+}> {
+  const nowIso = new Date().toISOString();
+  const payload = normalizeReportPreference(preference);
+  const { data, error } = await supabaseAdmin
+    .from('UserReportPreference')
+    .upsert(
+      {
+        userId,
+        goal: payload.goal,
+        focusAreas: payload.focusAreas,
+        adviceStyle: payload.adviceStyle,
+        updatedAt: nowIso,
+      },
+      { onConflict: 'userId' },
+    )
+    .select('goal, focusAreas, adviceStyle, updatedAt')
+    .single();
+
+  if (error || !data) {
+    console.error('report preference: upsert failed', error);
+    throw new HttpError('設定の保存に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  return {
+    preference: normalizeReportPreference(data),
+    updatedAt: data.updatedAt ?? nowIso,
+  };
+}
+
+function buildStatsFromSummary(summary: DashboardSummary) {
+  const totalDays = summary.calories.daily.length;
+  const loggedDays = summary.calories.daily.filter((entry) => entry.total > 0).length;
+  const totalCalories = summary.macros.total.calories;
+  const totalProtein = summary.macros.total.protein_g;
+  const snackCalories = summary.calories.daily.reduce((acc, entry) => acc + entry.perMealPeriod.snack, 0);
+  const averageCalories = loggedDays > 0 ? totalCalories / loggedDays : 0;
+  const proteinPerDay = loggedDays > 0 ? totalProtein / loggedDays : 0;
+  const snackRatio = totalCalories > 0 ? (snackCalories / totalCalories) * 100 : 0;
+  const targetCalories = summary.macros.targets.calories;
+  const targetCloseness =
+    targetCalories > 0
+      ? Math.max(0, 100 - (Math.abs(totalCalories - targetCalories) / targetCalories) * 100)
+      : 0;
+
+  return {
+    totalDays,
+    loggedDays,
+    averageCalories,
+    proteinPerDay,
+    snackRatio,
+    targetCloseness,
+  };
+}
+
+function resolveComparisonRange(rangeStart: string, rangeEnd: string, timezone: string) {
+  const start = DateTime.fromISO(rangeStart, { zone: timezone }).startOf('day');
+  const end = DateTime.fromISO(rangeEnd, { zone: timezone }).startOf('day');
+  if (!start.isValid || !end.isValid) {
+    return null;
+  }
+  const spanDays = Math.max(1, Math.round(end.diff(start, 'days').days) + 1);
+  const previousEnd = start.minus({ days: 1 });
+  const previousStart = previousEnd.minus({ days: spanDays - 1 });
+  return {
+    from: previousStart.toISODate() ?? previousStart.toFormat('yyyy-MM-dd'),
+    to: previousEnd.toISODate() ?? previousEnd.toFormat('yyyy-MM-dd'),
+  };
+}
+
+function buildComparison(
+  goal: AiReportGoal,
+  current: DashboardSummary,
+  previous: DashboardSummary,
+  locale: Locale,
+  scoreDelta: number | null,
+): AiReportComparison {
+  const preferJapanese = locale.toLowerCase().startsWith('ja');
+  const currentStats = buildStatsFromSummary(current);
+  const previousStats = buildStatsFromSummary(previous);
+
+  const metric = (params: {
+    key: string;
+    labelJa: string;
+    labelEn: string;
+    current: number;
+    previous: number;
+    unit: string;
+    betterWhen: 'higher' | 'lower' | 'target';
+    target?: number;
+  }) => ({
+    key: params.key,
+    label: preferJapanese ? params.labelJa : params.labelEn,
+    current: round(params.current, params.unit === '%' ? 0 : 1),
+    previous: round(params.previous, params.unit === '%' ? 0 : 1),
+    delta: round(params.current - params.previous, params.unit === '%' ? 0 : 1),
+    unit: params.unit,
+    betterWhen: params.betterWhen,
+    target: params.target,
+  });
+
+  const sharedMetrics = [
+    metric({
+      key: 'logged_days',
+      labelJa: '記録日数',
+      labelEn: 'Logged days',
+      current: currentStats.loggedDays,
+      previous: previousStats.loggedDays,
+      unit: 'days',
+      betterWhen: 'higher',
+    }),
+  ];
+
+  let metrics: Array<ReturnType<typeof metric>> = [];
+  if (goal === 'cut') {
+    metrics = [
+      metric({
+        key: 'avg_calories',
+        labelJa: '平均カロリー',
+        labelEn: 'Average calories',
+        current: currentStats.averageCalories,
+        previous: previousStats.averageCalories,
+        unit: 'kcal',
+        betterWhen: 'lower',
+      }),
+      metric({
+        key: 'snack_ratio',
+        labelJa: '間食カロリー比率',
+        labelEn: 'Snack calorie ratio',
+        current: currentStats.snackRatio,
+        previous: previousStats.snackRatio,
+        unit: '%',
+        betterWhen: 'lower',
+      }),
+      ...sharedMetrics,
+    ];
+  } else if (goal === 'bulk') {
+    metrics = [
+      metric({
+        key: 'protein_per_day',
+        labelJa: 'たんぱく質/日',
+        labelEn: 'Protein per day',
+        current: currentStats.proteinPerDay,
+        previous: previousStats.proteinPerDay,
+        unit: 'g',
+        betterWhen: 'higher',
+      }),
+      metric({
+        key: 'avg_calories',
+        labelJa: '平均カロリー',
+        labelEn: 'Average calories',
+        current: currentStats.averageCalories,
+        previous: previousStats.averageCalories,
+        unit: 'kcal',
+        betterWhen: 'higher',
+      }),
+      ...sharedMetrics,
+    ];
+  } else {
+    metrics = [
+      metric({
+        key: 'target_closeness',
+        labelJa: '目標への近さ',
+        labelEn: 'Target closeness',
+        current: currentStats.targetCloseness,
+        previous: previousStats.targetCloseness,
+        unit: '%',
+        betterWhen: 'target',
+        target: 100,
+      }),
+      metric({
+        key: 'protein_per_day',
+        labelJa: 'たんぱく質/日',
+        labelEn: 'Protein per day',
+        current: currentStats.proteinPerDay,
+        previous: previousStats.proteinPerDay,
+        unit: 'g',
+        betterWhen: 'higher',
+      }),
+      ...sharedMetrics,
+    ];
+  }
+
+  return {
+    baseline: {
+      from: DateTime.fromISO(previous.range.from).toISODate() ?? previous.range.from.slice(0, 10),
+      to: DateTime.fromISO(previous.range.to).minus({ days: 1 }).toISODate() ?? previous.range.to.slice(0, 10),
+    },
+    scoreDelta,
+    metrics,
+  };
+}
+
+function normalizeReportTone(report: AiReportContent, locale: Locale): AiReportContent {
+  const preferJapanese = locale.toLowerCase().startsWith('ja');
+  const positiveLead = preferJapanese ? '継続できている点がしっかりあります。' : 'You are making steady progress.';
+  const encouragementPrefix = preferJapanese ? 'よく取り組めています。' : 'You are doing well.';
+  const negativeHint = preferJapanese
+    ? /(不足|少な|過多|悪化|課題|できていない|落ち)/
+    : /(low|lack|insufficient|too much|worse|issue|problem|decline)/i;
+
+  const positives = report.summary.highlights.filter((item) => !negativeHint.test(item));
+  const negatives = report.summary.highlights.filter((item) => negativeHint.test(item));
+  const normalizedHighlights = [...positives.slice(0, 2), ...negatives.slice(0, 1)];
+  const headlineNeedsBoost = !/(順調|良|でき|great|good|solid|well)/i.test(report.summary.headline);
+
+  const advice = report.advice.map((item, index) => {
+    if (index > 0 || item.detail.startsWith(encouragementPrefix)) {
+      return item;
+    }
+    return {
+      ...item,
+      detail: `${encouragementPrefix} ${item.detail}`.trim(),
+    };
+  });
+
+  return {
+    ...report,
+    summary: {
+      ...report.summary,
+      headline: headlineNeedsBoost ? `${positiveLead} ${report.summary.headline}` : report.summary.headline,
+      highlights:
+        normalizedHighlights.length > 0
+          ? normalizedHighlights
+          : [preferJapanese ? '記録を続けることで精度が上がります。' : 'Consistency will improve accuracy.'],
+    },
+    advice,
+  };
+}
+
+function buildReportUiMeta(params: {
+  period: AiReportPeriod;
+  loggedDays: number;
+  score: number;
+  streakDays: number;
+}) {
+  const minimumLogs = {
+    daily: 1,
+    weekly: 4,
+    monthly: 7,
+  } as const;
+  const lowData = params.loggedDays < minimumLogs[params.period];
+  if (params.score >= REPORT_HIGH_SCORE_THRESHOLD && !lowData) {
+    return {
+      effect: 'celebration' as const,
+      lowData,
+      streakDays: params.streakDays,
+      weeklyPrompt: params.period === 'daily' && params.streakDays >= 7,
+    };
+  }
+  if (params.score <= REPORT_LOW_SCORE_THRESHOLD || lowData) {
+    return {
+      effect: 'encourage' as const,
+      lowData,
+      streakDays: params.streakDays,
+      weeklyPrompt: params.period === 'daily' && params.streakDays >= 7,
+    };
+  }
+  return {
+    effect: 'neutral' as const,
+    lowData,
+    streakDays: params.streakDays,
+    weeklyPrompt: params.period === 'daily' && params.streakDays >= 7,
   };
 }
 
@@ -4060,7 +4666,12 @@ function calculateCurrentStreak(days: DateTime[], timezone: string) {
   return streak;
 }
 
-function buildReportContext(params: { period: AiReportPeriod; summary: DashboardSummary }) {
+function buildReportContext(params: {
+  period: AiReportPeriod;
+  summary: DashboardSummary;
+  preference: AiReportPreferenceInput;
+  comparison: AiReportComparison | null;
+}) {
   const daily = params.summary.calories.daily;
   const totalDays = daily.length;
   const loggedDays = daily.filter((entry) => entry.total > 0).length;
@@ -4092,6 +4703,8 @@ function buildReportContext(params: { period: AiReportPeriod; summary: Dashboard
     macros: params.summary.macros,
     mealPeriods: mealPeriodTotals,
     daily: daily.map((entry) => ({ date: entry.date, total: entry.total })),
+    preference: params.preference,
+    comparison: params.comparison,
   };
 }
 
@@ -4112,11 +4725,15 @@ Rules:
 - highlights: 1-3 short bullets.
 - metrics: 3-5 items, values should include units where applicable.
 - advice: 1-3 items, each with a concrete action and brief reason.
+- Keep communication ratio around 7:3 (encouragement:correction).
+- First sentence should acknowledge effort before giving any correction.
 - ingredients: pick about 3 ingredients (not dishes). Use macros.delta to decide focus:
   - If fat is over target, prioritize low-fat ingredients.
   - If protein is under target, prioritize high-protein ingredients.
   - If carbs are over target, prioritize low-carb ingredients.
   - Otherwise, suggest balanced, nutrient-dense ingredients.
+- Personalize by preference.goal, preference.focusAreas, and preference.adviceStyle.
+- If comparison exists, mention a concrete progress delta.
 - Never invent data that is not present in the input JSON.
 ${languageInstruction}
 JSON input: ${JSON.stringify(context)}`;
@@ -4494,7 +5111,9 @@ async function analyzeReportWithGemini(params: {
     }
   }
 
-  throw firstError ?? new Error('Gemini request failed');
+  const finalError = firstError ?? new Error('Gemini request failed');
+  (finalError as Error & { attemptReports?: HedgeAttemptReport[] }).attemptReports = attemptReports;
+  throw finalError;
 }
 
 type ReportFailure = {
@@ -4545,13 +5164,46 @@ function classifyReportError(error: unknown): ReportFailure {
 
 async function analyzeReportWithRetry(params: { context: ReturnType<typeof buildReportContext>; locale: Locale }) {
   let lastError: unknown = null;
+  const buildFallbackResult = (error: unknown, failure: ReportFailure) => {
+    const fallback = buildReportMock(params.context, params.locale);
+    const err = error as Error & { report?: HedgeAttemptReport; attemptReports?: HedgeAttemptReport[] };
+    const fallbackAttempts = Array.isArray(err.attemptReports)
+      ? err.attemptReports
+      : err.report
+        ? [err.report]
+        : [];
+    console.warn('report: using deterministic fallback after AI failure', {
+      error: failure.errorCode,
+      attempts: fallbackAttempts.length,
+    });
+    return {
+      report: fallback,
+      attemptReports: fallbackAttempts,
+      meta: {
+        model: 'mock-fallback',
+        attempt: Math.max(1, fallbackAttempts.length),
+        latencyMs: 0,
+        fallback_model_used: true,
+      },
+    };
+  };
   for (let attempt = 1; attempt <= REPORT_RETRY_MAX; attempt += 1) {
     try {
       return await analyzeReportWithGemini(params);
     } catch (error) {
       lastError = error;
       const failure = classifyReportError(error);
+      if (failure.errorCode === 'AI_BAD_RESPONSE' || failure.errorCode === 'AI_TIMEOUT') {
+        return buildFallbackResult(error, failure);
+      }
       if (!failure.retryable || attempt >= REPORT_RETRY_MAX) {
+        const canFallbackToMock =
+          failure.errorCode === 'AI_BAD_RESPONSE' ||
+          failure.errorCode === 'AI_TIMEOUT' ||
+          failure.errorCode === 'REPORT_FAILED';
+        if (canFallbackToMock) {
+          return buildFallbackResult(error, failure);
+        }
         throw error;
       }
       console.warn('report: retrying after failure', { attempt, error: failure.errorCode });
@@ -4565,7 +5217,7 @@ async function claimNextReportRequest() {
   const { data: candidate, error: fetchError } = await supabaseAdmin
     .from('AiReportRequest')
     .select(
-      'id, userId, period, locale, rangeStart, rangeEnd, timezone, status, requestKey, attempts, nextAttemptAt, createdAt',
+      'id, userId, period, locale, rangeStart, rangeEnd, timezone, status, requestKey, preferenceSnapshot, attempts, nextAttemptAt, createdAt',
     )
     .eq('status', 'queued')
     .or(`nextAttemptAt.is.null,nextAttemptAt.lte.${nowIso}`)
@@ -4592,12 +5244,53 @@ async function claimNextReportRequest() {
     .eq('id', candidate.id)
     .eq('status', 'queued')
     .select(
-      'id, userId, period, locale, rangeStart, rangeEnd, timezone, status, requestKey, attempts, createdAt, updatedAt',
+      'id, userId, period, locale, rangeStart, rangeEnd, timezone, status, requestKey, preferenceSnapshot, attempts, createdAt, updatedAt',
     )
     .maybeSingle();
 
   if (claimError) {
     console.error('report worker: claim failed', claimError);
+    return null;
+  }
+  return claimed ?? null;
+}
+
+async function claimReportRequestById(requestId: string) {
+  const { data: candidate, error: fetchError } = await supabaseAdmin
+    .from('AiReportRequest')
+    .select(
+      'id, userId, period, locale, rangeStart, rangeEnd, timezone, status, requestKey, preferenceSnapshot, attempts, createdAt',
+    )
+    .eq('id', requestId)
+    .eq('status', 'queued')
+    .maybeSingle();
+
+  if (fetchError) {
+    console.error('report worker: fetch by id failed', fetchError);
+    return null;
+  }
+  if (!candidate) {
+    return null;
+  }
+
+  const nowIso = new Date().toISOString();
+  const { data: claimed, error: claimError } = await supabaseAdmin
+    .from('AiReportRequest')
+    .update({
+      status: 'processing',
+      startedAt: nowIso,
+      attempts: (candidate.attempts ?? 0) + 1,
+      updatedAt: nowIso,
+    })
+    .eq('id', requestId)
+    .eq('status', 'queued')
+    .select(
+      'id, userId, period, locale, rangeStart, rangeEnd, timezone, status, requestKey, preferenceSnapshot, attempts, createdAt, updatedAt',
+    )
+    .maybeSingle();
+
+  if (claimError) {
+    console.error('report worker: claim by id failed', claimError);
     return null;
   }
   return claimed ?? null;
@@ -4612,6 +5305,7 @@ async function processReportRequest(request: {
   rangeEnd: string;
   timezone: string;
   requestKey: string;
+  preferenceSnapshot?: unknown;
 }) {
   const nowIso = new Date().toISOString();
   try {
@@ -4638,22 +5332,75 @@ async function processReportRequest(request: {
       from: request.rangeStart,
       to: request.rangeEnd,
     });
+    const preference = normalizeReportPreference(request.preferenceSnapshot);
+    const comparisonRange = resolveComparisonRange(request.rangeStart, request.rangeEnd, request.timezone);
+    let comparisonSummary: DashboardSummary | null = null;
+    if (comparisonRange) {
+      comparisonSummary = await getDashboardSummary({
+        userId: request.userId,
+        period: 'custom',
+        from: comparisonRange.from,
+        to: comparisonRange.to,
+      });
+    }
+    const { data: previousReportRow } = await supabaseAdmin
+      .from('AiReportRequest')
+      .select('report')
+      .eq('userId', request.userId)
+      .eq('period', request.period)
+      .eq('status', 'done')
+      .neq('id', request.id)
+      .order('createdAt', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const previousScoreRaw = (previousReportRow?.report as { summary?: { score?: unknown } } | null | undefined)?.summary?.score;
+    const previousScore = typeof previousScoreRaw === 'number' ? previousScoreRaw : null;
+    const comparison =
+      comparisonSummary && comparisonRange
+        ? buildComparison(
+            preference.goal as AiReportGoal,
+            summary,
+            comparisonSummary,
+            normalizeLocale(request.locale ?? DEFAULT_LOCALE),
+            null,
+          )
+        : null;
     const context = buildReportContext({
       period: request.period as AiReportPeriod,
       summary,
+      preference,
+      comparison,
     });
     const analysis = await analyzeReportWithRetry({
       context,
       locale: normalizeLocale(request.locale ?? DEFAULT_LOCALE),
     });
+    const normalizedReport = normalizeReportTone(analysis.report, normalizeLocale(request.locale ?? DEFAULT_LOCALE));
+    const comparisonWithScore =
+      comparison && previousScore != null
+        ? {
+            ...comparison,
+            scoreDelta: round(normalizedReport.summary.score - previousScore, 0),
+          }
+        : comparison;
+    const streak = await getUserStreak(request.userId);
+    const uiMeta = buildReportUiMeta({
+      period: request.period as AiReportPeriod,
+      loggedDays: context.days.logged,
+      score: normalizedReport.summary.score,
+      streakDays: streak,
+    });
 
     const report: AiReportResponse = {
       period: request.period as AiReportPeriod,
       range: summary.range,
-      summary: analysis.report.summary,
-      metrics: analysis.report.metrics,
-      advice: analysis.report.advice,
-      ingredients: analysis.report.ingredients,
+      preference,
+      comparison: comparisonWithScore ?? undefined,
+      uiMeta,
+      summary: normalizedReport.summary,
+      metrics: normalizedReport.metrics,
+      advice: normalizedReport.advice,
+      ingredients: normalizedReport.ingredients,
       meta: { ...analysis.meta, attemptReports: analysis.attemptReports },
     };
 
@@ -4691,6 +5438,11 @@ async function processReportRequest(request: {
       .eq('id', request.id);
   } catch (error) {
     const failure = classifyReportError(error);
+    console.error('report worker: process failed', {
+      requestId: request.id,
+      errorCode: failure.errorCode,
+      message: error instanceof Error ? error.message : String(error ?? ''),
+    });
     await supabaseAdmin
       .from('AiReportRequest')
       .update({
@@ -4713,6 +5465,15 @@ async function runReportWorker(limit = REPORT_WORKER_BATCH_SIZE) {
     processed += 1;
   }
   return processed;
+}
+
+async function runReportWorkerForRequest(requestId: string) {
+  const claimed = await claimReportRequestById(requestId);
+  if (!claimed) {
+    return false;
+  }
+  await processReportRequest(claimed);
+  return true;
 }
 
 function requireReportWorkerSecret(c: Context) {
