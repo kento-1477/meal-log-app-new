@@ -16,7 +16,10 @@ import type {
   AiUsageSummary,
   GeminiNutritionResponse,
   AiReportPeriod,
-  AiReportApiResponse,
+  AiReportRequestCreateResponse,
+  AiReportRequestStatusResponse,
+  AiReportRequestListResponse,
+  AiReportRequestStatus,
   FavoriteMeal,
   FavoriteMealDraft,
   FavoriteMealCreateRequest,
@@ -39,7 +42,9 @@ import {
   UserProfileResponseSchema,
   UpdateUserProfileRequestSchema,
   CalorieTrendResponseSchema,
-  AiReportApiResponseSchema,
+  AiReportRequestCreateResponseSchema,
+  AiReportRequestStatusResponseSchema,
+  AiReportRequestListResponseSchema,
   NotificationSettingsResponseSchema,
   NotificationSettingsUpdateRequestSchema,
   PushTokenRegisterRequestSchema,
@@ -678,8 +683,39 @@ export async function createAiReport(period: AiReportPeriod, range?: { from: str
     method: 'POST',
     body: JSON.stringify({ period, range }),
   });
-  const parsed = AiReportApiResponseSchema.parse(response);
-  return parsed as AiReportApiResponse;
+  const parsed = AiReportRequestCreateResponseSchema.parse(response);
+  return parsed as AiReportRequestCreateResponse;
+}
+
+export async function getAiReportRequest(requestId: string) {
+  const response = await apiFetch<unknown>(`/api/reports/${encodeURIComponent(requestId)}`, { method: 'GET' });
+  const parsed = AiReportRequestStatusResponseSchema.parse(response);
+  return parsed as AiReportRequestStatusResponse;
+}
+
+export async function listAiReportRequests(params: {
+  status?: AiReportRequestStatus;
+  period?: AiReportPeriod;
+  from?: string;
+  to?: string;
+  limit?: number;
+} = {}) {
+  const search = new URLSearchParams();
+  if (params.status) search.set('status', params.status);
+  if (params.period) search.set('period', params.period);
+  if (params.from) search.set('from', params.from);
+  if (params.to) search.set('to', params.to);
+  if (typeof params.limit === 'number') search.set('limit', String(params.limit));
+  const query = search.toString();
+  const response = await apiFetch<unknown>(`/api/reports${query ? `?${query}` : ''}`, { method: 'GET' });
+  const parsed = AiReportRequestListResponseSchema.parse(response);
+  return parsed as AiReportRequestListResponse;
+}
+
+export async function cancelAiReportRequest(requestId: string) {
+  return apiFetch<{ ok: boolean; status: string }>(`/api/reports/${encodeURIComponent(requestId)}/cancel`, {
+    method: 'POST',
+  });
 }
 
 export async function getReportCalendar(range: { from: string; to: string }) {
