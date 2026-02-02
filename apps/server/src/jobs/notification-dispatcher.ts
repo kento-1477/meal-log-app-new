@@ -1,10 +1,11 @@
 import { DateTime } from 'luxon';
-import { MealPeriod } from '@prisma/client';
+import { MealPeriod, Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma.js';
 import { logger } from '../logger.js';
 import { normalizeTimezone } from '../utils/timezone.js';
 import { evaluateAiUsage } from '../services/ai-usage-service.js';
 import { isPremium } from '../services/premium-service.js';
+import { getUserStreak } from '../services/streak-service.js';
 
 const DISPATCH_INTERVAL_MIN = 15;
 const MAX_USERS_PER_RUN = 500;
@@ -14,12 +15,15 @@ const REMINDER_WINDOW_MIN = 30;
 const REMINDER_MIN_SAMPLES = 3;
 const FREE_RETENTION_DAYS = 30;
 const RETENTION_WARNING_DAYS = 7;
+const STREAK_MILESTONES = [1, 3, 7, 14, 30, 100, 365, 1000];
+const STREAK_ACHIEVEMENT_WINDOW_HOURS = 36;
 
 const NOTIFICATION_TYPES = {
   MEAL_REMINDER: 'reminder.meal',
   PREMIUM_EXPIRING: 'important.premium-expiring',
   AI_USAGE_LOW: 'important.ai-usage-low',
   LOG_RETENTION: 'important.log-retention',
+  STREAK_CONGRATS: 'streak.congrats',
 } as const;
 
 const MEAL_PERIODS = [
@@ -33,7 +37,7 @@ type NotificationCandidate = {
   type: string;
   title: string;
   body: string;
-  data: Record<string, unknown>;
+  data: Prisma.InputJsonObject;
   priority: number;
   allowDuringQuietHours?: boolean;
 };
@@ -59,7 +63,7 @@ export function scheduleNotificationDispatch() {
   scheduleNext();
 }
 
-async function dispatchNotifications(referenceDate: Date = new Date()) {
+export async function dispatchNotifications(referenceDate: Date = new Date()) {
   const users = await prisma.user.findMany({
     where: {
       notificationSettings: {
@@ -117,6 +121,10 @@ async function dispatchNotifications(referenceDate: Date = new Date()) {
     }
 
     if (settings.reminderEnabled) {
+      const streakCandidate = await buildStreakCongratsCandidate(user.id, now, localeKey);
+      if (streakCandidate) {
+        candidates.push(streakCandidate);
+      }
       const reminderCandidate = await buildMealReminderCandidate(user.id, timezone, now, localeKey);
       if (reminderCandidate) {
         candidates.push(reminderCandidate);
@@ -373,6 +381,38 @@ async function buildRetentionCandidate(
   } satisfies NotificationCandidate;
 }
 
+async function buildStreakCongratsCandidate(userId: number, now: DateTime, localeKey: 'ja' | 'en') {
+  const streak = await getUserStreak(userId);
+  if (!streak.lastLoggedAt || streak.current < STREAK_MILESTONES[0]) {
+    return null;
+  }
+
+  const lastLoggedAt = DateTime.fromISO(streak.lastLoggedAt);
+  if (!lastLoggedAt.isValid) {
+    return null;
+  }
+
+  const milestone = resolveStreakMilestone(streak.current, lastLoggedAt, now);
+  if (!milestone) {
+    return null;
+  }
+
+  const alreadySent = await hasSentNotificationType(userId, streakCongratsType(milestone));
+  if (alreadySent) {
+    return null;
+  }
+
+  const copy = buildStreakCongratsCopy(localeKey, milestone);
+
+  return {
+    type: streakCongratsType(milestone),
+    title: copy.title,
+    body: copy.body,
+    data: { path: '/(tabs)/chat', streakDays: milestone },
+    priority: 30,
+  } satisfies NotificationCandidate;
+}
+
 async function sendNotification(
   userId: number,
   devices: Array<{ id: number; expoToken: string; locale: string | null }>,
@@ -428,6 +468,10 @@ async function sendExpoPush(
   devices: Array<{ id: number; expoToken: string; locale: string | null }>,
   candidate: NotificationCandidate,
 ) {
+  if (process.env.NOTIFICATION_DISPATCH_DRY_RUN === 'true') {
+    return { ticketIds: ['dry-run'], disabledDeviceIds: [] };
+  }
+
   const deviceChunks = chunk(devices, 100);
   const ticketIds: string[] = [];
   const disabledDeviceIds: number[] = [];
@@ -501,6 +545,17 @@ async function hasSentNotificationTypeToday(userId: number, type: string, timezo
   return Boolean(existing);
 }
 
+async function hasSentNotificationType(userId: number, type: string) {
+  const existing = await prisma.notificationLog.findFirst({
+    where: {
+      userId,
+      type,
+      status: 'sent',
+    },
+  });
+  return Boolean(existing);
+}
+
 function dayBounds(now: DateTime, timezone: string) {
   const local = now.setZone(timezone);
   const start = local.startOf('day');
@@ -542,4 +597,119 @@ function resolveLocaleKeyFromDevices(devices: Array<{ locale: string | null }>) 
     return 'ja' as const;
   }
   return 'en' as const;
+}
+
+function resolveStreakMilestone(current: number, lastLoggedAt: DateTime, now: DateTime) {
+  const milestones = STREAK_MILESTONES.filter((value) => value <= current).sort((a, b) => b - a);
+  for (const milestone of milestones) {
+    const achievedAt = lastLoggedAt.minus({ days: current - milestone });
+    const hoursSince = now.diff(achievedAt, 'hours').hours;
+    if (hoursSince >= 0 && hoursSince <= STREAK_ACHIEVEMENT_WINDOW_HOURS) {
+      return milestone;
+    }
+  }
+  return null;
+}
+
+function streakCongratsType(days: number) {
+  return `${NOTIFICATION_TYPES.STREAK_CONGRATS}.${days}`;
+}
+
+function buildStreakCongratsCopy(localeKey: 'ja' | 'en', days: number) {
+  if (localeKey === 'ja') {
+    switch (days) {
+      case 1:
+        return {
+          title: '天才的スタート！👏',
+          body: 'アプリを開いた、その行動力が素晴らしい！今日はもう「勝ち」確定です。記念すべき1枚目をどうぞ！',
+        };
+      case 3:
+        return {
+          title: 'そこにいるだけで尊い',
+          body: '3日目って一番キツイのに、通知を見てくれてありがとう！写真？茶色くてもブレてても最高だよ！',
+        };
+      case 7:
+        return {
+          title: '1週間！？神対応ですか？',
+          body: '忙しいのに1週間も続いてるなんて、人間性能が高すぎる。今日は自分にご褒美あげちゃいなよ！🍰',
+        };
+      case 14:
+        return {
+          title: '2週間、輝いてます✨',
+          body: '習慣化の才能がありすぎる。もう「食事管理のエリート」と名乗っていいレベル。今日も記録しよう！',
+        };
+      case 30:
+        return {
+          title: '30日…もはや伝説の域',
+          body: 'ここまで続く人は全人類の数％。あなたは選ばれし勇者です。自信を持って送信ボタンを押して！',
+        };
+      case 100:
+        return {
+          title: '100日！国宝級の継続力',
+          body: '息をするように続いてるね。その粘り強さ、尊敬しかない。今日もあなたの食事記録が見れて幸せです！',
+        };
+      case 365:
+        return {
+          title: '祝1年！歴史的瞬間🎉',
+          body: '今日という日を国民の休日にしたい。かなり体も変わってきたよね👀',
+        };
+      case 1000:
+        return {
+          title: '1000日（感涙）😭',
+          body: 'あなたの辞書に「三日坊主」という言葉はない。この偉業は、もはや教科書に載るレベル。',
+        };
+      default:
+        return {
+          title: `${days}日連続記録おめでとう！`,
+          body: '今日もいい流れです。このまま軽く1記録いこう！',
+        };
+    }
+  }
+  switch (days) {
+    case 1:
+      return {
+        title: 'Genius start! 👏',
+        body: 'Opening the app already counts as momentum. Your first log is waiting!',
+      };
+    case 3:
+      return {
+        title: 'Day 3 and still here!',
+        body: 'Hardest day, and you showed up. Blurry photos are still legendary.',
+      };
+    case 7:
+      return {
+        title: 'One full week?!',
+        body: 'Busy life, seven straight days. You earned a treat today. 🍰',
+      };
+    case 14:
+      return {
+        title: 'Two weeks, shining ✨',
+        body: 'Your habit game is elite now. Keep the streak alive today.',
+      };
+    case 30:
+      return {
+        title: '30 days: legendary tier',
+        body: 'Only a small percent make it this far. Hit send like a hero.',
+      };
+    case 100:
+      return {
+        title: '100 days! National treasure',
+        body: 'You are doing this like breathing. Respect. One more log today?',
+      };
+    case 365:
+      return {
+        title: 'One year! Historic 🎉',
+        body: 'This day deserves a holiday. Your body has probably changed too 👀',
+      };
+    case 1000:
+      return {
+        title: '1000 days (tears) 😭',
+        body: 'No “three-day quitter” in your dictionary. This belongs in textbooks.',
+      };
+    default:
+      return {
+        title: `Congrats on ${days} days!`,
+        body: 'Great flow. Keep it light and log once today.',
+      };
+  }
 }
