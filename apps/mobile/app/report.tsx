@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,7 +13,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DateTime } from 'luxon';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { AiReportAdvice, AiReportPeriod, AiReportResponse, DashboardPeriod, ReportCalendarResponse } from '@meal-log/shared';
+import type {
+  AiReportAdvice,
+  AiReportPeriod,
+  AiReportResponse,
+  AiReportRequestStatus,
+  DashboardPeriod,
+  ReportCalendarResponse,
+} from '@meal-log/shared';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Circle, Defs, G, LinearGradient, Line, Path, Stop } from 'react-native-svg';
 import { arc, area, curveMonotoneX, line } from 'd3-shape';
@@ -20,7 +28,13 @@ import { AuroraBackground } from '@/components/AuroraBackground';
 import { GlassCard } from '@/components/GlassCard';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { useDashboardSummary, type ChartPoint, type MealPeriodBreakdown, type MacroStat } from '@/features/dashboard/useDashboardSummary';
-import { createAiReport, getReportCalendar, type ApiError } from '@/services/api';
+import {
+  createAiReport,
+  getAiReportRequest,
+  getReportCalendar,
+  listAiReportRequests,
+  type ApiError,
+} from '@/services/api';
 import { useTranslation } from '@/i18n';
 import { useSessionStore } from '@/store/session';
 import { colors } from '@/theme/colors';
@@ -70,6 +84,28 @@ function formatSelectedRange(range: ReportRange, locale: string) {
 
 function buildReportKey(period: AiReportPeriod, range: ReportRange) {
   return `${period}:${range.from}:${range.to}`;
+}
+
+function mapRequestToHistoryItem(request: {
+  id: string;
+  period: AiReportPeriod;
+  range: ReportRange;
+  report?: AiReportResponse | null;
+  createdAt?: string;
+}) {
+  if (!request.report) {
+    return null;
+  }
+  const cacheKey = buildReportKey(request.period, request.range);
+  return {
+    key: cacheKey,
+    period: request.period,
+    range: request.range,
+    createdAt: request.createdAt ?? new Date().toISOString(),
+    headline: request.report.summary.headline,
+    score: request.report.summary.score,
+    report: request.report,
+  } satisfies ReportHistoryItem;
 }
 
 function toISODateSafe(value: DateTime) {
@@ -158,7 +194,11 @@ export default function ReportScreen() {
   const initialDate = useMemo(() => toISODateSafe(today), [today]);
   const initialMonth = useMemo(() => toISODateSafe(today.startOf('month')), [today]);
   const [period, setPeriod] = useState<AiReportPeriod>('daily');
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
+  const [activeRequestStatus, setActiveRequestStatus] = useState<AiReportRequestStatus | null>(null);
+  const [activeRequestRange, setActiveRequestRange] = useState<ReportRange | null>(null);
+  const [activeRequestPeriod, setActiveRequestPeriod] = useState<AiReportPeriod | null>(null);
+  const lastRequestStatusRef = useRef<string | null>(null);
   const [reports, setReports] = useState<ReportCache>(DEFAULT_CACHE);
   const [reportHistory, setReportHistory] = useState<ReportHistoryItem[]>([]);
   const historyStorageKey = useMemo(
@@ -286,6 +326,153 @@ export default function ReportScreen() {
     [locale, recordedDayList, weeklyLogCounts],
   );
   const hasEligibleWeeks = weeklyEligibleDates.length > 0;
+
+  const reportListQuery = useQuery({
+    queryKey: ['reportRequests', userId ?? 'anon'],
+    queryFn: () => listAiReportRequests({ limit: REPORT_HISTORY_LIMIT }),
+    enabled: Boolean(userId),
+    onSuccess: (data) => {
+      const pending = data.items.find((item) => item.status === 'processing' || item.status === 'queued') ?? null;
+      if (pending && !activeRequestId) {
+        setActiveRequestId(pending.id);
+        setActiveRequestStatus(pending.status);
+        setActiveRequestRange({ from: pending.range.from, to: pending.range.to });
+        setActiveRequestPeriod(pending.period);
+      }
+
+      const historyItems = data.items
+        .map((item) =>
+          mapRequestToHistoryItem({
+            id: item.id,
+            period: item.period,
+            range: { from: item.range.from, to: item.range.to },
+            report: item.report ?? null,
+            createdAt: item.createdAt,
+          }),
+        )
+        .filter((item): item is ReportHistoryItem => Boolean(item));
+
+      if (historyItems.length) {
+        setReportHistory(historyItems);
+        setReports((prev) => {
+          const next = { ...prev };
+          historyItems.forEach((item) => {
+            next[item.key] = item.report;
+          });
+          return next;
+        });
+        if (historyStorageKey) {
+          AsyncStorage.setItem(historyStorageKey, JSON.stringify(historyItems)).catch((error) => {
+            console.warn('Failed to persist report history', error);
+          });
+        }
+      }
+    },
+  });
+
+  const reportRequestQuery = useQuery({
+    queryKey: ['reportRequest', activeRequestId ?? 'none'],
+    queryFn: () => getAiReportRequest(activeRequestId ?? ''),
+    enabled: Boolean(activeRequestId),
+    refetchInterval: (data) => {
+      const status = data?.request?.status;
+      return status === 'queued' || status === 'processing' ? 3000 : false;
+    },
+  });
+
+  useEffect(() => {
+    const request = reportRequestQuery.data?.request;
+    if (!request) {
+      return;
+    }
+    setActiveRequestStatus((prev) => (prev === request.status ? prev : request.status));
+    setActiveRequestRange((prev) =>
+      prev && prev.from === request.range.from && prev.to === request.range.to
+        ? prev
+        : { from: request.range.from, to: request.range.to },
+    );
+    setActiveRequestPeriod((prev) => (prev === request.period ? prev : request.period));
+
+    if (request.status === lastRequestStatusRef.current) {
+      return;
+    }
+    lastRequestStatusRef.current = request.status;
+
+    if (request.status === 'done' && request.report) {
+      const cacheKey = buildReportKey(request.period, {
+        from: request.range.from,
+        to: request.range.to,
+      });
+      setReports((prev) => ({ ...prev, [cacheKey]: request.report! }));
+      const historyItem = mapRequestToHistoryItem({
+        id: request.id,
+        period: request.period,
+        range: { from: request.range.from, to: request.range.to },
+        report: request.report ?? null,
+        createdAt: request.createdAt,
+      });
+      if (historyItem) {
+        setReportHistory((prev) => {
+          const next = [historyItem, ...prev.filter((entry) => entry.key !== cacheKey)].slice(0, REPORT_HISTORY_LIMIT);
+          if (historyStorageKey) {
+            AsyncStorage.setItem(historyStorageKey, JSON.stringify(next)).catch((error) => {
+              console.warn('Failed to persist report history', error);
+            });
+          }
+          return next;
+        });
+      }
+      if (request.usage) {
+        setUsage(request.usage);
+      }
+      setActiveRequestId(null);
+      return;
+    }
+
+    if (request.status === 'failed') {
+      Alert.alert(t('report.errorTitle'), request.errorMessage ?? t('report.errorFallback'));
+      setActiveRequestId(null);
+      return;
+    }
+
+    if (request.status === 'canceled') {
+      Alert.alert(t('report.errorTitle'), t('report.canceledMessage'));
+      setActiveRequestId(null);
+    }
+  }, [historyStorageKey, reportRequestQuery.data, setUsage, t]);
+
+  useEffect(() => {
+    if (!activeRequestPeriod || !activeRequestRange) {
+      return;
+    }
+    setPeriod(activeRequestPeriod);
+    if (activeRequestPeriod === 'daily') {
+      setDailySelected(activeRequestRange.from);
+      setDailyViewMonth(toISODateSafe(DateTime.fromISO(activeRequestRange.from).startOf('month')));
+      return;
+    }
+    if (activeRequestPeriod === 'weekly') {
+      setWeeklySelected(activeRequestRange.from);
+      setWeeklyViewMonth(toISODateSafe(DateTime.fromISO(activeRequestRange.from).startOf('month')));
+      return;
+    }
+    const start = DateTime.fromISO(activeRequestRange.from);
+    if (start.isValid) {
+      setMonthlyYear(start.year);
+      setMonthlyMonth(start.month);
+    }
+  }, [activeRequestPeriod, activeRequestRange]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && activeRequestId) {
+        reportRequestQuery.refetch();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [activeRequestId, reportRequestQuery]);
 
   useEffect(() => {
     let active = true;
@@ -480,6 +667,23 @@ export default function ReportScreen() {
     }),
     [t],
   );
+  const createReportMutation = useMutation({
+    mutationFn: (payload: { period: AiReportPeriod; range: { from: string; to: string } }) =>
+      createAiReport(payload.period, payload.range),
+    onSuccess: (response, payload) => {
+      setActiveRequestId(response.requestId);
+      setActiveRequestStatus(response.status);
+      setActiveRequestRange(payload.range);
+      setActiveRequestPeriod(payload.period);
+      lastRequestStatusRef.current = response.status;
+    },
+    onError: (error) => {
+      const apiError = error as ApiError;
+      const message = apiError?.message ?? t('report.errorFallback');
+      Alert.alert(t('report.errorTitle'), message);
+    },
+  });
+
   const rangeLabel = useMemo(() => {
     if (report) {
       return formatReportRange(report, locale);
@@ -489,6 +693,10 @@ export default function ReportScreen() {
     }
     return t('report.rangePlaceholder');
   }, [locale, report, selectedRange, t]);
+  const isGenerating =
+    createReportMutation.isLoading ||
+    activeRequestStatus === 'queued' ||
+    activeRequestStatus === 'processing';
   const canGenerate =
     Boolean(selectedRange) &&
     (period === 'daily' ? dailyEligible : period === 'weekly' ? weeklyEligible : monthlyEligible);
@@ -530,54 +738,15 @@ export default function ReportScreen() {
     setWeeklyViewMonth(toISODateSafe(DateTime.fromISO(isoDate).startOf('month')));
   };
 
-  const mutation = useMutation({
-    mutationFn: (payload: { period: AiReportPeriod; range: { from: string; to: string } }) =>
-      createAiReport(payload.period, payload.range),
-    onSuccess: (response, payload) => {
-      const cacheKey = buildReportKey(payload.period, payload.range);
-      setReports((prev) => ({ ...prev, [cacheKey]: response.report }));
-      const historyItem: ReportHistoryItem = {
-        key: cacheKey,
-        period: payload.period,
-        range: payload.range,
-        createdAt: new Date().toISOString(),
-        headline: response.report.summary.headline,
-        score: response.report.summary.score,
-        report: response.report,
-      };
-      setReportHistory((prev) => {
-        const next = [historyItem, ...prev.filter((entry) => entry.key !== cacheKey)].slice(0, REPORT_HISTORY_LIMIT);
-        if (historyStorageKey) {
-          AsyncStorage.setItem(historyStorageKey, JSON.stringify(next)).catch((error) => {
-            console.warn('Failed to persist report history', error);
-          });
-        }
-        return next;
-      });
-      if (response.usage) {
-        setUsage(response.usage);
-      }
-    },
-    onError: (error) => {
-      const apiError = error as ApiError;
-      const message = apiError?.message ?? t('report.errorFallback');
-      Alert.alert(t('report.errorTitle'), message);
-    },
-    onSettled: () => {
-      setIsGenerating(false);
-    },
-  });
-
   const handleGenerate = () => {
-    if (mutation.isLoading || isGenerating) {
+    if (createReportMutation.isLoading || isGenerating) {
       return;
     }
     if (!selectedRange) {
       Alert.alert(t('report.errorTitle'), t('report.rangeMissing'));
       return;
     }
-    setIsGenerating(true);
-    mutation.mutate({ period, range: selectedRange });
+    createReportMutation.mutate({ period, range: selectedRange });
   };
 
   const formatPriority = (value: AiReportAdvice['priority']) => {
@@ -604,7 +773,7 @@ export default function ReportScreen() {
           <View style={styles.segmentGroup} accessibilityRole="tablist">
             {periodOptions.map((option) => {
               const active = option.key === period;
-              const disabled = mutation.isLoading || isGenerating;
+              const disabled = createReportMutation.isLoading || isGenerating;
               return (
                 <TouchableOpacity
                   key={option.key}
@@ -705,17 +874,17 @@ export default function ReportScreen() {
 
           <PrimaryButton
             label={
-              mutation.isLoading || isGenerating
+              createReportMutation.isLoading || isGenerating
                 ? t('report.generatingShort')
                 : report
                   ? t('report.generateAgain')
                   : t('report.generate')
             }
             onPress={handleGenerate}
-            loading={mutation.isLoading || isGenerating}
-            disabled={!canGenerate}
+            loading={createReportMutation.isLoading || isGenerating}
+            disabled={!canGenerate || isGenerating}
           />
-          {mutation.isLoading || isGenerating ? (
+          {createReportMutation.isLoading || isGenerating ? (
             <View style={styles.loadingInline}>
               <ActivityIndicator color={colors.textMuted} />
               <Text style={styles.loadingInlineText}>{t('report.generating')}</Text>
@@ -812,7 +981,12 @@ export default function ReportScreen() {
                 {dashboardSummary.isLoading && !dashboard ? (
                   <ActivityIndicator color={colors.accent} />
                 ) : dashboard?.calories.points.length ? (
-                  <TrendLineChart points={dashboard.calories.points} target={dashboard.calories.targetLine} />
+                  <TrendLineChart
+                    points={dashboard.calories.points}
+                    target={dashboard.calories.targetLine}
+                    axisLabelY={t('dashboard.chart.axisY')}
+                    axisLabelX={t('dashboard.chart.axisX')}
+                  />
                 ) : (
                   <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
                 )}
@@ -1123,7 +1297,17 @@ function ScoreRing({ score, label, emoji }: { score: number; label: string; emoj
   );
 }
 
-function TrendLineChart({ points, target }: { points: ChartPoint[]; target: number }) {
+function TrendLineChart({
+  points,
+  target,
+  axisLabelX,
+  axisLabelY,
+}: {
+  points: ChartPoint[];
+  target: number;
+  axisLabelX: string;
+  axisLabelY: string;
+}) {
   const [width, setWidth] = useState(0);
   const height = 140;
   const padding = 12;
@@ -1168,37 +1352,43 @@ function TrendLineChart({ points, target }: { points: ChartPoint[]; target: numb
   return (
     <View style={styles.trendChart} onLayout={handleLayout}>
       {chart ? (
-        <Svg width={width} height={height}>
-          <Defs>
-            <LinearGradient id="trendGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <Stop offset="0%" stopColor={`${colors.accent}66`} />
-              <Stop offset="100%" stopColor={`${colors.accent}00`} />
-            </LinearGradient>
-          </Defs>
-          {chart.targetY !== null ? (
-            <Line
-              x1={padding}
-              y1={chart.targetY}
-              x2={width - padding}
-              y2={chart.targetY}
-              stroke={colors.textMuted}
-              strokeDasharray="4 4"
-            />
-          ) : null}
-          {chart.areaPath ? <Path d={chart.areaPath} fill="url(#trendGradient)" /> : null}
-          {chart.linePath ? (
-            <Path d={chart.linePath} stroke={colors.accent} strokeWidth={3} fill="none" />
-          ) : null}
-          {chart.data.map((point, index) => (
-            <Circle
-              key={`trend-${index}`}
-              cx={point.x}
-              cy={point.y}
-              r={index === chart.data.length - 1 ? 3.5 : 2.5}
-              fill={colors.accent}
-            />
-          ))}
-        </Svg>
+        <>
+          <Svg width={width} height={height}>
+            <Defs>
+              <LinearGradient id="trendGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                <Stop offset="0%" stopColor={`${colors.accent}66`} />
+                <Stop offset="100%" stopColor={`${colors.accent}00`} />
+              </LinearGradient>
+            </Defs>
+            {chart.targetY !== null ? (
+              <Line
+                x1={padding}
+                y1={chart.targetY}
+                x2={width - padding}
+                y2={chart.targetY}
+                stroke={colors.textMuted}
+                strokeDasharray="4 4"
+              />
+            ) : null}
+            {chart.areaPath ? <Path d={chart.areaPath} fill="url(#trendGradient)" /> : null}
+            {chart.linePath ? (
+              <Path d={chart.linePath} stroke={colors.accent} strokeWidth={3} fill="none" />
+            ) : null}
+            {chart.data.map((point, index) => (
+              <Circle
+                key={`trend-${index}`}
+                cx={point.x}
+                cy={point.y}
+                r={index === chart.data.length - 1 ? 3.5 : 2.5}
+                fill={colors.accent}
+              />
+            ))}
+          </Svg>
+          <View style={styles.trendAxisRow}>
+            <Text style={styles.trendAxisLabel}>{axisLabelY}</Text>
+            <Text style={styles.trendAxisLabel}>{axisLabelX}</Text>
+          </View>
+        </>
       ) : null}
     </View>
   );
@@ -1680,6 +1870,16 @@ const styles = StyleSheet.create({
   },
   trendChart: {
     minHeight: 140,
+  },
+  trendAxisRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.xs,
+  },
+  trendAxisLabel: {
+    ...textStyles.caption,
+    color: colors.textMuted,
   },
   trendNote: {
     ...textStyles.caption,
