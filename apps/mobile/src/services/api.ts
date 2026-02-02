@@ -420,6 +420,16 @@ export async function getIngestStatus(requestKey: string) {
   return apiFetch<IngestStatusResponse>(`/api/ingest/${encoded}`, { method: 'GET' });
 }
 
+export async function cancelIngest(requestKey: string) {
+  const encoded = encodeURIComponent(requestKey);
+  if (__DEV__) {
+    console.log('[API] cancelIngest', { requestKey });
+  }
+  return apiFetch<{ ok: boolean; status: string; requestKey: string }>(`/api/ingest/${encoded}/cancel`, {
+    method: 'POST',
+  });
+}
+
 export async function postMealLog(params: {
   message: string;
   imageUri?: string | null;

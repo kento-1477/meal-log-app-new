@@ -39,6 +39,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { useChatStore } from '@/store/chat';
 import { useSessionStore } from '@/store/session';
 import {
+  cancelIngest,
   createFavoriteMeal,
   createLogFromFavorite,
   deleteFavoriteMeal,
@@ -148,6 +149,7 @@ export default function ChatScreen() {
   const router = useRouter();
   const listRef = useRef<FlatList<TimelineItemMessage | TimelineItemCard>>(null);
   const inputRef = useRef<TextInput>(null);
+  const inputValueRef = useRef('');
   const tabBarHeight = useBottomTabBarHeight();
   const windowHeight = useWindowDimensions().height;
   const queryClient = useQueryClient();
@@ -174,6 +176,7 @@ export default function ChatScreen() {
   const networkHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRequestRef = useRef<AbortController | null>(null);
   const cancelRequestedRef = useRef(false);
+  const activeRequestKeyRef = useRef<string | null>(null);
   const reviewPromptQueueRef = useRef(Promise.resolve());
   const translationInFlightRef = useRef(new Set<string>());
   const logToAssistantIdRef = useRef(new Map<string, string>());
@@ -989,9 +992,24 @@ export default function ChatScreen() {
   );
 
   const resetComposer = () => {
+    inputValueRef.current = '';
     setInput('');
     setComposingImage(null);
   };
+
+  const updateComposerHeight = useCallback((text: string, contentHeight?: number) => {
+    const lineCount = text.split('\n').length;
+    const minExpandedHeight =
+      COMPOSER_MIN_HEIGHT + Math.max(0, lineCount - 1) * COMPOSER_LINE_HEIGHT;
+    const nextHeight = Math.min(
+      COMPOSER_MAX_HEIGHT,
+      Math.max(
+        minExpandedHeight,
+        Math.max(COMPOSER_MIN_HEIGHT, contentHeight ?? 0),
+      ),
+    );
+    setInputHeight((prev) => (Math.abs(prev - nextHeight) < 1 ? prev : nextHeight));
+  }, []);
 
   const handleEditLog = useCallback(
     (logId: string) => {
@@ -1033,6 +1051,7 @@ export default function ChatScreen() {
     const userMessage = addUserMessage(displayMessage, { imageUri: options.imageUri ?? undefined });
     const processingText = t('chat.processing');
     const requestKey = options.request ? null : `ingest_${Date.now()}_${nanoid(10)}`;
+    activeRequestKeyRef.current = requestKey;
     if (__DEV__) {
       console.log('[chat] submitMeal start', {
         requestKey,
@@ -1107,6 +1126,7 @@ export default function ChatScreen() {
             : null;
         if (nextRequestKey && requestKey && nextRequestKey !== requestKey) {
           updateMessageIngest(assistantPlaceholder.id, { requestKey: nextRequestKey });
+          activeRequestKeyRef.current = nextRequestKey;
         }
         setMessageText(assistantPlaceholder.id, t('chat.processingInBackground'));
         setError(null);
@@ -1138,29 +1158,53 @@ export default function ChatScreen() {
       setAnalysisRequestInFlight(false);
       activeRequestRef.current = null;
       cancelRequestedRef.current = false;
+      activeRequestKeyRef.current = null;
       scrollToEnd();
     }
   };
 
   const handleCancelAnalysis = useCallback(() => {
+    const latestIngest = pendingIngests[pendingIngests.length - 1] ?? null;
+    const targetRequestKey = latestIngest?.requestKey ?? activeRequestKeyRef.current;
+
     if (analysisRequestInFlight && activeRequestRef.current) {
       cancelRequestedRef.current = true;
       clearNetworkHintTimer();
       activeRequestRef.current.abort();
-      return;
     }
-    if (!pendingIngests.length) {
-      return;
+
+    if (targetRequestKey) {
+      void cancelIngest(targetRequestKey).catch((error) => {
+        if (__DEV__) {
+          console.warn('[chat] cancel ingest failed', { requestKey: targetRequestKey, error });
+        }
+      });
     }
-    const latestIngest = pendingIngests[pendingIngests.length - 1];
-    updateMessageStatus(latestIngest.userMessageId, 'delivered');
-    updateMessageStatus(latestIngest.assistantMessageId, 'delivered');
-    setMessageText(latestIngest.assistantMessageId, t('chat.analysisCanceled'));
+
+    if (latestIngest) {
+      updateMessageStatus(latestIngest.userMessageId, 'delivered');
+      updateMessageStatus(latestIngest.assistantMessageId, 'delivered');
+      setMessageText(latestIngest.assistantMessageId, t('chat.analysisCanceled'));
+    } else if (targetRequestKey) {
+      const assistant = messages.find(
+        (message) =>
+          message.role === 'assistant' &&
+          message.status === 'processing' &&
+          message.ingest?.requestKey === targetRequestKey,
+      );
+      if (assistant?.ingest?.userMessageId) {
+        updateMessageStatus(assistant.ingest.userMessageId, 'delivered');
+        updateMessageStatus(assistant.id, 'delivered');
+        setMessageText(assistant.id, t('chat.analysisCanceled'));
+      }
+    }
+
     setError(null);
     scrollToEnd();
   }, [
     analysisRequestInFlight,
     clearNetworkHintTimer,
+    messages,
     pendingIngests,
     scrollToEnd,
     setError,
@@ -1652,23 +1696,19 @@ export default function ChatScreen() {
                       ]}
                       placeholder={t('chat.placeholder')}
                       value={input}
-                      onChangeText={setInput}
+                      onChangeText={(text) => {
+                        inputValueRef.current = text;
+                        setInput(text);
+                        updateComposerHeight(text);
+                      }}
                       blurOnSubmit={false}
                       multiline
                       returnKeyType="default"
                       onContentSizeChange={(event) => {
-                        const lineCount = input.split('\n').length;
-                        const minExpandedHeight =
-                          COMPOSER_MIN_HEIGHT +
-                          Math.max(0, lineCount - 1) * COMPOSER_LINE_HEIGHT;
-                        const nextHeight = Math.min(
-                          COMPOSER_MAX_HEIGHT,
-                          Math.max(
-                            minExpandedHeight,
-                            Math.max(COMPOSER_MIN_HEIGHT, event.nativeEvent.contentSize.height),
-                          ),
+                        updateComposerHeight(
+                          inputValueRef.current,
+                          event.nativeEvent.contentSize.height,
                         );
-                        setInputHeight((prev) => (Math.abs(prev - nextHeight) < 1 ? prev : nextHeight));
                       }}
                       scrollEnabled={inputHeight >= COMPOSER_MAX_HEIGHT}
                     />

@@ -738,6 +738,55 @@ app.get('/api/ingest/:requestKey', requireAuth, async (c) => {
   });
 });
 
+app.post('/api/ingest/:requestKey/cancel', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const requestKey = c.req.param('requestKey');
+  if (!requestKey) {
+    throw new HttpError('requestKey is required', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
+  }
+
+  const { data: ingest, error: ingestError } = await supabaseAdmin
+    .from('IngestRequest')
+    .select('id, status')
+    .eq('userId', user.id)
+    .eq('requestKey', requestKey)
+    .maybeSingle();
+
+  if (ingestError) {
+    console.error('ingest cancel: fetch failed', ingestError);
+    throw new HttpError('キャンセルに失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  if (!ingest) {
+    return c.json({ ok: true, status: 'missing', requestKey });
+  }
+
+  if (ingest.status === 'done') {
+    return c.json({ ok: true, status: 'done', requestKey });
+  }
+
+  const nowIso = new Date().toISOString();
+  const { error: updateError } = await supabaseAdmin
+    .from('IngestRequest')
+    .update({
+      status: 'failed',
+      errorCode: 'INGEST_CANCELED',
+      errorCategory: 'actionable',
+      userMessage: '解析をキャンセルしました。',
+      debugMessage: 'Client canceled',
+      finishedAt: nowIso,
+      nextCheckAt: null,
+    })
+    .eq('id', ingest.id);
+
+  if (updateError) {
+    console.error('ingest cancel: update failed', updateError);
+    throw new HttpError('キャンセルに失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  return c.json({ ok: true, status: 'canceled', requestKey });
+});
+
 app.post('/api/log/choose-slot', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
   const body = SlotSelectionRequestSchema.parse(await c.req.json());
@@ -2286,7 +2335,7 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
         requestKey,
         requestedLocale,
       });
-    } else if (dedupe?.requestKey) {
+    } else if (dedupe?.requestKey && dedupe.status !== 'failed') {
       throw new HttpError('同じ内容を解析中です。しばらくお待ちください。', {
         status: HTTP_STATUS.CONFLICT,
         code: 'INGEST_IN_PROGRESS',
@@ -2390,6 +2439,21 @@ async function processMealLog(params: ProcessMealLogParams): Promise<ProcessMeal
     }
     if (localization.fallbackApplied) {
       warnings.push(`translation_fallback:${localization.resolvedLocale}`);
+    }
+
+    const { data: ingestStatus, error: ingestStatusError } = await supabaseAdmin
+      .from('IngestRequest')
+      .select('status, errorCode')
+      .eq('id', ingestId)
+      .maybeSingle();
+    if (ingestStatusError) {
+      console.error('processMealLog: cancel check failed', ingestStatusError);
+    } else if (ingestStatus?.status === 'failed' && ingestStatus.errorCode === 'INGEST_CANCELED') {
+      throw new HttpError('解析をキャンセルしました。', {
+        status: HTTP_STATUS.CONFLICT,
+        code: 'INGEST_CANCELED',
+        expose: true,
+      });
     }
 
     const logId = crypto.randomUUID();
