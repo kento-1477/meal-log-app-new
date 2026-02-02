@@ -307,6 +307,52 @@ export const AiReportApiResponseSchema = z.object({
 
 export type AiReportApiResponse = z.infer<typeof AiReportApiResponseSchema>;
 
+export const AiReportRequestStatusSchema = z.enum([
+  'queued',
+  'processing',
+  'done',
+  'failed',
+  'canceled',
+]);
+export type AiReportRequestStatus = z.infer<typeof AiReportRequestStatusSchema>;
+
+export const AiReportRequestRecordSchema = z.object({
+  id: z.string(),
+  period: AiReportPeriodSchema,
+  range: z.object({
+    from: z.string(),
+    to: z.string(),
+    timezone: z.string(),
+  }),
+  status: AiReportRequestStatusSchema,
+  report: AiReportResponseSchema.nullable().optional(),
+  usage: AiUsageSummarySchema.optional(),
+  errorCode: z.string().nullable().optional(),
+  errorMessage: z.string().nullable().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+export type AiReportRequestRecord = z.infer<typeof AiReportRequestRecordSchema>;
+
+export const AiReportRequestCreateResponseSchema = z.object({
+  ok: z.literal(true),
+  requestId: z.string(),
+  status: AiReportRequestStatusSchema,
+});
+export type AiReportRequestCreateResponse = z.infer<typeof AiReportRequestCreateResponseSchema>;
+
+export const AiReportRequestStatusResponseSchema = z.object({
+  ok: z.literal(true),
+  request: AiReportRequestRecordSchema,
+});
+export type AiReportRequestStatusResponse = z.infer<typeof AiReportRequestStatusResponseSchema>;
+
+export const AiReportRequestListResponseSchema = z.object({
+  ok: z.literal(true),
+  items: z.array(AiReportRequestRecordSchema),
+});
+export type AiReportRequestListResponse = z.infer<typeof AiReportRequestListResponseSchema>;
+
 export const ReportCalendarDaySchema = z.object({
   date: z.string(),
   count: z.number().int().nonnegative(),

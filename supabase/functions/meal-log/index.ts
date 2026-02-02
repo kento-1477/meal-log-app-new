@@ -94,6 +94,10 @@ const INGEST_DEADLINE_MS = 1000 * 60 * 3;
 const INGEST_NEXT_CHECK_MS = 1000 * 60 * 2;
 const INGEST_INPUT_DEDUPE_WINDOW_MS = 1000 * 60 * 2;
 const PROMPT_VERSION = 'v1';
+const REPORT_WORKER_BATCH_SIZE = Number(Deno.env.get('REPORT_WORKER_BATCH_SIZE') ?? '3');
+const REPORT_WORKER_SECRET = Deno.env.get('REPORT_WORKER_SECRET') ?? '';
+const REPORT_WORKER_ALLOW_ANON = (Deno.env.get('REPORT_WORKER_ALLOW_ANON') ?? '').toLowerCase() === 'true';
+const REPORT_RETRY_MAX = 2;
 
 const SHARE_TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 const FOOD_CATALOGUE = [
@@ -1148,34 +1152,181 @@ app.post('/api/reports', requireAuth, async (c) => {
   }
 
   const locale = resolveRequestLocale(c.req.raw);
-  const reportParams = resolveReportSummaryParams(parsed.data.period, parsed.data.range);
-  const summary = await getDashboardSummary({
+  const resolvedRange = resolveReportRange(parsed.data.period, parsed.data.range);
+  const requestKey = buildReportRequestKey({
     userId: user.id,
-    period: reportParams.period,
-    from: reportParams.from,
-    to: reportParams.to,
-  });
-
-  const context = buildReportContext({ period: parsed.data.period, summary });
-  const analysis = await analyzeReportWithGemini({ context, locale });
-
-  const report: AiReportResponse = {
     period: parsed.data.period,
-    range: summary.range,
-    summary: analysis.report.summary,
-    metrics: analysis.report.metrics,
-    advice: analysis.report.advice,
-    ingredients: analysis.report.ingredients,
-    meta: { ...analysis.meta, attemptReports: analysis.attemptReports },
-  };
-
-  const usageSummary = await recordAiUsage({
-    userId: user.id,
-    usageDate: usageStatus.usageDate,
-    consumeCredit: usageStatus.consumeCredit,
+    from: resolvedRange.from,
+    to: resolvedRange.to,
   });
 
-  return c.json({ ok: true, report, usage: usageSummary });
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from('AiReportRequest')
+    .select('id, status')
+    .eq('userId', user.id)
+    .eq('period', parsed.data.period)
+    .eq('rangeStart', resolvedRange.from)
+    .eq('rangeEnd', resolvedRange.to)
+    .in('status', ['queued', 'processing'])
+    .order('createdAt', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) {
+    console.error('report request: lookup failed', existingError);
+    throw new HttpError('レポートの作成に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  if (existing?.id) {
+    return c.json({ ok: true, requestId: existing.id, status: existing.status });
+  }
+
+  const nowIso = new Date().toISOString();
+  const { data: inserted, error: insertError } = await supabaseAdmin
+    .from('AiReportRequest')
+    .insert({
+      userId: user.id,
+      period: parsed.data.period,
+      locale,
+      rangeStart: resolvedRange.from,
+      rangeEnd: resolvedRange.to,
+      timezone: resolvedRange.timezone,
+      status: 'queued',
+      requestKey,
+      attempts: 0,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    })
+    .select('id, status')
+    .single();
+
+  if (insertError || !inserted) {
+    console.error('report request: insert failed', insertError);
+    throw new HttpError('レポートの作成に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  const execution = (c as any).executionCtx;
+  if (execution?.waitUntil) {
+    execution.waitUntil(runReportWorker(1));
+  }
+
+  return c.json({ ok: true, requestId: inserted.id, status: inserted.status });
+});
+
+app.get('/api/reports', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const url = new URL(c.req.url);
+  const status = url.searchParams.get('status');
+  const period = url.searchParams.get('period');
+  const from = url.searchParams.get('from');
+  const to = url.searchParams.get('to');
+  const limitParam = url.searchParams.get('limit');
+  const limit = Math.min(50, Math.max(1, Number(limitParam ?? '20')));
+
+  let query = supabaseAdmin
+    .from('AiReportRequest')
+    .select(
+      'id, period, rangeStart, rangeEnd, timezone, status, report, errorCode, errorMessage, usageSnapshot, createdAt, updatedAt',
+    )
+    .eq('userId', user.id);
+
+  if (status) {
+    query = query.eq('status', status);
+  }
+  if (period) {
+    query = query.eq('period', period);
+  }
+  if (from) {
+    query = query.gte('rangeStart', from);
+  }
+  if (to) {
+    query = query.lte('rangeEnd', to);
+  }
+
+  const { data, error } = await query.order('createdAt', { ascending: false }).limit(limit);
+  if (error) {
+    console.error('report list: fetch failed', error);
+    throw new HttpError('レポートを取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  const items = (data ?? []).map(mapReportRequestRow);
+  return c.json({ ok: true, items });
+});
+
+app.post('/api/reports/worker/run', async (c) => {
+  requireReportWorkerSecret(c);
+  const url = new URL(c.req.url);
+  const limit = Number(url.searchParams.get('limit') ?? REPORT_WORKER_BATCH_SIZE);
+  const processed = await runReportWorker(Number.isFinite(limit) ? limit : REPORT_WORKER_BATCH_SIZE);
+  return c.json({ ok: true, processed });
+});
+
+app.get('/api/reports/:id', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const id = c.req.param('id');
+  const { data, error } = await supabaseAdmin
+    .from('AiReportRequest')
+    .select(
+      'id, period, rangeStart, rangeEnd, timezone, status, report, errorCode, errorMessage, usageSnapshot, createdAt, updatedAt',
+    )
+    .eq('id', id)
+    .eq('userId', user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error('report status: fetch failed', error);
+    throw new HttpError('レポートの状態を取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+  if (!data) {
+    throw new HttpError('レポートが見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
+  }
+  return c.json({ ok: true, request: mapReportRequestRow(data) });
+});
+
+app.post('/api/reports/:id/cancel', requireAuth, async (c) => {
+  const user = c.get('user') as JwtUser;
+  const id = c.req.param('id');
+  const { data: request, error: fetchError } = await supabaseAdmin
+    .from('AiReportRequest')
+    .select('id, status')
+    .eq('id', id)
+    .eq('userId', user.id)
+    .maybeSingle();
+
+  if (fetchError) {
+    console.error('report cancel: fetch failed', fetchError);
+    throw new HttpError('キャンセルに失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+  if (!request) {
+    throw new HttpError('レポートが見つかりませんでした', { status: HTTP_STATUS.NOT_FOUND, expose: true });
+  }
+  if (request.status === 'done') {
+    return c.json({ ok: true, status: 'done' });
+  }
+  if (request.status === 'canceled') {
+    return c.json({ ok: true, status: 'canceled' });
+  }
+
+  const nowIso = new Date().toISOString();
+  const { error: updateError } = await supabaseAdmin
+    .from('AiReportRequest')
+    .update({
+      status: 'canceled',
+      errorCode: 'REPORT_CANCELED',
+      errorMessage: 'レポートの作成をキャンセルしました。',
+      finishedAt: nowIso,
+      updatedAt: nowIso,
+      nextAttemptAt: null,
+    })
+    .eq('id', id)
+    .eq('userId', user.id);
+
+  if (updateError) {
+    console.error('report cancel: update failed', updateError);
+    throw new HttpError('キャンセルに失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  return c.json({ ok: true, status: 'canceled' });
 });
 
 app.get('/api/dashboard/targets', requireAuth, async (c) => {
@@ -1808,6 +1959,7 @@ async function deleteUserAccount(userId: number) {
   const deletions = [
     { label: 'favorites', promise: supabaseAdmin.from('FavoriteMeal').delete().eq('userId', userId) },
     { label: 'ingest', promise: supabaseAdmin.from('IngestRequest').delete().eq('userId', userId) },
+    { label: 'reports', promise: supabaseAdmin.from('AiReportRequest').delete().eq('userId', userId) },
     { label: 'ai usage', promise: supabaseAdmin.from('AiUsageCounter').delete().eq('userId', userId) },
     { label: 'iap', promise: supabaseAdmin.from('IapReceipt').delete().eq('userId', userId) },
     { label: 'premium', promise: supabaseAdmin.from('PremiumGrant').delete().eq('userId', userId) },
@@ -3487,6 +3639,61 @@ function resolveReportSummaryParams(
   return { period: 'custom' as const, from, to };
 }
 
+function resolveReportRange(period: AiReportPeriod, range?: { from: string; to: string }) {
+  if (range?.from && range?.to) {
+    const { range: resolved } = resolveRangeWithCustom('custom', DASHBOARD_TIMEZONE, range.from, range.to);
+    return {
+      from: resolved.fromDate.toISODate() ?? range.from,
+      to: resolved.toDate.minus({ days: 1 }).toISODate() ?? range.to,
+      timezone: DASHBOARD_TIMEZONE,
+    };
+  }
+
+  const params = resolveReportSummaryParams(period);
+  const { range: resolved } = resolveRangeWithCustom(params.period, DASHBOARD_TIMEZONE, params.from, params.to);
+  return {
+    from: resolved.fromDate.toISODate() ?? DateTime.fromJSDate(resolved.fromDate.toJSDate()).toISODate() ?? '',
+    to: resolved.toDate.minus({ days: 1 }).toISODate() ?? DateTime.fromJSDate(resolved.toDate.toJSDate()).minus({ days: 1 }).toISODate() ?? '',
+    timezone: DASHBOARD_TIMEZONE,
+  };
+}
+
+function buildReportRequestKey(params: { userId: number; period: AiReportPeriod; from: string; to: string }) {
+  return `report_${params.userId}_${params.period}_${params.from}_${params.to}`;
+}
+
+function mapReportRequestRow(row: {
+  id: string;
+  period: string;
+  rangeStart: string;
+  rangeEnd: string;
+  timezone: string;
+  status: string;
+  report?: unknown | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  usageSnapshot?: unknown | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}) {
+  return {
+    id: row.id,
+    period: row.period as AiReportPeriod,
+    range: {
+      from: row.rangeStart,
+      to: row.rangeEnd,
+      timezone: row.timezone,
+    },
+    status: row.status,
+    report: (row.report ?? null) as AiReportResponse | null,
+    usage: (row.usageSnapshot ?? undefined) as ReturnType<typeof summarizeUsageStatus> | undefined,
+    errorCode: row.errorCode ?? null,
+    errorMessage: row.errorMessage ?? null,
+    createdAt: row.createdAt ?? undefined,
+    updatedAt: row.updatedAt ?? undefined,
+  };
+}
+
 function buildDashboardSummary({
   logs,
   range,
@@ -4288,6 +4495,240 @@ async function analyzeReportWithGemini(params: {
   }
 
   throw firstError ?? new Error('Gemini request failed');
+}
+
+type ReportFailure = {
+  errorCode: string;
+  errorMessage: string;
+  status: number;
+  retryable: boolean;
+};
+
+function classifyReportError(error: unknown): ReportFailure {
+  const fallback: ReportFailure = {
+    errorCode: 'REPORT_FAILED',
+    errorMessage: '解析に失敗しました。時間をおいて再度お試しください。',
+    status: HTTP_STATUS.INTERNAL_ERROR,
+    retryable: true,
+  };
+
+  if (error instanceof HttpError) {
+    return {
+      errorCode: error.code ?? fallback.errorCode,
+      errorMessage: error.message || fallback.errorMessage,
+      status: error.status ?? fallback.status,
+      retryable: error.status >= 500,
+    };
+  }
+
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const lower = message.toLowerCase();
+  if (lower.includes('expected \',\'') || lower.includes('json') || lower.includes('parse')) {
+    return {
+      errorCode: 'AI_BAD_RESPONSE',
+      errorMessage: '解析に失敗しました。もう一度お試しください。',
+      status: HTTP_STATUS.BAD_GATEWAY,
+      retryable: true,
+    };
+  }
+  if (lower.includes('timeout') || lower.includes('gemini_timeout') || lower.includes('ai_attempt_timeout')) {
+    return {
+      errorCode: 'AI_TIMEOUT',
+      errorMessage: '解析に時間がかかっています。時間をおいて再度お試しください。',
+      status: HTTP_STATUS.GATEWAY_TIMEOUT,
+      retryable: true,
+    };
+  }
+
+  return { ...fallback, errorMessage: message || fallback.errorMessage };
+}
+
+async function analyzeReportWithRetry(params: { context: ReturnType<typeof buildReportContext>; locale: Locale }) {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= REPORT_RETRY_MAX; attempt += 1) {
+    try {
+      return await analyzeReportWithGemini(params);
+    } catch (error) {
+      lastError = error;
+      const failure = classifyReportError(error);
+      if (!failure.retryable || attempt >= REPORT_RETRY_MAX) {
+        throw error;
+      }
+      console.warn('report: retrying after failure', { attempt, error: failure.errorCode });
+    }
+  }
+  throw lastError ?? new Error('Report analysis failed');
+}
+
+async function claimNextReportRequest() {
+  const nowIso = new Date().toISOString();
+  const { data: candidate, error: fetchError } = await supabaseAdmin
+    .from('AiReportRequest')
+    .select(
+      'id, userId, period, locale, rangeStart, rangeEnd, timezone, status, requestKey, attempts, nextAttemptAt, createdAt',
+    )
+    .eq('status', 'queued')
+    .or(`nextAttemptAt.is.null,nextAttemptAt.lte.${nowIso}`)
+    .order('createdAt', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (fetchError) {
+    console.error('report worker: fetch failed', fetchError);
+    return null;
+  }
+  if (!candidate) {
+    return null;
+  }
+
+  const { data: claimed, error: claimError } = await supabaseAdmin
+    .from('AiReportRequest')
+    .update({
+      status: 'processing',
+      startedAt: nowIso,
+      attempts: (candidate.attempts ?? 0) + 1,
+      updatedAt: nowIso,
+    })
+    .eq('id', candidate.id)
+    .eq('status', 'queued')
+    .select(
+      'id, userId, period, locale, rangeStart, rangeEnd, timezone, status, requestKey, attempts, createdAt, updatedAt',
+    )
+    .maybeSingle();
+
+  if (claimError) {
+    console.error('report worker: claim failed', claimError);
+    return null;
+  }
+  return claimed ?? null;
+}
+
+async function processReportRequest(request: {
+  id: string;
+  userId: number;
+  period: string;
+  locale?: string | null;
+  rangeStart: string;
+  rangeEnd: string;
+  timezone: string;
+  requestKey: string;
+}) {
+  const nowIso = new Date().toISOString();
+  try {
+    const usageStatus = await evaluateAiUsage(request.userId);
+    if (!usageStatus.allowed) {
+      const usageError = buildUsageLimitError(usageStatus);
+      const failure = classifyReportError(usageError);
+      await supabaseAdmin
+        .from('AiReportRequest')
+        .update({
+          status: 'failed',
+          errorCode: failure.errorCode,
+          errorMessage: failure.errorMessage,
+          finishedAt: nowIso,
+          updatedAt: nowIso,
+        })
+        .eq('id', request.id);
+      return;
+    }
+
+    const summary = await getDashboardSummary({
+      userId: request.userId,
+      period: 'custom',
+      from: request.rangeStart,
+      to: request.rangeEnd,
+    });
+    const context = buildReportContext({
+      period: request.period as AiReportPeriod,
+      summary,
+    });
+    const analysis = await analyzeReportWithRetry({
+      context,
+      locale: normalizeLocale(request.locale ?? DEFAULT_LOCALE),
+    });
+
+    const report: AiReportResponse = {
+      period: request.period as AiReportPeriod,
+      range: summary.range,
+      summary: analysis.report.summary,
+      metrics: analysis.report.metrics,
+      advice: analysis.report.advice,
+      ingredients: analysis.report.ingredients,
+      meta: { ...analysis.meta, attemptReports: analysis.attemptReports },
+    };
+
+    const { data: currentStatus, error: statusError } = await supabaseAdmin
+      .from('AiReportRequest')
+      .select('status')
+      .eq('id', request.id)
+      .maybeSingle();
+    if (statusError) {
+      console.error('report: status check failed', statusError);
+    }
+    if (currentStatus?.status === 'canceled') {
+      return;
+    }
+
+    const usageSummary = await recordAiUsage({
+      userId: request.userId,
+      usageDate: usageStatus.usageDate,
+      consumeCredit: usageStatus.consumeCredit,
+    });
+
+    await supabaseAdmin
+      .from('AiReportRequest')
+      .update({
+        status: 'done',
+        report,
+        usageSnapshot: usageSummary,
+        modelVersion: analysis.meta.model ?? null,
+        modelAttempts: analysis.attemptReports?.length ?? 0,
+        errorCode: null,
+        errorMessage: null,
+        finishedAt: nowIso,
+        updatedAt: nowIso,
+      })
+      .eq('id', request.id);
+  } catch (error) {
+    const failure = classifyReportError(error);
+    await supabaseAdmin
+      .from('AiReportRequest')
+      .update({
+        status: 'failed',
+        errorCode: failure.errorCode,
+        errorMessage: failure.errorMessage,
+        finishedAt: nowIso,
+        updatedAt: nowIso,
+      })
+      .eq('id', request.id);
+  }
+}
+
+async function runReportWorker(limit = REPORT_WORKER_BATCH_SIZE) {
+  let processed = 0;
+  for (let i = 0; i < limit; i += 1) {
+    const next = await claimNextReportRequest();
+    if (!next) break;
+    await processReportRequest(next);
+    processed += 1;
+  }
+  return processed;
+}
+
+function requireReportWorkerSecret(c: Context) {
+  if (!REPORT_WORKER_SECRET && REPORT_WORKER_ALLOW_ANON) {
+    return;
+  }
+  if (!REPORT_WORKER_SECRET) {
+    throw new HttpError('Worker secret is not configured', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+  const header =
+    c.req.header('X-Worker-Secret') ??
+    c.req.header('Authorization')?.replace('Bearer ', '') ??
+    '';
+  if (header !== REPORT_WORKER_SECRET) {
+    throw new HttpError('Unauthorized', { status: HTTP_STATUS.UNAUTHORIZED, expose: true });
+  }
 }
 
 async function analyzeMeal(params: { message: string; imageBase64?: string; imageMimeType?: string; locale?: Locale }) {
