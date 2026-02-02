@@ -44,6 +44,7 @@ import {
   computeNutritionPlan,
   AiReportRequestSchema,
   AiReportContentSchema,
+  AiReportResponseSchema,
   AiReportPreferenceInputSchema,
   AiReportPreferenceResponseSchema,
   AiReportPreferenceUpdateResponseSchema,
@@ -3880,6 +3881,7 @@ function mapReportRequestRow(row: {
   createdAt?: string | null;
   updatedAt?: string | null;
 }) {
+  const normalizedReport = normalizeStoredReport(row.report ?? null);
   return {
     id: row.id,
     period: row.period as AiReportPeriod,
@@ -3890,13 +3892,46 @@ function mapReportRequestRow(row: {
     },
     status: row.status,
     preference: normalizeReportPreference(row.preferenceSnapshot),
-    report: (row.report ?? null) as AiReportResponse | null,
+    report: normalizedReport,
     usage: (row.usageSnapshot ?? undefined) as ReturnType<typeof summarizeUsageStatus> | undefined,
     errorCode: row.errorCode ?? null,
     errorMessage: row.errorMessage ?? null,
     createdAt: row.createdAt ?? undefined,
     updatedAt: row.updatedAt ?? undefined,
   };
+}
+
+function normalizeStoredReport(value: unknown): AiReportResponse | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const direct = AiReportResponseSchema.safeParse(value);
+  if (direct.success) {
+    return direct.data;
+  }
+
+  // Legacy bug compatibility: streakDays was persisted as a streak object.
+  const draft = JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+  const uiMeta = typeof draft.uiMeta === 'object' && draft.uiMeta ? (draft.uiMeta as Record<string, unknown>) : null;
+  const streakCandidate = uiMeta?.streakDays;
+  if (uiMeta && streakCandidate && typeof streakCandidate === 'object') {
+    const currentRaw = (streakCandidate as Record<string, unknown>).current;
+    const current =
+      typeof currentRaw === 'number'
+        ? currentRaw
+        : typeof currentRaw === 'string'
+          ? Number(currentRaw)
+          : NaN;
+    uiMeta.streakDays = Number.isFinite(current) && current >= 0 ? Math.round(current) : 0;
+  }
+
+  const repaired = AiReportResponseSchema.safeParse(draft);
+  if (repaired.success) {
+    return repaired.data;
+  }
+
+  return null;
 }
 
 function normalizeReportPreference(value: unknown): AiReportPreferenceInput {
@@ -5388,7 +5423,7 @@ async function processReportRequest(request: {
       period: request.period as AiReportPeriod,
       loggedDays: context.days.logged,
       score: normalizedReport.summary.score,
-      streakDays: streak,
+      streakDays: streak.current,
     });
 
     const report: AiReportResponse = {
