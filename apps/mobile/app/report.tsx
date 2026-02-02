@@ -950,6 +950,46 @@ export default function ReportScreen() {
       queryClient.invalidateQueries({ queryKey: ['reportRequests', userId ?? 'anon'] }).catch(() => {
         // no-op
       });
+      if (response.status === 'done') {
+        getAiReportRequest(response.requestId)
+          .then((result) => {
+            const doneRequest = result.request;
+            if (doneRequest.status !== 'done' || !doneRequest.report) {
+              return;
+            }
+            const cacheKey = buildReportKey(doneRequest.period, {
+              from: doneRequest.range.from,
+              to: doneRequest.range.to,
+            });
+            setReports((prev) => ({ ...prev, [cacheKey]: doneRequest.report! }));
+            const historyItem = mapRequestToHistoryItem({
+              id: doneRequest.id,
+              period: doneRequest.period,
+              range: { from: doneRequest.range.from, to: doneRequest.range.to },
+              report: doneRequest.report ?? null,
+              createdAt: doneRequest.createdAt,
+            });
+            if (historyItem) {
+              setReportHistory((prev) => {
+                const next = [historyItem, ...prev.filter((entry) => entry.key !== cacheKey)].slice(0, REPORT_HISTORY_LIMIT);
+                if (historyStorageKey) {
+                  AsyncStorage.setItem(historyStorageKey, JSON.stringify(next)).catch((error) => {
+                    console.warn('Failed to persist report history', error);
+                  });
+                }
+                return next;
+              });
+            }
+            if (doneRequest.usage) {
+              setUsage(doneRequest.usage);
+            }
+            lastRequestStatusRef.current = `${doneRequest.id}:${doneRequest.status}`;
+            setActiveRequestId(null);
+          })
+          .catch((error) => {
+            console.error('Failed to hydrate immediate done report', error);
+          });
+      }
     },
     onError: (error) => {
       const apiError = error as ApiError;

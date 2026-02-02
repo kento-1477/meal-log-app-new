@@ -697,7 +697,10 @@ export async function createAiReport(
 }
 
 export async function getAiReportRequest(requestId: string) {
-  const response = await apiFetch<unknown>(`/api/reports/${encodeURIComponent(requestId)}`, { method: 'GET' });
+  const response = await apiFetch<unknown>(
+    `/api/reports/${encodeURIComponent(requestId)}?_ts=${Date.now()}`,
+    { method: 'GET' },
+  );
   const parsed = AiReportRequestStatusResponseSchema.parse(response);
   return parsed as AiReportRequestStatusResponse;
 }
@@ -715,6 +718,7 @@ export async function listAiReportRequests(params: {
   if (params.from) search.set('from', params.from);
   if (params.to) search.set('to', params.to);
   if (typeof params.limit === 'number') search.set('limit', String(params.limit));
+  search.set('_ts', String(Date.now()));
   const query = search.toString();
   const response = await apiFetch<unknown>(`/api/reports${query ? `?${query}` : ''}`, { method: 'GET' });
   const parsed = AiReportRequestListResponseSchema.parse(response);
