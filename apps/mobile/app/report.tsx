@@ -7,6 +7,7 @@ import {
   AppState,
   Easing,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,6 +16,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import { DateTime } from 'luxon';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
@@ -261,6 +263,17 @@ function wrapShareLines(value: string, maxChars: number, maxLines: number) {
     lines[last] = `${lines[last].slice(0, Math.max(0, maxChars - 1))}…`;
   }
   return lines;
+}
+
+function sanitizeShareText(value: string) {
+  const normalized = value.normalize('NFKC');
+  const withoutControl = Array.from(normalized)
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code >= 0x20 && code !== 0x7f;
+    })
+    .join('');
+  return withoutControl.replace(/[\uFFFD□]/g, '').trim();
 }
 
 function highlightTint(index: number) {
@@ -1007,8 +1020,16 @@ export default function ReportScreen() {
     }
     return t('report.rangePlaceholder');
   }, [locale, report, selectedRange, t]);
+  const shareFontFamily = useMemo(() => {
+    if (!locale.startsWith('ja')) {
+      return undefined;
+    }
+    return Platform.OS === 'ios' ? 'Hiragino Sans' : 'sans-serif';
+  }, [locale]);
+  const shareHeadlineWeight = locale.startsWith('ja') ? '600' : '700';
+  const shareBodyWeight = locale.startsWith('ja') ? '500' : '600';
   const shareHeadlineLines = useMemo(
-    () => (report ? wrapShareLines(report.summary.headline, 24, 3) : []),
+    () => (report ? wrapShareLines(sanitizeShareText(report.summary.headline), 24, 3) : []),
     [report],
   );
   const shareHighlights = useMemo(
@@ -1016,7 +1037,7 @@ export default function ReportScreen() {
       report
         ? report.summary.highlights
             .slice(0, 3)
-            .map((item) => wrapShareLines(item, 30, 1).join(''))
+            .map((item) => wrapShareLines(sanitizeShareText(item), 30, 1).join(''))
         : [],
     [report],
   );
@@ -1145,6 +1166,25 @@ export default function ReportScreen() {
     if (value === 'high') return styles.priorityBadgeHigh;
     if (value === 'medium') return styles.priorityBadgeMedium;
     return styles.priorityBadgeLow;
+  };
+
+  const priorityTextStyle = (value: AiReportAdvice['priority']) => {
+    if (value === 'high') return styles.priorityTextHigh;
+    if (value === 'medium') return styles.priorityTextMedium;
+    return styles.priorityTextLow;
+  };
+
+  const renderAdviceDetail = (detail: string) => {
+    const tokens = detail.split(/(\d+(?:[.,]\d+)?\s*(?:kcal|g|%|日|days|kg|回)?)/gi);
+    return tokens.map((token, index) => {
+      if (!token) return null;
+      const isEmphasis = /\d/.test(token);
+      return (
+        <Text key={`advice-token-${index}`} style={isEmphasis ? styles.adviceDetailEmphasis : undefined}>
+          {token}
+        </Text>
+      );
+    });
   };
 
   return (
@@ -1299,15 +1339,29 @@ export default function ReportScreen() {
           )}
 
           {report ? (
-            <GlassCard style={styles.card}>
+            <GlassCard style={styles.card} contentStyle={styles.summaryCardContent}>
+                <ExpoLinearGradient
+                  colors={['rgba(245,178,37,0.2)', 'rgba(116,210,194,0.1)', 'rgba(255,255,255,0.0)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.summaryCardGradient}
+                  pointerEvents="none"
+                />
                 <Text style={styles.cardTitle}>✨ {t('report.section.summary')}</Text>
                 <View style={styles.summaryHero}>
                   <ScoreRing
                     score={Math.round(report.summary.score)}
                     label={t('report.scoreLabel')}
                     emoji={scoreEmoji(report.summary.score)}
+                    size={130}
                   />
                   <View style={styles.heroStats}>
+                    <View style={styles.heroAchievement}>
+                      <Text style={styles.heroAchievementLabel}>🎯 {t('report.stat.achievement')}</Text>
+                      <Text style={styles.heroAchievementValue}>
+                        {summaryStats ? `${summaryStats.achievement}%` : '--'}
+                      </Text>
+                    </View>
                     <View style={styles.heroStat}>
                       <Text style={styles.heroStatLabel}>🔥 {t('report.stat.averageCalories')}</Text>
                       <Text style={styles.heroStatValue}>{summaryStats ? `${summaryStats.averageCalories} kcal` : '--'}</Text>
@@ -1336,10 +1390,12 @@ export default function ReportScreen() {
                 <View style={styles.summaryActionRow}>
                   {detailsExpanded ? (
                     <TouchableOpacity
-                      style={[styles.summaryActionButton, styles.summaryActionButtonMuted]}
+                      style={styles.summaryCollapseButton}
                       onPress={() => setDetailsExpanded(false)}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('report.hideDetails')}
                     >
-                      <Text style={styles.summaryActionText}>{t('report.hideDetails')}</Text>
+                      <Text style={styles.summaryCollapseText}>⌃</Text>
                     </TouchableOpacity>
                   ) : null}
                   <TouchableOpacity
@@ -1453,6 +1509,7 @@ export default function ReportScreen() {
                       <TrendLineChart
                         points={dashboard.calories.points}
                         target={dashboard.calories.targetLine}
+                        targetLabel={t('dashboard.chart.targetLabel', { value: Math.round(dashboard.calories.targetLine) })}
                         axisLabelY={t('dashboard.chart.axisY')}
                         axisLabelX={t('dashboard.chart.axisX')}
                       />
@@ -1472,17 +1529,42 @@ export default function ReportScreen() {
                       <View style={styles.macroWrap}>
                         <MacroDonut macros={dashboard.macros} totalCalories={dashboard.summary.macros.total.calories} />
                         <View style={styles.macroLegend}>
-                          {dashboard.macros.map((macro) => (
-                            <View key={macro.key} style={styles.macroLegendRow}>
-                              <View style={[styles.macroDot, { backgroundColor: MACRO_META[macro.key].color }]} />
-                              <Text style={styles.macroLegendText}>
-                                {MACRO_META[macro.key].emoji} {macro.label}
-                              </Text>
-                              <Text style={styles.macroLegendValue}>
-                                {Math.round(macro.actual)} / {Math.round(macro.target)}g
-                              </Text>
-                            </View>
-                          ))}
+                          {dashboard.macros.map((macro) => {
+                            const macroColor = MACRO_META[macro.key].color;
+                            const progress = Math.max(
+                              0,
+                              Math.min(100, Math.round((macro.actual / Math.max(1, macro.target)) * 100)),
+                            );
+                            const remain = Math.max(0, Math.round(macro.target - macro.actual));
+
+                            return (
+                              <View key={macro.key} style={styles.macroLegendItem}>
+                                <View style={styles.macroLegendRow}>
+                                  <View style={[styles.macroDot, { backgroundColor: macroColor }]} />
+                                  <Text style={styles.macroLegendText}>
+                                    {MACRO_META[macro.key].emoji} {macro.label}
+                                  </Text>
+                                  <Text style={styles.macroLegendValue}>
+                                    {Math.round(macro.actual)} / {Math.round(macro.target)}g
+                                  </Text>
+                                </View>
+                                <View style={styles.macroProgressTrack}>
+                                  <View
+                                    style={[
+                                      styles.macroProgressFill,
+                                      {
+                                        backgroundColor: macroColor,
+                                        width: `${progress}%`,
+                                      },
+                                    ]}
+                                  />
+                                </View>
+                                <Text style={[styles.macroRemainText, { color: macroColor }]}>
+                                  {locale.startsWith('ja') ? `残り ${remain}g` : `${remain}g left`}
+                                </Text>
+                              </View>
+                            );
+                          })}
                         </View>
                       </View>
                     ) : (
@@ -1531,11 +1613,11 @@ export default function ReportScreen() {
                         <View key={`${advice.title}-${index}`} style={styles.adviceItem}>
                           <View style={styles.adviceHeader}>
                             <View style={[styles.priorityBadge, priorityBadgeStyle(advice.priority)]}>
-                              <Text style={styles.priorityText}>{formatPriority(advice.priority)}</Text>
+                              <Text style={[styles.priorityText, priorityTextStyle(advice.priority)]}>{formatPriority(advice.priority)}</Text>
                             </View>
                             <Text style={styles.adviceTitle}>{advice.title}</Text>
                           </View>
-                          <Text style={styles.adviceDetail}>{advice.detail}</Text>
+                          <Text style={styles.adviceDetail}>{renderAdviceDetail(advice.detail)}</Text>
                         </View>
                       ))}
                     </View>
@@ -1567,43 +1649,64 @@ export default function ReportScreen() {
                 strokeWidth={2}
               />
 
-              <SvgText x={96} y={128} fill={colors.textPrimary} fontSize={52} fontWeight="700">
+              <SvgText
+                x={96}
+                y={128}
+                fill={colors.textPrimary}
+                fontSize={52}
+                fontWeight={shareHeadlineWeight}
+                fontFamily={shareFontFamily}
+              >
                 {t('report.header')}
               </SvgText>
-              <SvgText x={96} y={178} fill={colors.textMuted} fontSize={30}>
+              <SvgText x={96} y={178} fill={colors.textMuted} fontSize={30} fontFamily={shareFontFamily}>
                 {rangeLabel}
               </SvgText>
 
               <SvgText x={96} y={300} fill={colors.accent} fontSize={140} fontWeight="800">
                 {Math.round(report.summary.score)}
               </SvgText>
-              <SvgText x={292} y={285} fill={colors.textSecondary} fontSize={34} fontWeight="600">
+              <SvgText
+                x={292}
+                y={285}
+                fill={colors.textSecondary}
+                fontSize={34}
+                fontWeight={shareBodyWeight}
+                fontFamily={shareFontFamily}
+              >
                 {t('report.scoreLabel')}
               </SvgText>
 
               <Rect x={96} y={336} width={280} height={112} rx={24} fill="rgba(245,178,37,0.15)" />
               <Rect x={400} y={336} width={280} height={112} rx={24} fill="rgba(116,210,194,0.16)" />
               <Rect x={704} y={336} width={280} height={112} rx={24} fill="rgba(156,124,255,0.14)" />
-              <SvgText x={124} y={378} fill={colors.textMuted} fontSize={22}>
+              <SvgText x={124} y={378} fill={colors.textMuted} fontSize={22} fontFamily={shareFontFamily}>
                 {t('report.stat.averageCalories')}
               </SvgText>
               <SvgText x={124} y={422} fill={colors.textPrimary} fontSize={34} fontWeight="700">
                 {summaryStats ? `${summaryStats.averageCalories} kcal` : '--'}
               </SvgText>
-              <SvgText x={428} y={378} fill={colors.textMuted} fontSize={22}>
+              <SvgText x={428} y={378} fill={colors.textMuted} fontSize={22} fontFamily={shareFontFamily}>
                 {t('report.stat.loggedDays')}
               </SvgText>
               <SvgText x={428} y={422} fill={colors.textPrimary} fontSize={34} fontWeight="700">
                 {summaryStats ? `${summaryStats.loggedDays}/${summaryStats.totalDays}` : '--'}
               </SvgText>
-              <SvgText x={732} y={378} fill={colors.textMuted} fontSize={22}>
+              <SvgText x={732} y={378} fill={colors.textMuted} fontSize={22} fontFamily={shareFontFamily}>
                 {t('report.streakLabel')}
               </SvgText>
               <SvgText x={732} y={422} fill={colors.textPrimary} fontSize={34} fontWeight="700">
                 {`${streakDays}`}
               </SvgText>
 
-              <SvgText x={96} y={510} fill={colors.textSecondary} fontSize={24} fontWeight="700">
+              <SvgText
+                x={96}
+                y={510}
+                fill={colors.textSecondary}
+                fontSize={24}
+                fontWeight={shareHeadlineWeight}
+                fontFamily={shareFontFamily}
+              >
                 {t('report.section.summary')}
               </SvgText>
               {shareHeadlineLines.map((lineText, index) => (
@@ -1613,19 +1716,34 @@ export default function ReportScreen() {
                   y={566 + index * 50}
                   fill={colors.textPrimary}
                   fontSize={44}
-                  fontWeight="700"
+                  fontWeight={shareHeadlineWeight}
+                  fontFamily={shareFontFamily}
                 >
                   {lineText}
                 </SvgText>
               ))}
 
-              <SvgText x={96} y={740} fill={colors.textSecondary} fontSize={24} fontWeight="700">
+              <SvgText
+                x={96}
+                y={740}
+                fill={colors.textSecondary}
+                fontSize={24}
+                fontWeight={shareHeadlineWeight}
+                fontFamily={shareFontFamily}
+              >
                 Highlights
               </SvgText>
               {shareHighlights.map((item, index) => (
                 <G key={`share-highlight-${index}`}>
                   <Circle cx={108} cy={790 + index * 62} r={7} fill={highlightTint(index)} />
-                  <SvgText x={132} y={798 + index * 62} fill={colors.textPrimary} fontSize={30} fontWeight="600">
+                  <SvgText
+                    x={132}
+                    y={798 + index * 62}
+                    fill={colors.textPrimary}
+                    fontSize={30}
+                    fontWeight={shareBodyWeight}
+                    fontFamily={shareFontFamily}
+                  >
                     {item}
                   </SvgText>
                 </G>
@@ -1634,13 +1752,20 @@ export default function ReportScreen() {
               {shareComparisonMetrics.length ? (
                 <>
                   <Line x1={96} y1={992} x2={984} y2={992} stroke="rgba(31,36,44,0.12)" strokeWidth={2} />
-                  <SvgText x={96} y={1042} fill={colors.textSecondary} fontSize={24} fontWeight="700">
+                  <SvgText
+                    x={96}
+                    y={1042}
+                    fill={colors.textSecondary}
+                    fontSize={24}
+                    fontWeight={shareHeadlineWeight}
+                    fontFamily={shareFontFamily}
+                  >
                     {t('report.section.comparison')}
                   </SvgText>
                   {shareComparisonMetrics.map((metric, index) => (
                     <G key={`share-comparison-${metric.key}`}>
-                      <SvgText x={96} y={1102 + index * 58} fill={colors.textPrimary} fontSize={28}>
-                        {wrapShareLines(metric.label, 26, 1).join('')}
+                      <SvgText x={96} y={1102 + index * 58} fill={colors.textPrimary} fontSize={28} fontFamily={shareFontFamily}>
+                        {wrapShareLines(sanitizeShareText(metric.label), 26, 1).join('')}
                       </SvgText>
                       <SvgText
                         x={984}
@@ -1936,9 +2061,18 @@ function MonthPicker({
   );
 }
 
-function ScoreRing({ score, label, emoji }: { score: number; label: string; emoji: string }) {
-  const size = 118;
-  const strokeWidth = 10;
+function ScoreRing({
+  score,
+  label,
+  emoji,
+  size = 118,
+}: {
+  score: number;
+  label: string;
+  emoji: string;
+  size?: number;
+}) {
+  const strokeWidth = Math.max(10, Math.round(size * 0.085));
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = clamp(score / 100, 0, 1);
@@ -1953,7 +2087,7 @@ function ScoreRing({ score, label, emoji }: { score: number; label: string; emoj
             <Stop offset="100%" stopColor={colors.ringFat} />
           </LinearGradient>
         </Defs>
-        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={colors.border} strokeWidth={strokeWidth} fill="none" />
+        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={colors.ringInactive} strokeWidth={strokeWidth} fill="none" />
         <Circle
           cx={size / 2}
           cy={size / 2}
@@ -1980,11 +2114,13 @@ function ScoreRing({ score, label, emoji }: { score: number; label: string; emoj
 function TrendLineChart({
   points,
   target,
+  targetLabel,
   axisLabelX,
   axisLabelY,
 }: {
   points: ChartPoint[];
   target: number;
+  targetLabel: string;
   axisLabelX: string;
   axisLabelY: string;
 }) {
@@ -2020,12 +2156,15 @@ function TrendLineChart({
       .curve(curveMonotoneX)(data);
 
     const targetY = target ? height - padding - (target / maxValue) * usableHeight : null;
+    const gridYs = [0.25, 0.5, 0.75].map((ratio) => height - padding - usableHeight * ratio);
 
     return {
       data,
       linePath: linePath ?? '',
       areaPath: areaPath ?? '',
       targetY,
+      gridYs,
+      lastPoint: data[data.length - 1] ?? null,
     };
   }, [width, points, target]);
 
@@ -2036,33 +2175,75 @@ function TrendLineChart({
           <Svg width={width} height={height}>
             <Defs>
               <LinearGradient id="trendGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                <Stop offset="0%" stopColor={`${colors.accent}66`} />
+                <Stop offset="0%" stopColor={`${colors.accent}3A`} />
                 <Stop offset="100%" stopColor={`${colors.accent}00`} />
               </LinearGradient>
             </Defs>
+            {chart.gridYs.map((gridY, index) => (
+              <Line
+                key={`trend-grid-${index}`}
+                x1={padding}
+                y1={gridY}
+                x2={width - padding}
+                y2={gridY}
+                stroke="rgba(17,19,24,0.09)"
+                strokeWidth={1}
+              />
+            ))}
             {chart.targetY !== null ? (
               <Line
                 x1={padding}
                 y1={chart.targetY}
                 x2={width - padding}
                 y2={chart.targetY}
-                stroke={colors.textMuted}
-                strokeDasharray="4 4"
+                stroke={colors.accentSage}
+                strokeWidth={1.4}
+                strokeDasharray="6 4"
               />
+            ) : null}
+            {chart.targetY !== null ? (
+              <SvgText
+                x={width - padding - 2}
+                y={Math.max(padding + 12, chart.targetY - 6)}
+                fill={colors.accentSage}
+                fontSize={11}
+                fontWeight="700"
+                textAnchor="end"
+              >
+                {targetLabel}
+              </SvgText>
             ) : null}
             {chart.areaPath ? <Path d={chart.areaPath} fill="url(#trendGradient)" /> : null}
             {chart.linePath ? (
-              <Path d={chart.linePath} stroke={colors.accent} strokeWidth={3} fill="none" />
-            ) : null}
-            {chart.data.map((point, index) => (
-              <Circle
-                key={`trend-${index}`}
-                cx={point.x}
-                cy={point.y}
-                r={index === chart.data.length - 1 ? 3.5 : 2.5}
-                fill={colors.accent}
+              <Path
+                d={chart.linePath}
+                stroke={`${colors.accent}44`}
+                strokeWidth={7}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
               />
-            ))}
+            ) : null}
+            {chart.linePath ? (
+              <Path
+                d={chart.linePath}
+                stroke={colors.accent}
+                strokeWidth={3.4}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+            ) : null}
+            {chart.lastPoint ? (
+              <Circle
+                cx={chart.lastPoint.x}
+                cy={chart.lastPoint.y}
+                r={4.5}
+                fill={colors.accent}
+                stroke="rgba(255,255,255,0.9)"
+                strokeWidth={2}
+              />
+            ) : null}
           </Svg>
           <View style={styles.trendAxisRow}>
             <Text style={styles.trendAxisLabel}>{axisLabelY}</Text>
@@ -2307,10 +2488,27 @@ const styles = StyleSheet.create({
   card: {
     marginTop: spacing.sm,
   },
+  summaryCardContent: {
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  summaryCardGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 180,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+  },
   cardTitle: {
-    ...textStyles.overline,
-    marginBottom: spacing.md,
-    letterSpacing: 1.2,
+    ...textStyles.titleMedium,
+    marginBottom: spacing.sm,
+    color: '#0E1218',
+    fontWeight: '800',
+    fontSize: 22,
+    lineHeight: 28,
+    letterSpacing: -0.1,
     textTransform: 'none',
   },
   emptyTitle: {
@@ -2395,6 +2593,27 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.sm,
   },
+  heroAchievement: {
+    backgroundColor: `${colors.accentSoft}66`,
+    borderRadius: 16,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(245,178,37,0.4)',
+    gap: 2,
+  },
+  heroAchievementLabel: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontWeight: '700',
+  },
+  heroAchievementValue: {
+    ...textStyles.heading,
+    fontSize: 28,
+    lineHeight: 32,
+    color: colors.accentInk,
+    fontWeight: '800',
+  },
   heroStat: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: 14,
@@ -2467,9 +2686,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     borderColor: 'rgba(245,178,37,0.7)',
   },
-  summaryActionButtonMuted: {
+  summaryCollapseButton: {
+    width: 44,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     backgroundColor: colors.surfaceStrong,
-    borderColor: 'rgba(17,19,24,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryCollapseText: {
+    ...textStyles.titleMedium,
+    color: colors.textSecondary,
+    lineHeight: 18,
+    fontWeight: '700',
   },
   summaryActionText: {
     ...textStyles.caption,
@@ -2618,6 +2848,9 @@ const styles = StyleSheet.create({
   },
   trendChart: {
     minHeight: 140,
+    borderRadius: 14,
+    backgroundColor: `${colors.surfaceMuted}`,
+    paddingVertical: spacing.xs,
   },
   trendAxisRow: {
     flexDirection: 'row',
@@ -2631,7 +2864,8 @@ const styles = StyleSheet.create({
   },
   trendNote: {
     ...textStyles.caption,
-    color: colors.textMuted,
+    color: colors.accentSage,
+    fontWeight: '700',
     marginTop: spacing.sm,
   },
   comparisonScoreDelta: {
@@ -2681,6 +2915,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     alignItems: 'center',
+    justifyContent: 'center',
     flexWrap: 'wrap',
   },
   macroDonut: {
@@ -2704,6 +2939,18 @@ const styles = StyleSheet.create({
   },
   macroLegend: {
     flex: 1,
+    gap: spacing.md,
+    justifyContent: 'center',
+    alignSelf: 'center',
+    minWidth: 210,
+  },
+  macroLegendItem: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
     gap: spacing.sm,
   },
   macroLegendRow: {
@@ -2724,6 +2971,21 @@ const styles = StyleSheet.create({
   macroLegendValue: {
     ...textStyles.caption,
     color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  macroProgressTrack: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(17,19,24,0.12)',
+    overflow: 'hidden',
+  },
+  macroProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  macroRemainText: {
+    ...textStyles.caption,
+    color: colors.textMuted,
     fontWeight: '600',
   },
   timingContainer: {
@@ -2828,26 +3090,46 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   priorityBadgeHigh: {
-    backgroundColor: `${colors.error}22`,
+    backgroundColor: `${colors.error}26`,
+    borderColor: `${colors.error}88`,
   },
   priorityBadgeMedium: {
-    backgroundColor: `${colors.accent}22`,
+    backgroundColor: `${colors.accent}2E`,
+    borderColor: `${colors.accent}88`,
   },
   priorityBadgeLow: {
-    backgroundColor: `${colors.success}22`,
+    backgroundColor: `${colors.success}24`,
+    borderColor: `${colors.success}88`,
   },
   priorityText: {
     ...textStyles.caption,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.textPrimary,
+  },
+  priorityTextHigh: {
+    color: '#A62020',
+  },
+  priorityTextMedium: {
+    color: '#8A5B00',
+  },
+  priorityTextLow: {
+    color: '#0D6F4D',
   },
   adviceTitle: {
     ...textStyles.titleMedium,
     flexShrink: 1,
+    fontSize: 17,
+    lineHeight: 23,
   },
   adviceDetail: {
     ...textStyles.caption,
     color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 21,
+  },
+  adviceDetailEmphasis: {
+    fontWeight: '800',
+    color: colors.textPrimary,
   },
   effectOverlay: {
     position: 'absolute',

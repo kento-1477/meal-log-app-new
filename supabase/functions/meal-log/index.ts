@@ -4263,6 +4263,12 @@ function buildComparison(
 }
 
 function normalizeReportTone(report: AiReportContent, locale: Locale): AiReportContent {
+  const sanitize = (value: string) =>
+    value
+      .normalize('NFKC')
+      .replace(/[\uFFFD□]/g, '')
+      .trim();
+
   const preferJapanese = locale.toLowerCase().startsWith('ja');
   const positiveLead = preferJapanese ? '継続できている点がしっかりあります。' : 'You are making steady progress.';
   const encouragementPrefix = preferJapanese ? 'よく取り組めています。' : 'You are doing well.';
@@ -4270,18 +4276,29 @@ function normalizeReportTone(report: AiReportContent, locale: Locale): AiReportC
     ? /(不足|少な|過多|悪化|課題|できていない|落ち)/
     : /(low|lack|insufficient|too much|worse|issue|problem|decline)/i;
 
-  const positives = report.summary.highlights.filter((item) => !negativeHint.test(item));
-  const negatives = report.summary.highlights.filter((item) => negativeHint.test(item));
+  const sanitizedHeadline = sanitize(report.summary.headline);
+  const sanitizedHighlights = report.summary.highlights
+    .map((item) => sanitize(item))
+    .filter((item) => item.length > 0);
+  const positives = sanitizedHighlights.filter((item) => !negativeHint.test(item));
+  const negatives = sanitizedHighlights.filter((item) => negativeHint.test(item));
   const normalizedHighlights = [...positives.slice(0, 2), ...negatives.slice(0, 1)];
-  const headlineNeedsBoost = !/(順調|良|でき|great|good|solid|well)/i.test(report.summary.headline);
+  const headlineNeedsBoost = !/(順調|良|でき|great|good|solid|well)/i.test(sanitizedHeadline);
 
   const advice = report.advice.map((item, index) => {
+    const detail = sanitize(item.detail);
+    const title = sanitize(item.title);
     if (index > 0 || item.detail.startsWith(encouragementPrefix)) {
-      return item;
+      return {
+        ...item,
+        title,
+        detail,
+      };
     }
     return {
       ...item,
-      detail: `${encouragementPrefix} ${item.detail}`.trim(),
+      title,
+      detail: sanitize(`${encouragementPrefix} ${detail}`),
     };
   });
 
@@ -4289,12 +4306,18 @@ function normalizeReportTone(report: AiReportContent, locale: Locale): AiReportC
     ...report,
     summary: {
       ...report.summary,
-      headline: headlineNeedsBoost ? `${positiveLead} ${report.summary.headline}` : report.summary.headline,
+      headline: headlineNeedsBoost ? sanitize(`${positiveLead} ${sanitizedHeadline}`) : sanitizedHeadline,
       highlights:
         normalizedHighlights.length > 0
           ? normalizedHighlights
           : [preferJapanese ? '記録を続けることで精度が上がります。' : 'Consistency will improve accuracy.'],
     },
+    ingredients: report.ingredients
+      .map((item) => ({
+        name: sanitize(item.name),
+        reason: sanitize(item.reason),
+      }))
+      .filter((item) => item.name.length > 0 && item.reason.length > 0),
     advice,
   };
 }
