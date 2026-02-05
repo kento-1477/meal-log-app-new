@@ -49,8 +49,9 @@ export function createApp() {
       secret: env.SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
+      rolling: true,
       cookie: {
-        maxAge: 1000 * 60 * 60 * 24 * 30,
+        maxAge: 1000 * 60 * 60 * 24 * 90,
         httpOnly: true,
         sameSite: env.NODE_ENV === 'production' ? 'strict' : 'lax',
         secure: env.NODE_ENV === 'production',

@@ -5,10 +5,12 @@ import {
   LoginRequestSchema,
   AppleAuthRequestSchema,
 } from '@meal-log/shared';
+import type { UserProfile as PrismaUserProfile } from '@prisma/client';
 import { authenticateUser, findUserById, registerUser, upsertAppleUser, linkAppleAccount } from '../services/auth-service.js';
 import { evaluateAiUsage, summarizeUsageStatus } from '../services/ai-usage-service.js';
 import { ZodError, ZodIssue } from 'zod';
 import { prisma } from '../db/prisma.js';
+import { logger } from '../logger.js';
 import { authRateLimiter } from '../middleware/rate-limits.js';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { env } from '../env.js';
@@ -216,10 +218,80 @@ authRouter.get('/session', async (req, res, next) => {
 async function getOnboardingStatus(userId: number) {
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
   const completedAt = profile?.questionnaireCompletedAt ?? null;
+  if (completedAt) {
+    return {
+      completed: true,
+      completed_at: completedAt.toISOString(),
+    };
+  }
+
+  const inferredFromProfile = inferOnboardingCompletionFromProfile(profile);
+  if (inferredFromProfile) {
+    await safeBackfillOnboardingCompletion(userId, inferredFromProfile);
+    return {
+      completed: true,
+      completed_at: inferredFromProfile.toISOString(),
+    };
+  }
+
+  const firstLog = await prisma.mealLog.findFirst({
+    where: { userId },
+    select: { createdAt: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (firstLog?.createdAt) {
+    await safeBackfillOnboardingCompletion(userId, firstLog.createdAt);
+    return {
+      completed: true,
+      completed_at: firstLog.createdAt.toISOString(),
+    };
+  }
+
   return {
-    completed: Boolean(completedAt),
-    completed_at: completedAt?.toISOString() ?? null,
+    completed: false,
+    completed_at: null,
   };
+}
+
+function inferOnboardingCompletionFromProfile(profile: PrismaUserProfile | null) {
+  if (!profile) return null;
+
+  const hasSignals =
+    Boolean(profile.displayName) ||
+    Boolean(profile.gender) ||
+    Boolean(profile.birthdate) ||
+    profile.heightCm !== null ||
+    Boolean(profile.marketingSource) ||
+    Boolean(profile.referralCode) ||
+    (profile.goals?.length ?? 0) > 0 ||
+    profile.currentWeightKg !== null ||
+    profile.targetWeightKg !== null ||
+    profile.planIntensity !== null ||
+    profile.targetDate !== null ||
+    profile.activityLevel !== null ||
+    profile.bodyWeightKg !== null ||
+    profile.targetCalories !== null ||
+    profile.targetProteinG !== null ||
+    profile.targetFatG !== null ||
+    profile.targetCarbsG !== null;
+
+  if (!hasSignals) {
+    return null;
+  }
+
+  return profile.updatedAt ?? new Date();
+}
+
+async function safeBackfillOnboardingCompletion(userId: number, completedAt: Date) {
+  try {
+    await prisma.userProfile.upsert({
+      where: { userId },
+      update: { questionnaireCompletedAt: completedAt },
+      create: { userId, questionnaireCompletedAt: completedAt },
+    });
+  } catch (error) {
+    logger.warn({ userId, error }, 'Failed to backfill onboarding completion');
+  }
 }
 
 function regenerateSession(req: Request) {
