@@ -5,7 +5,7 @@ interface PrismaSessionStoreOptions {
   ttlMs?: number;
 }
 
-const DEFAULT_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
+const DEFAULT_TTL_MS = 1000 * 60 * 60 * 24 * 90; // 90 days
 
 function computeExpiration(sess: session.SessionData, fallbackTtl: number) {
   const cookieExpiry = sess.cookie?.expires ? new Date(sess.cookie.expires) : null;
