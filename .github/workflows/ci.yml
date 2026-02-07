@@ -8,6 +8,13 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -42,6 +49,11 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
       - name: Setup Python (for tooling parity with original workflow)
         uses: actions/setup-python@v5
         with:
@@ -56,14 +68,22 @@ jobs:
       - name: Run ESLint
         run: npx eslint . --max-warnings=0
 
-      - name: Run unit tests if present
-        run: npm test --if-present
+      - name: Run secret scan
+        run: npm run scan:secrets
+
+      - name: Run server unit tests
+        run: npm run test --workspace apps/server --if-present
+
+      - name: Run edge function tests
+        run: deno test --no-check --allow-env -c supabase/functions/deno.json supabase/functions/meal-log/report-release.test.ts
+
       - name: Run integration tests
         run: npm run test:integration
         env:
           USER_TIER_OVERRIDE: PREMIUM
 
       - name: Run golem regression tests
+        if: github.event_name == 'push'
         run: npm run test:golem
 
   mobile-tests:
