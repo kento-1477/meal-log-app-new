@@ -10,10 +10,12 @@ import { getDashboardSummary, invalidateDashboardCacheForUser } from '../src/ser
 const prismaAny = prisma;
 const originalFindMany = prismaAny.mealLog.findMany;
 const originalAggregate = prismaAny.mealLog.aggregate;
+const originalUserProfileFindUnique = prismaAny.userProfile.findUnique;
 
 test.afterEach(() => {
   prismaAny.mealLog.findMany = originalFindMany;
   prismaAny.mealLog.aggregate = originalAggregate;
+  prismaAny.userProfile.findUnique = originalUserProfileFindUnique;
   invalidateDashboardCacheForUser();
   Settings.now = undefined;
 });
@@ -37,6 +39,7 @@ test('dashboard summary resolves under 300ms for 4-week window with 5000 logs', 
       { calories: 0, proteinG: 0, fatG: 0, carbsG: 0 },
     ),
   });
+  prismaAny.userProfile.findUnique = async () => null;
 
   const t0 = performance.now();
   const summary = await getDashboardSummary({ userId: 42, period: 'thisWeek' });

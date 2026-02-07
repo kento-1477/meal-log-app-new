@@ -159,6 +159,12 @@ export type OnboardingEventPayload = {
   metadata?: Record<string, unknown> | null;
 };
 
+export type AnalyticsEventPayload = {
+  eventName: string;
+  sessionId?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
   if (!timeoutMs || timeoutMs <= 0 || typeof AbortController === 'undefined' || init.signal) {
     return fetch(url, init);
@@ -580,6 +586,13 @@ export async function postOnboardingEvent(payload: OnboardingEventPayload) {
   });
 }
 
+export async function postAnalyticsEvent(payload: AnalyticsEventPayload) {
+  return apiFetch<{ ok: boolean }>('/api/analytics/events', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function getDailySummary(days = 7) {
   const locale = getLocale();
   return apiFetch<{ ok: boolean; today: unknown; daily: any[] }>(
@@ -658,11 +671,18 @@ export async function getLogsExport(range: ExportRange, anchor?: string) {
   }>(`/api/logs/export?${params.toString()}`, { method: 'GET' });
 }
 
-export async function getDashboardSummary(period: DashboardPeriod, range?: { from: string; to: string }) {
+export async function getDashboardSummary(
+  period: DashboardPeriod,
+  range?: { from: string; to: string },
+  timezone?: string,
+) {
   const params = new URLSearchParams({ period });
   if (period === 'custom' && range) {
     params.set('from', range.from);
     params.set('to', range.to);
+  }
+  if (timezone) {
+    params.set('timezone', timezone);
   }
   params.set('locale', getLocale());
 

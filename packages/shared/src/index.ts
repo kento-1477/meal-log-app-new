@@ -247,10 +247,14 @@ export type AiReportFocusArea = z.infer<typeof AiReportFocusAreaSchema>;
 export const AiReportAdviceStyleSchema = z.enum(['simple', 'concrete', 'motivational']);
 export type AiReportAdviceStyle = z.infer<typeof AiReportAdviceStyleSchema>;
 
+export const AiReportVoiceModeSchema = z.enum(['gentle', 'balanced', 'sharp']);
+export type AiReportVoiceMode = z.infer<typeof AiReportVoiceModeSchema>;
+
 export const AiReportPreferenceSchema = z.object({
   goal: AiReportGoalSchema,
   focusAreas: z.array(AiReportFocusAreaSchema).min(1).max(3),
   adviceStyle: AiReportAdviceStyleSchema,
+  voiceMode: AiReportVoiceModeSchema.optional(),
   updatedAt: z.string().optional(),
 });
 export type AiReportPreference = z.infer<typeof AiReportPreferenceSchema>;
