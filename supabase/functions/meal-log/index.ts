@@ -21,6 +21,7 @@ import type {
   AiReportPreferenceInput,
   AiReportGoal,
   AiReportComparison,
+  AiReportVoiceMode,
   HedgeAttemptReport,
 } from '@shared/index.js';
 import {
@@ -107,10 +108,18 @@ const REPORT_WORKER_SECRET = Deno.env.get('REPORT_WORKER_SECRET') ?? '';
 const REPORT_WORKER_ALLOW_ANON = (Deno.env.get('REPORT_WORKER_ALLOW_ANON') ?? '').toLowerCase() === 'true';
 const REPORT_RETRY_MAX = 2;
 const REPORT_PROCESSING_STALE_MS = Number(Deno.env.get('REPORT_PROCESSING_STALE_MS') ?? '180000');
+const REPORT_VOICE_MODE_ENABLED = (Deno.env.get('REPORT_VOICE_MODE_ENABLED') ?? 'true').toLowerCase() !== 'false';
+const REPORT_REQUEST_TIMEZONE_ENABLED = (Deno.env.get('REPORT_REQUEST_TIMEZONE_ENABLED') ?? 'true').toLowerCase() !== 'false';
+const REPORT_VOICE_MODE_ROLLOUT_PERCENT = parseRolloutPercent(Deno.env.get('REPORT_VOICE_MODE_ROLLOUT_PERCENT'), 100);
+const REPORT_REQUEST_TIMEZONE_ROLLOUT_PERCENT = parseRolloutPercent(
+  Deno.env.get('REPORT_REQUEST_TIMEZONE_ROLLOUT_PERCENT'),
+  100,
+);
 const DEFAULT_REPORT_PREFERENCE: AiReportPreferenceInput = {
   goal: 'maintain',
   focusAreas: ['habit'],
   adviceStyle: 'concrete',
+  voiceMode: 'balanced',
 };
 const REPORT_LOW_SCORE_THRESHOLD = 45;
 const REPORT_HIGH_SCORE_THRESHOLD = 85;
@@ -128,6 +137,64 @@ const FOOD_CATALOGUE = [
 ] as const;
 
 const toMealPeriodLabel = (period: string | null | undefined) => (period ? period.toLowerCase() : null);
+
+function parseRolloutPercent(rawValue: string | undefined, fallback: number): number {
+  const parsed = Number(rawValue ?? fallback);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(0, Math.min(100, Math.trunc(parsed)));
+}
+
+function resolveUserRolloutBucket(userId: number): number {
+  const normalized = Math.max(0, Math.trunc(userId));
+  return Number((BigInt(normalized) * 2654435761n) % 100n);
+}
+
+function isFeatureEnabledForUser(baseEnabled: boolean, rolloutPercent: number, userId: number): boolean {
+  if (!baseEnabled) {
+    return false;
+  }
+  if (rolloutPercent >= 100) {
+    return true;
+  }
+  if (rolloutPercent <= 0) {
+    return false;
+  }
+  return resolveUserRolloutBucket(userId) < rolloutPercent;
+}
+
+async function getUserTimezoneFallback(userId: number): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('NotificationSettings')
+    .select('timezone')
+    .eq('userId', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('timezone fallback: notification settings fetch failed', { userId, error });
+    return null;
+  }
+
+  const timezone = (data as { timezone?: unknown } | null)?.timezone;
+  if (typeof timezone !== 'string' || timezone.trim().length === 0) {
+    return null;
+  }
+  return normalizeTimezone(timezone);
+}
+
+async function resolveRequestTimezoneForUser(
+  request: Request,
+  userId: number,
+  options: { queryField?: string; headerName?: string; fallback?: string } = {},
+): Promise<string> {
+  if (!isFeatureEnabledForUser(REPORT_REQUEST_TIMEZONE_ENABLED, REPORT_REQUEST_TIMEZONE_ROLLOUT_PERCENT, userId)) {
+    return normalizeTimezone(options.fallback ?? DASHBOARD_TIMEZONE);
+  }
+  const userFallbackTimezone = await getUserTimezoneFallback(userId);
+  const fallback = userFallbackTimezone ?? options.fallback ?? DASHBOARD_TIMEZONE;
+  return resolveRequestTimezone(request, { ...options, fallback });
+}
 
 type LogsRangeKey = 'today' | 'week' | 'twoWeeks' | 'threeWeeks' | 'month' | 'threeMonths';
 
@@ -229,6 +296,20 @@ const OnboardingEventSchema = z.object({
   metadata: z.record(z.unknown()).optional().nullable(),
 });
 
+const AnalyticsEventSchema = z.object({
+  eventName: z.enum([
+    'report.preference_saved',
+    'report.generate_requested',
+    'report.generate_completed',
+    'report.voice_mode_switched',
+    'report.details_expanded',
+    'report.shared',
+    'report.feedback_submitted',
+  ]),
+  sessionId: z.string().min(1).max(64).optional().nullable(),
+  metadata: z.record(z.unknown()).optional().nullable(),
+});
+
 app.get('/health', (c) => c.json({ ok: true, service: 'meal-log' }));
 
 // Premium status (simple placeholder based on isPremium + grants)
@@ -306,6 +387,38 @@ app.post('/api/onboarding/events', async (c) => {
   if (error) {
     console.error('onboarding events: insert failed', error);
     throw new HttpError('オンボーディングの記録に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
+  }
+
+  return c.json({ ok: true }, HTTP_STATUS.CREATED);
+});
+
+app.post('/api/analytics/events', async (c) => {
+  const body = AnalyticsEventSchema.parse(await c.req.json());
+  const session = await getAuthSession(c);
+  const deviceId = c.req.header('x-device-id') ?? null;
+
+  const metadata = {
+    ...(body.metadata ?? {}),
+    locale: c.req.header('accept-language') ?? undefined,
+    timezone: c.req.header('x-timezone') ?? undefined,
+    userAgent: c.req.header('user-agent') ?? undefined,
+  };
+  const cleanedMetadata = Object.fromEntries(
+    Object.entries(metadata).filter(([, value]) => value !== undefined && value !== null && value !== ''),
+  );
+  const metadataPayload = Object.keys(cleanedMetadata).length > 0 ? cleanedMetadata : null;
+
+  const { error } = await supabaseAdmin.from('AnalyticsEvent').insert({
+    eventName: body.eventName,
+    sessionId: body.sessionId ?? null,
+    userId: session?.user.id ?? null,
+    deviceId,
+    metadata: metadataPayload,
+  });
+
+  if (error) {
+    console.error('analytics events: insert failed', error);
+    throw new HttpError('分析イベントの記録に失敗しました', { status: HTTP_STATUS.INTERNAL_ERROR });
   }
 
   return c.json({ ok: true }, HTTP_STATUS.CREATED);
@@ -398,7 +511,7 @@ app.delete('/api/user/account', requireAuth, async (c) => {
 app.get('/api/logs', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
   const locale = resolveRequestLocale(c.req.raw);
-  const timezone = resolveRequestTimezone(c.req.raw, { fallback: DASHBOARD_TIMEZONE });
+  const timezone = await resolveRequestTimezoneForUser(c.req.raw, user.id, { fallback: DASHBOARD_TIMEZONE });
   const query = logsQuerySchema.safeParse(Object.fromEntries(new URL(c.req.url).searchParams.entries()));
   if (!query.success) {
     throw new HttpError('invalid query', { status: HTTP_STATUS.BAD_REQUEST, expose: true, data: query.error.flatten() });
@@ -565,7 +678,10 @@ const handleCreateLog = async (c: Context) => {
   const idempotencyKey = c.req.header('Idempotency-Key') ?? undefined;
   const appVersion = c.req.header('X-App-Version') ?? undefined;
   const locale = resolveRequestLocale(c.req.raw, { queryField: 'locale' });
-  const timezone = resolveRequestTimezone(c.req.raw, { queryField: 'timezone', fallback: DASHBOARD_TIMEZONE });
+  const timezone = await resolveRequestTimezoneForUser(c.req.raw, user.id, {
+    queryField: 'timezone',
+    fallback: DASHBOARD_TIMEZONE,
+  });
 
   const response = await processMealLog({
     userId: user.id,
@@ -1088,11 +1204,16 @@ app.get('/api/dashboard/summary', requireAuth, async (c) => {
   if (!parsed.success) {
     throw new HttpError('invalid query', { status: HTTP_STATUS.BAD_REQUEST, expose: true, data: parsed.error.flatten() });
   }
+  const timezone = await resolveRequestTimezoneForUser(c.req.raw, user.id, {
+    queryField: 'timezone',
+    fallback: DASHBOARD_TIMEZONE,
+  });
   const summary = await getDashboardSummary({
     userId: user.id,
     period: parsed.data.period,
     from: parsed.data.from,
     to: parsed.data.to,
+    timezone,
   });
   const payload = { ok: true, summary } as const;
   DashboardSummarySchema.parse(summary);
@@ -1108,7 +1229,10 @@ app.get('/api/reports/calendar', requireAuth, async (c) => {
     throw new HttpError('invalid query', { status: HTTP_STATUS.BAD_REQUEST, expose: true, data: parsed.error.flatten() });
   }
 
-  const timezone = resolveRequestTimezone(c.req.raw, { queryField: 'timezone', fallback: DASHBOARD_TIMEZONE });
+  const timezone = await resolveRequestTimezoneForUser(c.req.raw, user.id, {
+    queryField: 'timezone',
+    fallback: DASHBOARD_TIMEZONE,
+  });
   const fromDate = DateTime.fromISO(parsed.data.from, { zone: timezone }).startOf('day');
   const toDate = DateTime.fromISO(parsed.data.to, { zone: timezone }).startOf('day').plus({ days: 1 });
   if (!fromDate.isValid || !toDate.isValid) {
@@ -1202,11 +1326,15 @@ app.post('/api/reports', requireAuth, async (c) => {
   }
 
   const locale = resolveRequestLocale(c.req.raw);
-  const resolvedRange = resolveReportRange(parsed.data.period, parsed.data.range);
+  const requestTimezone = await resolveRequestTimezoneForUser(c.req.raw, user.id, {
+    queryField: 'timezone',
+    fallback: DASHBOARD_TIMEZONE,
+  });
+  const resolvedRange = resolveReportRange(parsed.data.period, parsed.data.range, requestTimezone);
   let preferenceSnapshot: AiReportPreferenceInput = DEFAULT_REPORT_PREFERENCE;
   if (parsed.data.preferenceOverride) {
-    preferenceSnapshot = parsed.data.preferenceOverride;
-    await upsertUserReportPreference(user.id, parsed.data.preferenceOverride);
+    const saved = await upsertUserReportPreference(user.id, parsed.data.preferenceOverride);
+    preferenceSnapshot = saved.preference;
   } else {
     const preference = await getUserReportPreference(user.id);
     preferenceSnapshot = preference.preference;
@@ -1396,7 +1524,7 @@ app.get('/api/reports', requireAuth, async (c) => {
     throw new HttpError('レポートを取得できませんでした', { status: HTTP_STATUS.INTERNAL_ERROR });
   }
 
-  const items = (data ?? []).map(mapReportRequestRow);
+  const items = (data ?? []).map((row) => mapReportRequestRow(row, { userId: user.id }));
   return c.json({ ok: true, items });
 });
 
@@ -1483,7 +1611,7 @@ app.get('/api/reports/:id', requireAuth, async (c) => {
       }
     }
   }
-  return c.json({ ok: true, request: mapReportRequestRow(requestRow) });
+  return c.json({ ok: true, request: mapReportRequestRow(requestRow, { userId: user.id }) });
 });
 
 app.post('/api/reports/:id/cancel', requireAuth, async (c) => {
@@ -1561,7 +1689,11 @@ app.get('/api/calories', requireAuth, async (c) => {
 
 app.get('/api/streak', requireAuth, async (c) => {
   const user = c.get('user') as JwtUser;
-  const streak = await getUserStreak(user.id);
+  const timezone = await resolveRequestTimezoneForUser(c.req.raw, user.id, {
+    queryField: 'timezone',
+    fallback: DASHBOARD_TIMEZONE,
+  });
+  const streak = await getUserStreak(user.id, timezone);
   return c.json({ ok: true, streak });
 });
 
@@ -3650,8 +3782,15 @@ function favoriteToGeminiResponse(favorite: FavoriteMeal): GeminiNutritionRespon
   };
 }
 
-async function getDashboardSummary(params: { userId: number; period: string; from?: string; to?: string }) {
-  const { range } = resolveRangeWithCustom(params.period, DASHBOARD_TIMEZONE, params.from, params.to);
+async function getDashboardSummary(params: {
+  userId: number;
+  period: string;
+  from?: string;
+  to?: string;
+  timezone?: string;
+}) {
+  const resolvedTimezone = normalizeTimezone(params.timezone ?? DASHBOARD_TIMEZONE);
+  const { range } = resolveRangeWithCustom(params.period, resolvedTimezone, params.from, params.to);
 
   const { data: logsData, error } = await supabaseAdmin
     .from('MealLog')
@@ -3676,14 +3815,14 @@ async function getDashboardSummary(params: { userId: number; period: string; fro
       mealPeriod: row.mealPeriod,
     })) ?? [];
 
-  const today = DateTime.now().setZone(DASHBOARD_TIMEZONE).startOf('day');
+  const today = DateTime.now().setZone(resolvedTimezone).startOf('day');
   const includesToday = range.fromDate <= today && range.toDate > today;
 
   const todayTotalsPromise = includesToday
     ? Promise.resolve(
         logs.reduce(
           (acc, log) => {
-            const dayKey = DateTime.fromJSDate(log.createdAt, { zone: DASHBOARD_TIMEZONE }).startOf('day').toISODate();
+            const dayKey = DateTime.fromJSDate(log.createdAt, { zone: resolvedTimezone }).startOf('day').toISODate();
             if (dayKey !== today.toISODate()) {
               return acc;
             }
@@ -3697,13 +3836,13 @@ async function getDashboardSummary(params: { userId: number; period: string; fro
           { calories: 0, protein_g: 0, fat_g: 0, carbs_g: 0 },
         ),
       )
-    : fetchTodayTotals(params.userId, DASHBOARD_TIMEZONE);
+    : fetchTodayTotals(params.userId, resolvedTimezone);
   const dailyTargetsPromise = resolveUserTargets(params.userId);
   const [todayTotals, dailyTargets] = await Promise.all([todayTotalsPromise, dailyTargetsPromise]);
   const summary = buildDashboardSummary({
     logs,
     range,
-    timezone: DASHBOARD_TIMEZONE,
+    timezone: resolvedTimezone,
     todayTotals,
     dailyTargets,
   });
@@ -3711,7 +3850,7 @@ async function getDashboardSummary(params: { userId: number; period: string; fro
   return {
     ...summary,
     metadata: {
-      generatedAt: DateTime.now().setZone(DASHBOARD_TIMEZONE).toISO(),
+      generatedAt: DateTime.now().setZone(resolvedTimezone).toISO(),
     },
   };
 }
@@ -3843,22 +3982,27 @@ function resolveReportSummaryParams(
   return { period: 'custom' as const, from, to };
 }
 
-function resolveReportRange(period: AiReportPeriod, range?: { from: string; to: string }) {
+function resolveReportRange(
+  period: AiReportPeriod,
+  range?: { from: string; to: string },
+  timezoneInput?: string,
+) {
+  const timezone = normalizeTimezone(timezoneInput ?? DASHBOARD_TIMEZONE);
   if (range?.from && range?.to) {
-    const { range: resolved } = resolveRangeWithCustom('custom', DASHBOARD_TIMEZONE, range.from, range.to);
+    const { range: resolved } = resolveRangeWithCustom('custom', timezone, range.from, range.to);
     return {
       from: resolved.fromDate.toISODate() ?? range.from,
       to: resolved.toDate.minus({ days: 1 }).toISODate() ?? range.to,
-      timezone: DASHBOARD_TIMEZONE,
+      timezone,
     };
   }
 
   const params = resolveReportSummaryParams(period);
-  const { range: resolved } = resolveRangeWithCustom(params.period, DASHBOARD_TIMEZONE, params.from, params.to);
+  const { range: resolved } = resolveRangeWithCustom(params.period, timezone, params.from, params.to);
   return {
     from: resolved.fromDate.toISODate() ?? DateTime.fromJSDate(resolved.fromDate.toJSDate()).toISODate() ?? '',
     to: resolved.toDate.minus({ days: 1 }).toISODate() ?? DateTime.fromJSDate(resolved.toDate.toJSDate()).minus({ days: 1 }).toISODate() ?? '',
-    timezone: DASHBOARD_TIMEZONE,
+    timezone,
   };
 }
 
@@ -3880,7 +4024,7 @@ function mapReportRequestRow(row: {
   usageSnapshot?: unknown | null;
   createdAt?: string | null;
   updatedAt?: string | null;
-}) {
+}, options: { userId?: number } = {}) {
   const normalizedReport = normalizeStoredReport(row.report ?? null);
   return {
     id: row.id,
@@ -3891,7 +4035,7 @@ function mapReportRequestRow(row: {
       timezone: row.timezone,
     },
     status: row.status,
-    preference: normalizeReportPreference(row.preferenceSnapshot),
+    preference: normalizeReportPreference(row.preferenceSnapshot, { userId: options.userId }),
     report: normalizedReport,
     usage: (row.usageSnapshot ?? undefined) as ReturnType<typeof summarizeUsageStatus> | undefined,
     errorCode: row.errorCode ?? null,
@@ -3934,12 +4078,25 @@ function normalizeStoredReport(value: unknown): AiReportResponse | null {
   return null;
 }
 
-function normalizeReportPreference(value: unknown): AiReportPreferenceInput {
+function normalizeReportPreference(value: unknown, options: { userId?: number } = {}): AiReportPreferenceInput {
+  const voiceModeEnabled =
+    typeof options.userId === 'number'
+      ? isFeatureEnabledForUser(REPORT_VOICE_MODE_ENABLED, REPORT_VOICE_MODE_ROLLOUT_PERCENT, options.userId)
+      : REPORT_VOICE_MODE_ENABLED;
+  const resolveVoiceMode = (mode: AiReportVoiceMode | undefined): AiReportVoiceMode =>
+    voiceModeEnabled ? mode ?? 'balanced' : 'balanced';
+
   const parsed = AiReportPreferenceInputSchema.safeParse(value);
   if (parsed.success) {
-    return parsed.data;
+    return {
+      ...parsed.data,
+      voiceMode: resolveVoiceMode(parsed.data.voiceMode),
+    };
   }
-  return DEFAULT_REPORT_PREFERENCE;
+  return {
+    ...DEFAULT_REPORT_PREFERENCE,
+    voiceMode: resolveVoiceMode(DEFAULT_REPORT_PREFERENCE.voiceMode),
+  };
 }
 
 function derivePreferenceFromOnboardingGoals(goals: unknown): AiReportPreferenceInput | null {
@@ -3982,11 +4139,13 @@ function derivePreferenceFromOnboardingGoals(goals: unknown): AiReportPreference
     : normalized.includes('HABIT_BUILDING')
       ? 'simple'
       : 'concrete';
+  const voiceMode: AiReportVoiceMode = adviceStyle === 'motivational' ? 'gentle' : 'balanced';
 
   return {
     goal,
     focusAreas: Array.from(focusAreas).slice(0, 3),
     adviceStyle,
+    voiceMode,
   };
 }
 
@@ -4021,7 +4180,7 @@ async function getUserReportPreference(userId: number): Promise<{
 }> {
   const { data, error } = await supabaseAdmin
     .from('UserReportPreference')
-    .select('goal, focusAreas, adviceStyle, updatedAt')
+    .select('goal, focusAreas, adviceStyle, voiceMode, updatedAt')
     .eq('userId', userId)
     .maybeSingle();
 
@@ -4030,13 +4189,13 @@ async function getUserReportPreference(userId: number): Promise<{
     const derived = await getDerivedPreferenceFromProfile(userId);
     if (derived) {
       return {
-        preference: derived.preference,
+        preference: normalizeReportPreference(derived.preference, { userId }),
         configured: true,
         updatedAt: derived.updatedAt,
       };
     }
     return {
-      preference: DEFAULT_REPORT_PREFERENCE,
+      preference: normalizeReportPreference(DEFAULT_REPORT_PREFERENCE, { userId }),
       configured: false,
     };
   }
@@ -4045,13 +4204,13 @@ async function getUserReportPreference(userId: number): Promise<{
     const derived = await getDerivedPreferenceFromProfile(userId);
     if (derived) {
       return {
-        preference: derived.preference,
+        preference: normalizeReportPreference(derived.preference, { userId }),
         configured: true,
         updatedAt: derived.updatedAt,
       };
     }
     return {
-      preference: DEFAULT_REPORT_PREFERENCE,
+      preference: normalizeReportPreference(DEFAULT_REPORT_PREFERENCE, { userId }),
       configured: false,
     };
   }
@@ -4061,7 +4220,8 @@ async function getUserReportPreference(userId: number): Promise<{
       goal: data.goal,
       focusAreas: data.focusAreas,
       adviceStyle: data.adviceStyle,
-    }),
+      voiceMode: (data as { voiceMode?: unknown }).voiceMode,
+    }, { userId }),
     configured: true,
     updatedAt: data.updatedAt ?? undefined,
   };
@@ -4072,7 +4232,7 @@ async function upsertUserReportPreference(userId: number, preference: AiReportPr
   updatedAt: string;
 }> {
   const nowIso = new Date().toISOString();
-  const payload = normalizeReportPreference(preference);
+  const payload = normalizeReportPreference(preference, { userId });
   const { data, error } = await supabaseAdmin
     .from('UserReportPreference')
     .upsert(
@@ -4081,11 +4241,12 @@ async function upsertUserReportPreference(userId: number, preference: AiReportPr
         goal: payload.goal,
         focusAreas: payload.focusAreas,
         adviceStyle: payload.adviceStyle,
+        voiceMode: payload.voiceMode,
         updatedAt: nowIso,
       },
       { onConflict: 'userId' },
     )
-    .select('goal, focusAreas, adviceStyle, updatedAt')
+    .select('goal, focusAreas, adviceStyle, voiceMode, updatedAt')
     .single();
 
   if (error || !data) {
@@ -4094,7 +4255,7 @@ async function upsertUserReportPreference(userId: number, preference: AiReportPr
   }
 
   return {
-    preference: normalizeReportPreference(data),
+    preference: normalizeReportPreference(data, { userId }),
     updatedAt: data.updatedAt ?? nowIso,
   };
 }
@@ -4262,7 +4423,11 @@ function buildComparison(
   };
 }
 
-function normalizeReportTone(report: AiReportContent, locale: Locale): AiReportContent {
+function normalizeReportTone(
+  report: AiReportContent,
+  locale: Locale,
+  voiceMode: AiReportVoiceMode = 'balanced',
+): AiReportContent {
   const sanitize = (value: string) =>
     value
       .normalize('NFKC')
@@ -4270,8 +4435,35 @@ function normalizeReportTone(report: AiReportContent, locale: Locale): AiReportC
       .trim();
 
   const preferJapanese = locale.toLowerCase().startsWith('ja');
-  const positiveLead = preferJapanese ? '継続できている点がしっかりあります。' : 'You are making steady progress.';
-  const encouragementPrefix = preferJapanese ? 'よく取り組めています。' : 'You are doing well.';
+  const toneByMode: Record<
+    AiReportVoiceMode,
+    {
+      positiveLead: string;
+      encouragementPrefix: string;
+      sharpLead: string;
+      fallbackHighlight: string;
+    }
+  > = {
+    gentle: {
+      positiveLead: preferJapanese ? 'ここまで続けられているのは大きな強みです。' : 'You have built solid momentum already.',
+      encouragementPrefix: preferJapanese ? 'まず良い点として、' : 'First, credit where it is due,',
+      sharpLead: preferJapanese ? '次の一歩:' : 'Next step:',
+      fallbackHighlight: preferJapanese ? '記録を続けるほど提案があなた向けになります。' : 'The more consistently you log, the more personal this gets.',
+    },
+    balanced: {
+      positiveLead: preferJapanese ? '継続できている点がしっかりあります。' : 'You are making steady progress.',
+      encouragementPrefix: preferJapanese ? 'よく取り組めています。' : 'You are doing well.',
+      sharpLead: preferJapanese ? '優先アクション:' : 'Priority action:',
+      fallbackHighlight: preferJapanese ? '記録を続けることで精度が上がります。' : 'Consistency will improve accuracy.',
+    },
+    sharp: {
+      positiveLead: preferJapanese ? '結論からいきます。' : 'Straight to the point.',
+      encouragementPrefix: '',
+      sharpLead: preferJapanese ? '最優先で修正:' : 'Top fix:',
+      fallbackHighlight: preferJapanese ? '次回は同じ時間帯の食事を1件追加して傾向を確定させましょう。' : 'Log one more meal in the same time slot to lock in the trend.',
+    },
+  };
+  const tone = toneByMode[voiceMode];
   const negativeHint = preferJapanese
     ? /(不足|少な|過多|悪化|課題|できていない|落ち)/
     : /(low|lack|insufficient|too much|worse|issue|problem|decline)/i;
@@ -4282,13 +4474,32 @@ function normalizeReportTone(report: AiReportContent, locale: Locale): AiReportC
     .filter((item) => item.length > 0);
   const positives = sanitizedHighlights.filter((item) => !negativeHint.test(item));
   const negatives = sanitizedHighlights.filter((item) => negativeHint.test(item));
-  const normalizedHighlights = [...positives.slice(0, 2), ...negatives.slice(0, 1)];
-  const headlineNeedsBoost = !/(順調|良|でき|great|good|solid|well)/i.test(sanitizedHeadline);
+  const normalizedHighlights =
+    voiceMode === 'sharp'
+      ? [...negatives.slice(0, 2), ...positives.slice(0, 1)]
+      : voiceMode === 'gentle'
+        ? [...positives.slice(0, 2), ...negatives.slice(0, 1)]
+        : [...positives.slice(0, 1), ...negatives.slice(0, 2)];
+  const headlineNeedsBoost = !/(順調|良|でき|great|good|solid|well|point|結論)/i.test(sanitizedHeadline);
 
   const advice = report.advice.map((item, index) => {
     const detail = sanitize(item.detail);
     const title = sanitize(item.title);
-    if (index > 0 || item.detail.startsWith(encouragementPrefix)) {
+    if (voiceMode === 'sharp') {
+      if (index > 0 || detail.startsWith(tone.sharpLead)) {
+        return {
+          ...item,
+          title,
+          detail,
+        };
+      }
+      return {
+        ...item,
+        title,
+        detail: sanitize(`${tone.sharpLead} ${detail}`),
+      };
+    }
+    if (index > 0 || item.detail.startsWith(tone.encouragementPrefix)) {
       return {
         ...item,
         title,
@@ -4298,7 +4509,7 @@ function normalizeReportTone(report: AiReportContent, locale: Locale): AiReportC
     return {
       ...item,
       title,
-      detail: sanitize(`${encouragementPrefix} ${detail}`),
+      detail: sanitize(`${tone.encouragementPrefix} ${detail}`),
     };
   });
 
@@ -4306,11 +4517,11 @@ function normalizeReportTone(report: AiReportContent, locale: Locale): AiReportC
     ...report,
     summary: {
       ...report.summary,
-      headline: headlineNeedsBoost ? sanitize(`${positiveLead} ${sanitizedHeadline}`) : sanitizedHeadline,
+      headline: headlineNeedsBoost ? sanitize(`${tone.positiveLead} ${sanitizedHeadline}`) : sanitizedHeadline,
       highlights:
         normalizedHighlights.length > 0
           ? normalizedHighlights
-          : [preferJapanese ? '記録を続けることで精度が上がります。' : 'Consistency will improve accuracy.'],
+          : [tone.fallbackHighlight],
     },
     ingredients: report.ingredients
       .map((item) => ({
@@ -4636,7 +4847,7 @@ function formatTrendLabel(dateTime: DateTime, locale?: string) {
   return `${monthDay} (${weekday})`;
 }
 
-async function getUserStreak(userId: number) {
+async function getUserStreak(userId: number, timezoneInput?: string) {
   const { data: rows, error } = await supabaseAdmin
     .from('MealLog')
     .select('createdAt')
@@ -4653,7 +4864,7 @@ async function getUserStreak(userId: number) {
     return { current: 0, longest: 0, lastLoggedAt: null };
   }
 
-  const timezone = DASHBOARD_TIMEZONE;
+  const timezone = normalizeTimezone(timezoneInput ?? DASHBOARD_TIMEZONE);
   const uniqueDays: DateTime[] = [];
   let lastKey: string | null = null;
   for (const log of rows) {
@@ -4771,6 +4982,23 @@ function buildReportPrompt(context: ReturnType<typeof buildReportContext>, local
   const languageInstruction = preferJapanese
     ? 'Use Japanese for all text fields.'
     : 'Use English (United States) for all text fields.';
+  const voiceMode = context.preference.voiceMode ?? 'balanced';
+  const voiceInstruction =
+    voiceMode === 'gentle'
+      ? `Voice mode: gentle.
+- Be warm and supportive.
+- Keep corrections soft and practical.
+- Emphasize progress before risks.`
+      : voiceMode === 'sharp'
+        ? `Voice mode: sharp.
+- Start with the highest-priority issue.
+- Be direct, concrete, and brief.
+- Name one top action clearly.
+- Never insult, shame, or attack the user's personality. Critique behaviors only.`
+        : `Voice mode: balanced.
+- Be factual and constructive.
+- Balance encouragement with correction.
+- Keep recommendations specific and actionable.`;
   return `You are a nutrition coach. Summarize the user's eating patterns based on the JSON data.
 Return ONLY valid JSON that matches this TypeScript type:
 {
@@ -4794,6 +5022,7 @@ Rules:
 - If comparison exists, mention a concrete progress delta.
 - Never invent data that is not present in the input JSON.
 ${languageInstruction}
+${voiceInstruction}
 JSON input: ${JSON.stringify(context)}`;
 }
 
@@ -4877,7 +5106,19 @@ function buildIngredientSuggestions(
 
 function buildReportMock(context: ReturnType<typeof buildReportContext>, locale: Locale): AiReportContent {
   const preferJapanese = locale.toLowerCase().startsWith('ja');
-  const headline = preferJapanese ? '記録の要約' : 'Summary of your logs';
+  const voiceMode = context.preference.voiceMode ?? 'balanced';
+  const headline =
+    voiceMode === 'sharp'
+      ? preferJapanese
+        ? '最優先の改善点があります'
+        : 'There is one priority fix'
+      : voiceMode === 'gentle'
+        ? preferJapanese
+          ? 'ここまでの頑張りを要約します'
+          : 'A supportive summary of your progress'
+        : preferJapanese
+          ? '記録の要約'
+          : 'Summary of your logs';
   const highlights = preferJapanese
     ? ['記録日数が少ないため傾向は控えめに評価']
     : ['Limited logs, trends are shown cautiously'];
@@ -4906,16 +5147,22 @@ function buildReportMock(context: ReturnType<typeof buildReportContext>, locale:
   const advice = preferJapanese
     ? [
         {
-          priority: 'medium',
-          title: '記録の継続を優先',
-          detail: 'まずは1日1回の記録でデータを増やすと、より精度の高い傾向が出せます。',
+          priority: voiceMode === 'sharp' ? 'high' : 'medium',
+          title: voiceMode === 'sharp' ? 'まず記録頻度を上げる' : '記録の継続を優先',
+          detail:
+            voiceMode === 'sharp'
+              ? '最優先で、毎日1件の記録を固定してください。データ不足が改善されると分析精度が上がります。'
+              : 'まずは1日1回の記録でデータを増やすと、より精度の高い傾向が出せます。',
         },
       ]
     : [
         {
-          priority: 'medium',
-          title: 'Keep logging consistently',
-          detail: 'Log at least one meal per day to improve trend accuracy.',
+          priority: voiceMode === 'sharp' ? 'high' : 'medium',
+          title: voiceMode === 'sharp' ? 'Increase logging frequency first' : 'Keep logging consistently',
+          detail:
+            voiceMode === 'sharp'
+              ? 'Top fix: lock in at least one meal log every day. More data is required for reliable analysis.'
+              : 'Log at least one meal per day to improve trend accuracy.',
         },
       ];
 
@@ -5068,6 +5315,12 @@ async function analyzeReportWithGemini(params: {
   const attempt = async (model: string, attemptNumber: number) => {
     const url = new URL(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent`);
     url.searchParams.set('key', apiKey);
+    const voiceMode = params.context.preference.voiceMode ?? 'balanced';
+    const temperatureByMode: Record<AiReportVoiceMode, number> = {
+      gentle: 0.24,
+      balanced: 0.2,
+      sharp: 0.34,
+    };
 
     const requestBody: Record<string, unknown> = {
       contents: [
@@ -5077,7 +5330,7 @@ async function analyzeReportWithGemini(params: {
         },
       ],
       generationConfig: {
-        temperature: 0.2,
+        temperature: temperatureByMode[voiceMode],
         topK: 32,
         topP: 0.8,
         responseMimeType: 'application/json',
@@ -5389,8 +5642,9 @@ async function processReportRequest(request: {
       period: 'custom',
       from: request.rangeStart,
       to: request.rangeEnd,
+      timezone: request.timezone,
     });
-    const preference = normalizeReportPreference(request.preferenceSnapshot);
+    const preference = normalizeReportPreference(request.preferenceSnapshot, { userId: request.userId });
     const comparisonRange = resolveComparisonRange(request.rangeStart, request.rangeEnd, request.timezone);
     let comparisonSummary: DashboardSummary | null = null;
     if (comparisonRange) {
@@ -5399,6 +5653,7 @@ async function processReportRequest(request: {
         period: 'custom',
         from: comparisonRange.from,
         to: comparisonRange.to,
+        timezone: request.timezone,
       });
     }
     const { data: previousReportRow } = await supabaseAdmin
@@ -5433,7 +5688,11 @@ async function processReportRequest(request: {
       context,
       locale: normalizeLocale(request.locale ?? DEFAULT_LOCALE),
     });
-    const normalizedReport = normalizeReportTone(analysis.report, normalizeLocale(request.locale ?? DEFAULT_LOCALE));
+    const normalizedReport = normalizeReportTone(
+      analysis.report,
+      normalizeLocale(request.locale ?? DEFAULT_LOCALE),
+      preference.voiceMode ?? 'balanced',
+    );
     const comparisonWithScore =
       comparison && previousScore != null
         ? {
@@ -5441,7 +5700,7 @@ async function processReportRequest(request: {
             scoreDelta: round(normalizedReport.summary.score - previousScore, 0),
           }
         : comparison;
-    const streak = await getUserStreak(request.userId);
+    const streak = await getUserStreak(request.userId, request.timezone);
     const uiMeta = buildReportUiMeta({
       period: request.period as AiReportPeriod,
       loggedDays: context.days.logged,
@@ -5979,3 +6238,17 @@ function buildMockResponse(message: string, locale: Locale): GeminiNutritionResp
     meta: { model: 'mock', translation: { locale } },
   };
 }
+
+export const __testables = {
+  parseRolloutPercent,
+  resolveUserRolloutBucket,
+  isFeatureEnabledForUser,
+  normalizeReportPreference,
+  buildReportPrompt,
+  normalizeReportTone,
+  resolveReportRange,
+  getDashboardSummary,
+  normalizeStoredReport,
+  getUserReportPreference,
+  upsertUserReportPreference,
+};

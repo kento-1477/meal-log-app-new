@@ -18,12 +18,13 @@ function getTodayKey() {
 
 export function useDashboardSummary(
   period: DashboardPeriod,
-  options?: { enabled?: boolean; range?: SummaryRange },
+  options?: { enabled?: boolean; range?: SummaryRange; timezone?: string },
 ) {
   const [cached, setCached] = useState<DashboardViewModel | null>(null);
   const enabled = options?.enabled ?? true;
   const { locale } = useTranslation();
   const rangeKey = options?.range ? `${options.range.from}:${options.range.to}` : null;
+  const timezoneKey = options?.timezone ?? null;
   const queryClient = useQueryClient();
 
   // 日付をトラッキングして、日付が変わったらキャッシュをクリアして再取得
@@ -60,7 +61,7 @@ export function useDashboardSummary(
       };
     }
     // 日付をキャッシュキーに含めることで、日付変更時に古いキャッシュを使わない
-    AsyncStorage.getItem(cacheKey(period, locale, rangeKey, todayKey)).then((value) => {
+    AsyncStorage.getItem(cacheKey(period, locale, rangeKey, timezoneKey, todayKey)).then((value) => {
       if (!cancelled && value) {
         try {
           const parsed = JSON.parse(value) as DashboardViewModel;
@@ -73,13 +74,13 @@ export function useDashboardSummary(
     return () => {
       cancelled = true;
     };
-  }, [period, enabled, locale, rangeKey, todayKey]);
+  }, [period, enabled, locale, rangeKey, timezoneKey, todayKey]);
 
   const summaryQuery = useQuery({
-    queryKey: ['dashboardSummary', period, locale, rangeKey, todayKey],
+    queryKey: ['dashboardSummary', period, locale, rangeKey, timezoneKey, todayKey],
     queryFn: async () => {
       const [summary, targets] = await Promise.all([
-        getDashboardSummary(period, options?.range),
+        getDashboardSummary(period, options?.range, options?.timezone),
         getDashboardTargets(),
       ]);
       return buildViewModel(summary, targets);
@@ -94,11 +95,11 @@ export function useDashboardSummary(
     if (!enabled || !summaryQuery.data) {
       return;
     }
-    AsyncStorage.setItem(cacheKey(period, locale, rangeKey, todayKey), JSON.stringify(summaryQuery.data)).catch((error) => {
+    AsyncStorage.setItem(cacheKey(period, locale, rangeKey, timezoneKey, todayKey), JSON.stringify(summaryQuery.data)).catch((error) => {
       console.warn('Failed to cache dashboard summary', error);
     });
     setCached(summaryQuery.data);
-  }, [enabled, summaryQuery.data, period, locale, rangeKey, todayKey]);
+  }, [enabled, summaryQuery.data, period, locale, rangeKey, timezoneKey, todayKey]);
 
   const data = liveData ?? cached;
 
@@ -113,8 +114,15 @@ export function useDashboardSummary(
   } as const;
 }
 
-function cacheKey(period: DashboardPeriod, locale: string, rangeKey: string | null, dateKey: string | null) {
-  return `${CACHE_PREFIX}${locale}:${period}:${dateKey ?? 'unknown'}${rangeKey ? `:${rangeKey}` : ''}`;
+function cacheKey(
+  period: DashboardPeriod,
+  locale: string,
+  rangeKey: string | null,
+  timezone: string | null,
+  dateKey: string | null,
+) {
+  const timezonePart = timezone ? `:${timezone}` : '';
+  return `${CACHE_PREFIX}${locale}:${period}:${dateKey ?? 'unknown'}${rangeKey ? `:${rangeKey}` : ''}${timezonePart}`;
 }
 
 export type {
@@ -127,4 +135,3 @@ export type {
   MacroComparison,
   PeriodComparison,
 } from './summaryShared';
-

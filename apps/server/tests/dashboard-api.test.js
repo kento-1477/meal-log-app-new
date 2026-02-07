@@ -9,10 +9,12 @@ import { getDashboardSummary, invalidateDashboardCacheForUser } from '../src/ser
 const prismaAny = prisma;
 const originalFindMany = prismaAny.mealLog.findMany;
 const originalAggregate = prismaAny.mealLog.aggregate;
+const originalUserProfileFindUnique = prismaAny.userProfile.findUnique;
 
 test.afterEach(() => {
   prismaAny.mealLog.findMany = originalFindMany;
   prismaAny.mealLog.aggregate = originalAggregate;
+  prismaAny.userProfile.findUnique = originalUserProfileFindUnique;
   invalidateDashboardCacheForUser();
   Settings.now = Date.now;
 });
@@ -111,6 +113,8 @@ function stubPrisma(logs) {
       ),
     };
   };
+
+  prismaAny.userProfile.findUnique = async () => null;
 }
 
 function createLog(dateIso, calories, protein, fat, carbs, mealPeriod) {

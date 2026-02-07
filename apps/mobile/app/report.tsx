@@ -50,6 +50,7 @@ import {
 } from '@/services/api';
 import { useTranslation } from '@/i18n';
 import { useSessionStore } from '@/store/session';
+import { trackEvent } from '@/analytics/track';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
@@ -71,7 +72,9 @@ type ReportHistoryItem = {
 
 type ReportFocusOption = AiReportPreferenceInput['focusAreas'][number];
 type ReportAdviceStyleOption = AiReportPreferenceInput['adviceStyle'];
+type ReportVoiceModeOption = NonNullable<AiReportPreferenceInput['voiceMode']>;
 type ReportScoreEffect = 'celebration' | 'encourage' | 'neutral';
+type ReportFeedbackKey = 'too_harsh' | 'not_personalized' | 'date_mismatch';
 
 function formatReportRange(report: AiReportResponse, locale: string) {
   const from = DateTime.fromISO(report.range.from).setZone(report.range.timezone);
@@ -159,12 +162,12 @@ function weekKeyForDate(dateIso: string, locale: string) {
 function resolveDashboardParams(period: AiReportPeriod, report: AiReportResponse | null) {
   if (!report) {
     const fallback = period === 'weekly' ? 'thisWeek' : 'today';
-    return { period: fallback as DashboardPeriod, range: undefined };
+    return { period: fallback as DashboardPeriod, range: undefined, timezone: undefined };
   }
   const from = DateTime.fromISO(report.range.from).toISODate() ?? report.range.from.slice(0, 10);
   const toDate = DateTime.fromISO(report.range.to).minus({ days: 1 });
   const to = toDate.toISODate() ?? report.range.to.slice(0, 10);
-  return { period: 'custom' as DashboardPeriod, range: { from, to } };
+  return { period: 'custom' as DashboardPeriod, range: { from, to }, timezone: report.range.timezone };
 }
 
 function scoreEmoji(score: number) {
@@ -245,9 +248,18 @@ const DEFAULT_REPORT_PREFERENCE: AiReportPreferenceInput = {
   goal: 'maintain',
   focusAreas: ['habit'],
   adviceStyle: 'concrete',
+  voiceMode: 'balanced',
 };
 const SHARE_IMAGE_WIDTH = 1080;
 const SHARE_IMAGE_HEIGHT = 1350;
+const REPORT_FEEDBACK_OPTIONS: ReadonlyArray<{
+  key: ReportFeedbackKey;
+  labelKey: string;
+}> = [
+  { key: 'too_harsh', labelKey: 'report.feedback.tooHarsh' },
+  { key: 'not_personalized', labelKey: 'report.feedback.notPersonalized' },
+  { key: 'date_mismatch', labelKey: 'report.feedback.dateMismatch' },
+];
 
 function wrapShareLines(value: string, maxChars: number, maxLines: number) {
   const source = Array.from(value.trim());
@@ -301,8 +313,14 @@ export default function ReportScreen() {
   const [draftPreference, setDraftPreference] = useState<AiReportPreferenceInput>(DEFAULT_REPORT_PREFERENCE);
   const [scoreEffect, setScoreEffect] = useState<ReportScoreEffect | null>(null);
   const [scoreEffectMessage, setScoreEffectMessage] = useState('');
+  const [submittedFeedback, setSubmittedFeedback] = useState<Record<ReportFeedbackKey, boolean>>({
+    too_harsh: false,
+    not_personalized: false,
+    date_mismatch: false,
+  });
   const scoreEffectOpacity = useRef(new Animated.Value(0)).current;
   const playedEffectReportKeyRef = useRef<string | null>(null);
+  const trackedReportCompletionRef = useRef<Set<string>>(new Set());
   const pendingGenerateRef = useRef<{ period: AiReportPeriod; range: ReportRange } | null>(null);
   const shareSvgRef = useRef<React.ComponentRef<typeof Svg> | null>(null);
   const historyStorageKey = useMemo(
@@ -446,6 +464,30 @@ export default function ReportScreen() {
   );
   const hasEligibleWeeks = weeklyEligibleDates.length > 0;
 
+  const trackReportCompletion = useCallback(
+    (request: { id: string; status: AiReportRequestStatus; report?: AiReportResponse | null; errorCode?: string | null }) => {
+      if (!(request.status === 'done' || request.status === 'failed' || request.status === 'canceled')) {
+        return;
+      }
+      const completionKey = `${request.id}:${request.status}`;
+      if (trackedReportCompletionRef.current.has(completionKey)) {
+        return;
+      }
+      trackedReportCompletionRef.current.add(completionKey);
+      trackEvent('report.generate_completed', {
+        requestId: request.id,
+        status: request.status,
+        score: request.status === 'done' ? Math.round(request.report?.summary.score ?? 0) : undefined,
+        voiceMode: request.report?.preference?.voiceMode ?? 'balanced',
+        model: request.report?.meta?.model ?? undefined,
+        fallbackModelUsed: request.report?.meta?.fallback_model_used ?? undefined,
+        latencyMs: request.report?.meta?.latencyMs ?? undefined,
+        errorCode: request.errorCode ?? undefined,
+      });
+    },
+    [],
+  );
+
   useQuery({
     queryKey: ['reportRequests', userId ?? 'anon'],
     queryFn: () => listAiReportRequests({ limit: REPORT_HISTORY_LIMIT }),
@@ -463,6 +505,12 @@ export default function ReportScreen() {
         setActiveRequestPeriod((prev) => (prev === activeItem.period ? prev : activeItem.period));
 
         if (activeItem.status === 'done' && activeItem.report) {
+          trackReportCompletion({
+            id: activeItem.id,
+            status: activeItem.status,
+            report: activeItem.report,
+            errorCode: activeItem.errorCode,
+          });
           const cacheKey = buildReportKey(activeItem.period, {
             from: activeItem.range.from,
             to: activeItem.range.to,
@@ -492,9 +540,21 @@ export default function ReportScreen() {
           lastRequestStatusRef.current = `${activeItem.id}:${activeItem.status}`;
           setActiveRequestId(null);
         } else if (activeItem.status === 'failed') {
+          trackReportCompletion({
+            id: activeItem.id,
+            status: activeItem.status,
+            report: activeItem.report,
+            errorCode: activeItem.errorCode,
+          });
           Alert.alert(t('report.errorTitle'), activeItem.errorMessage ?? t('report.errorFallback'));
           setActiveRequestId(null);
         } else if (activeItem.status === 'canceled') {
+          trackReportCompletion({
+            id: activeItem.id,
+            status: activeItem.status,
+            report: activeItem.report,
+            errorCode: activeItem.errorCode,
+          });
           Alert.alert(t('report.errorTitle'), t('report.canceledMessage'));
           setActiveRequestId(null);
         }
@@ -590,6 +650,12 @@ export default function ReportScreen() {
     lastRequestStatusRef.current = statusKey;
 
     if (request.status === 'done' && request.report) {
+      trackReportCompletion({
+        id: request.id,
+        status: request.status,
+        report: request.report,
+        errorCode: request.errorCode,
+      });
       const cacheKey = buildReportKey(request.period, {
         from: request.range.from,
         to: request.range.to,
@@ -621,16 +687,28 @@ export default function ReportScreen() {
     }
 
     if (request.status === 'failed') {
+      trackReportCompletion({
+        id: request.id,
+        status: request.status,
+        report: request.report,
+        errorCode: request.errorCode,
+      });
       Alert.alert(t('report.errorTitle'), request.errorMessage ?? t('report.errorFallback'));
       setActiveRequestId(null);
       return;
     }
 
     if (request.status === 'canceled') {
+      trackReportCompletion({
+        id: request.id,
+        status: request.status,
+        report: request.report,
+        errorCode: request.errorCode,
+      });
       Alert.alert(t('report.errorTitle'), t('report.canceledMessage'));
       setActiveRequestId(null);
     }
-  }, [historyStorageKey, reportRequestQuery.data, setUsage, t]);
+  }, [historyStorageKey, reportRequestQuery.data, setUsage, t, trackReportCompletion]);
 
   useEffect(() => {
     if (!activeRequestPeriod || !activeRequestRange) {
@@ -805,6 +883,7 @@ export default function ReportScreen() {
     };
   }, [monthlyCacheKey, monthlyRange.from, monthlyRange.to, monthlySummary.data, queryClient, userId]);
   const monthlyData = monthlySummary.data ?? monthlySnapshot;
+  const selectedTimezone = period === 'monthly' ? monthlyData?.range.timezone : calendarData?.range.timezone;
   const monthlyLoggedDays = useMemo(() => monthlyData?.days.length ?? 0, [monthlyData]);
   const monthlyEligible = monthlyLoggedDays >= REPORT_MIN_LOG_DAYS.monthly;
   const dailyEligible = dailySelected ? recordedDays.has(dailySelected) : false;
@@ -820,6 +899,7 @@ export default function ReportScreen() {
   const dashboardSummary = useDashboardSummary(dashboardParams.period, {
     enabled: Boolean(report),
     range: dashboardParams.range,
+    timezone: dashboardParams.timezone,
   });
   const dashboard = dashboardSummary.data;
 
@@ -841,11 +921,16 @@ export default function ReportScreen() {
       achievement,
     };
   }, [dashboard]);
-  const streakDays = streakQuery.data?.streak.current ?? report?.uiMeta?.streakDays ?? 0;
+  const streakDays = report?.uiMeta?.streakDays ?? streakQuery.data?.streak.current ?? 0;
   const showWeeklyPrompt = period === 'daily' && streakDays >= 7;
 
   useEffect(() => {
     setDetailsExpanded(false);
+    setSubmittedFeedback({
+      too_harsh: false,
+      not_personalized: false,
+      date_mismatch: false,
+    });
   }, [reportKey]);
 
   useEffect(() => {
@@ -923,6 +1008,8 @@ export default function ReportScreen() {
   );
   const preferenceConfigured = preferenceQuery.data?.configured ?? false;
   const activePreference = preferenceQuery.data?.preference ?? draftPreference;
+  const voiceModeOptions: ReportVoiceModeOption[] = ['gentle', 'balanced', 'sharp'];
+  const activeVoiceMode = activePreference.voiceMode ?? 'balanced';
   const updatePreferenceMutation = useMutation({
     mutationFn: (payload: AiReportPreferenceInput) => updateAiReportPreference(payload),
     onSuccess: (response) => {
@@ -931,6 +1018,12 @@ export default function ReportScreen() {
         ok: true,
         preference: response.preference,
         configured: true,
+      });
+      trackEvent('report.preference_saved', {
+        goal: response.preference.goal,
+        focusAreas: response.preference.focusAreas,
+        adviceStyle: response.preference.adviceStyle,
+        voiceMode: response.preference.voiceMode ?? 'balanced',
       });
       setShowPreferenceModal(false);
       const pending = pendingGenerateRef.current;
@@ -948,6 +1041,22 @@ export default function ReportScreen() {
       Alert.alert(t('report.errorTitle'), apiError?.message ?? t('report.errorFallback'));
     },
   });
+  const handleQuickVoiceModeChange = useCallback(
+    (mode: ReportVoiceModeOption) => {
+      if (mode === activeVoiceMode || updatePreferenceMutation.isLoading) {
+        return;
+      }
+      trackEvent('report.voice_mode_switched', {
+        from: activeVoiceMode,
+        to: mode,
+        source: 'report.preference.card',
+      });
+      const nextPreference = { ...activePreference, voiceMode: mode };
+      setDraftPreference(nextPreference);
+      updatePreferenceMutation.mutate(nextPreference);
+    },
+    [activePreference, activeVoiceMode, updatePreferenceMutation],
+  );
   const createReportMutation = useMutation({
     mutationFn: (payload: {
       period: AiReportPeriod;
@@ -970,6 +1079,12 @@ export default function ReportScreen() {
             if (doneRequest.status !== 'done' || !doneRequest.report) {
               return;
             }
+            trackReportCompletion({
+              id: doneRequest.id,
+              status: doneRequest.status,
+              report: doneRequest.report,
+              errorCode: doneRequest.errorCode,
+            });
             const cacheKey = buildReportKey(doneRequest.period, {
               from: doneRequest.range.from,
               to: doneRequest.range.to,
@@ -1053,6 +1168,29 @@ export default function ReportScreen() {
     Boolean(selectedRange) &&
     (period === 'daily' ? dailyEligible : period === 'weekly' ? weeklyEligible : monthlyEligible);
   const hasHistory = reportHistory.length > 0;
+  const handleExpandDetails = useCallback(() => {
+    trackEvent('report.details_expanded', {
+      period,
+      reportKey,
+      voiceMode: activeVoiceMode,
+    });
+    setDetailsExpanded(true);
+  }, [activeVoiceMode, period, reportKey]);
+  const handleSubmitFeedback = useCallback(
+    (keyword: ReportFeedbackKey) => {
+      if (submittedFeedback[keyword]) {
+        return;
+      }
+      trackEvent('report.feedback_submitted', {
+        keyword,
+        period,
+        reportKey,
+        voiceMode: report?.preference?.voiceMode ?? activeVoiceMode,
+      });
+      setSubmittedFeedback((prev) => ({ ...prev, [keyword]: true }));
+    },
+    [activeVoiceMode, period, report, reportKey, submittedFeedback],
+  );
   const handleHistorySelect = useCallback(
     (item: ReportHistoryItem) => {
       setPeriod(item.period);
@@ -1103,6 +1241,13 @@ export default function ReportScreen() {
       setShowPreferenceModal(true);
       return;
     }
+    trackEvent('report.generate_requested', {
+      period,
+      from: selectedRange.from,
+      to: selectedRange.to,
+      timezone: selectedTimezone,
+      voiceMode: activeVoiceMode,
+    });
     createReportMutation.mutate({
       period,
       range: selectedRange,
@@ -1146,6 +1291,11 @@ export default function ReportScreen() {
           dialogTitle: t('report.shareButton'),
           mimeType: 'image/png',
           UTI: 'public.png',
+        });
+        trackEvent('report.shared', {
+          period: report.period,
+          voiceMode: report.preference?.voiceMode ?? activeVoiceMode,
+          score: Math.round(report.summary.score),
         });
       } finally {
         await deleteAsync(fileUri, { idempotent: true });
@@ -1239,8 +1389,26 @@ export default function ReportScreen() {
             </View>
             <Text style={styles.preferenceSummary}>
               {activePreference.focusAreas.map((focus) => t(`report.preference.focus.${focus}`)).join(', ')} /{' '}
-              {t(`report.preference.style.${activePreference.adviceStyle}`)}
+              {t(`report.preference.style.${activePreference.adviceStyle}`)} /{' '}
+              {t(`report.preference.voiceMode.${activeVoiceMode}`)}
             </Text>
+            <View style={styles.voiceModeRow}>
+              {voiceModeOptions.map((mode) => {
+                const selected = mode === activeVoiceMode;
+                return (
+                  <TouchableOpacity
+                    key={mode}
+                    style={[styles.voiceModeChip, selected && styles.voiceModeChipActive]}
+                    onPress={() => handleQuickVoiceModeChange(mode)}
+                    disabled={updatePreferenceMutation.isLoading}
+                  >
+                    <Text style={[styles.voiceModeChipText, selected && styles.voiceModeChipTextActive]}>
+                      {t(`report.preference.voiceMode.${mode}`)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
             {!preferenceConfigured ? (
               <Text style={styles.preferenceNotice}>{t('report.preference.required')}</Text>
             ) : null}
@@ -1405,6 +1573,27 @@ export default function ReportScreen() {
                     <Text style={[styles.summaryActionText, styles.summaryActionTextStrong]}>{t('report.shareButton')}</Text>
                   </TouchableOpacity>
                 </View>
+                <View style={styles.feedbackSection}>
+                  <Text style={styles.feedbackTitle}>{t('report.feedback.title')}</Text>
+                  <View style={styles.feedbackChipRow}>
+                    {REPORT_FEEDBACK_OPTIONS.map((option) => {
+                      const selected = submittedFeedback[option.key];
+                      return (
+                        <TouchableOpacity
+                          key={option.key}
+                          style={[styles.feedbackChip, selected && styles.feedbackChipSelected]}
+                          onPress={() => handleSubmitFeedback(option.key)}
+                          disabled={selected}
+                        >
+                          <Text style={[styles.feedbackChipText, selected && styles.feedbackChipTextSelected]}>
+                            {selected ? `✓ ${t(option.labelKey)}` : t(option.labelKey)}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  <Text style={styles.feedbackHint}>{t('report.feedback.subtitle')}</Text>
+                </View>
             </GlassCard>
           ) : null}
 
@@ -1457,7 +1646,7 @@ export default function ReportScreen() {
                   <Text style={styles.emptyBody}>{t('report.detailsCollapsed')}</Text>
                   <TouchableOpacity
                     style={[styles.summaryActionButton, styles.detailsPromptButton, styles.summaryActionButtonPrimary]}
-                    onPress={() => setDetailsExpanded(true)}
+                    onPress={handleExpandDetails}
                   >
                     <Text style={[styles.summaryActionText, styles.summaryActionTextStrong]}>{t('report.showDetails')}</Text>
                   </TouchableOpacity>
@@ -1826,6 +2015,7 @@ function ReportPreferenceModal({
 }) {
   const focusOptions: ReportFocusOption[] = ['weight', 'bodyFat', 'wellness', 'muscle', 'habit'];
   const styleOptions: ReportAdviceStyleOption[] = ['simple', 'concrete', 'motivational'];
+  const voiceModeOptions: ReportVoiceModeOption[] = ['gentle', 'balanced', 'sharp'];
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -1870,6 +2060,29 @@ function ReportPreferenceModal({
               </TouchableOpacity>
             ))}
           </View>
+
+          <Text style={styles.modalLabel}>{t('report.preference.question.voiceMode')}</Text>
+          <View style={styles.modalOptionRow}>
+            {voiceModeOptions.map((option) => (
+              <TouchableOpacity
+                key={option}
+                style={[styles.modalOptionChip, (preference.voiceMode ?? 'balanced') === option && styles.modalOptionChipActive]}
+                onPress={() => onChange({ ...preference, voiceMode: option })}
+              >
+                <Text
+                  style={[
+                    styles.modalOptionText,
+                    (preference.voiceMode ?? 'balanced') === option && styles.modalOptionTextActive,
+                  ]}
+                >
+                  {t(`report.preference.voiceMode.${option}`)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {(preference.voiceMode ?? 'balanced') === 'sharp' ? (
+            <Text style={styles.modalWarningText}>{t('report.preference.voiceMode.sharpNotice')}</Text>
+          ) : null}
 
           <View style={styles.modalActions}>
             <TouchableOpacity style={styles.modalActionGhost} onPress={onClose} disabled={loading}>
@@ -2465,6 +2678,31 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textPrimary,
   },
+  voiceModeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  voiceModeChip: {
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  voiceModeChipActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  voiceModeChipText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  voiceModeChipTextActive: {
+    color: colors.accentInk,
+  },
   preferenceNotice: {
     ...textStyles.caption,
     color: colors.error,
@@ -2711,6 +2949,44 @@ const styles = StyleSheet.create({
   },
   detailsPromptButton: {
     marginTop: spacing.sm,
+  },
+  feedbackSection: {
+    marginTop: spacing.md,
+    gap: spacing.xs,
+  },
+  feedbackTitle: {
+    ...textStyles.caption,
+    color: colors.textMuted,
+    fontWeight: '700',
+  },
+  feedbackChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  feedbackChip: {
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  feedbackChipSelected: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  feedbackChipText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  feedbackChipTextSelected: {
+    color: colors.accentInk,
+  },
+  feedbackHint: {
+    ...textStyles.caption,
+    color: colors.textMuted,
   },
   calendarHint: {
     ...textStyles.caption,
@@ -3207,6 +3483,11 @@ const styles = StyleSheet.create({
   },
   modalOptionTextActive: {
     color: colors.accentInk,
+  },
+  modalWarningText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
   modalActions: {
     flexDirection: 'row',

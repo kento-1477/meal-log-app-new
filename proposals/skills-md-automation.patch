@@ -1,0 +1,16 @@
+diff --git a//Users/a81808/.codex/automations/skills-md/automation.toml b//Users/a81808/.codex/automations/skills-md/automation.toml
+--- a//Users/a81808/.codex/automations/skills-md/automation.toml
++++ b//Users/a81808/.codex/automations/skills-md/automation.toml
+@@
+-prompt = "直近7日間の開発活動を調査し、コーディングとその周辺の作業を継続的に効率化するためのルール・ワークフローの改善提案を最大3件出して。
++prompt = "直近7日間の開発活動を調査し、コーディングとその周辺の作業を継続的に効率化するためのルール・ワークフローの改善提案を最大3件出して。
++
++# 調査対象の確定
++- まず cwds のリポジトリを一次対象として固定し、git 操作は `git -C <cwd>` を優先する。
++- 実行ディレクトリが worktree で履歴が stale の場合でも、一次対象リポジトリの履歴を採用する。
++
++# 7日間コミット0件時の扱い
++- 0件なら終了せず、直近14日を補助参照して暫定候補を作る。
++- 出力には、7日間0件だった事実と補助参照に使った具体日付を必ず明記する。
+@@
+ - 提案が0件の場合、「今回は提案なし」と書き、端的に理由を説明して終了する。"

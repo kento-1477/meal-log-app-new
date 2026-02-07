@@ -1,7 +1,7 @@
 // apps/mobile/src/analytics/track.ts
 // Minimal analytics facade. Replace console logging with your vendor SDK as needed.
 
-import { postOnboardingEvent } from '@/services/api';
+import { postAnalyticsEvent, postOnboardingEvent } from '@/services/api';
 import type { OnboardingEventPayload } from '@/services/api';
 
 export type AnalyticsEventName =
@@ -22,6 +22,13 @@ export type AnalyticsEventName =
   | 'review.prompt_accept'
   | 'review.prompt_feedback'
   | 'review.prompt_dismiss'
+  | 'report.preference_saved'
+  | 'report.generate_requested'
+  | 'report.generate_completed'
+  | 'report.voice_mode_switched'
+  | 'report.details_expanded'
+  | 'report.shared'
+  | 'report.feedback_submitted'
   | 'onboarding.step_viewed'
   | 'onboarding.step_completed'
   | 'onboarding.goal_selected'
@@ -33,11 +40,37 @@ const ONBOARDING_EVENTS = new Set<OnboardingEventPayload['eventName']>([
   'onboarding.completed',
 ]);
 
+const REPORT_EVENTS = new Set<AnalyticsEventName>([
+  'report.preference_saved',
+  'report.generate_requested',
+  'report.generate_completed',
+  'report.voice_mode_switched',
+  'report.details_expanded',
+  'report.shared',
+  'report.feedback_submitted',
+]);
+
 const isOnboardingEvent = (event: AnalyticsEventName): event is OnboardingEventPayload['eventName'] =>
   ONBOARDING_EVENTS.has(event as OnboardingEventPayload['eventName']);
 
 export function trackEvent(event: AnalyticsEventName, params: Record<string, unknown> = {}) {
   console.log(`[analytics] ${event}`, params);
+
+  if (REPORT_EVENTS.has(event)) {
+    const { sessionId, step, ...metadata } = params;
+    const cleanedMetadata = Object.fromEntries(
+      Object.entries(metadata).filter(([, value]) => value !== undefined && value !== null),
+    );
+    const metadataPayload = Object.keys(cleanedMetadata).length > 0 ? cleanedMetadata : null;
+
+    void postAnalyticsEvent({
+      eventName: event,
+      sessionId: typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : null,
+      metadata: metadataPayload,
+    }).catch((error) => {
+      console.warn('[analytics] report event failed', error);
+    });
+  }
 
   if (!isOnboardingEvent(event)) {
     return;
