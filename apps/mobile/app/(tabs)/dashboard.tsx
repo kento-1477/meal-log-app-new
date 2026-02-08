@@ -56,6 +56,7 @@ import {
 } from '@/services/api';
 import { useTranslation } from '@/i18n';
 import { buildFavoriteDraftFromDetail, buildFavoriteDraftFromSummary } from '@/utils/favorites';
+import { resolveDailyDashboardPeriod } from '@/utils/dayBoundary';
 import { DateTime } from 'luxon';
 import { usePremiumStore } from '@/store/premium';
 import { useRouter } from 'expo-router';
@@ -64,7 +65,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { AuroraBackground } from '@/components/AuroraBackground';
 import { useCalorieTrend, type CalorieChartMode } from '@/features/dashboard/useCalorieTrend';
 
-const DEFAULT_PERIOD: DashboardPeriod = 'today';
 const brandLogo = require('../../assets/brand/logo.png');
 type SegmentKey = 'daily' | 'weekly' | 'monthly';
 const CALORIE_CHART_CONFIG = {
@@ -97,7 +97,7 @@ type Translate = (key: string, params?: Record<string, string | number>) => stri
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const [period, setPeriod] = useState<DashboardPeriod>(DEFAULT_PERIOD);
+  const [period, setPeriod] = useState<DashboardPeriod>('today');
   const [segmentKey, setSegmentKey] = useState<SegmentKey>('daily');
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(null);
   const [segmentGroupWidth, setSegmentGroupWidth] = useState(0);
@@ -110,15 +110,19 @@ export default function DashboardScreen() {
   const setUsage = useSessionStore((state) => state.setUsage);
   const isAuthenticated = status === 'authenticated';
   const { t, locale } = useTranslation();
+  const logicalDailyPeriod = resolveDailyDashboardPeriod();
   const premiumState = usePremiumStore((state) => state.status);
   const isPremium = premiumState?.isPremium ?? userPlan === 'PREMIUM';
   const segmentOptions = useMemo(
     () => [
-      { key: 'daily' as SegmentKey, label: t('dashboard.segment.today') },
+      {
+        key: 'daily' as SegmentKey,
+        label: logicalDailyPeriod === 'yesterday' ? t('period.yesterday') : t('dashboard.segment.today'),
+      },
       { key: 'weekly' as SegmentKey, label: t('dashboard.segment.week') },
       { key: 'monthly' as SegmentKey, label: t('dashboard.segment.month') },
     ],
-    [t],
+    [logicalDailyPeriod, t],
   );
   const activeSegmentIndex = segmentOptions.findIndex((option) => option.key === segmentKey);
   const segmentButtonWidth = useMemo(() => {

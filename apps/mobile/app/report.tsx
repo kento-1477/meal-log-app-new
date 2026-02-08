@@ -51,6 +51,7 @@ import {
 import { useTranslation } from '@/i18n';
 import { useSessionStore } from '@/store/session';
 import { trackEvent } from '@/analytics/track';
+import { resolveLogicalDay } from '@/utils/dayBoundary';
 import { colors } from '@/theme/colors';
 import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
@@ -297,7 +298,7 @@ export default function ReportScreen() {
   const setUsage = useSessionStore((state) => state.setUsage);
   const userId = useSessionStore((state) => state.user?.id ?? null);
   const queryClient = useQueryClient();
-  const today = useMemo(() => DateTime.now().startOf('day'), []);
+  const today = useMemo(() => resolveLogicalDay(), []);
   const initialDate = useMemo(() => toISODateSafe(today), [today]);
   const initialMonth = useMemo(() => toISODateSafe(today.startOf('month')), [today]);
   const [period, setPeriod] = useState<AiReportPeriod>('daily');

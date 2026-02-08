@@ -88,6 +88,7 @@ app.get('/health', (c) => c.json({ ok: true, service: 'meal-log' }));
 app.get('/api/health', (c) => c.json({ ok: true, service: 'meal-log' }));
 
 const DASHBOARD_TIMEZONE = Deno.env.get('DASHBOARD_TIMEZONE') ?? 'Asia/Tokyo';
+const MEAL_DAY_BOUNDARY_HOUR = normalizeDayBoundaryHour(Deno.env.get('MEAL_DAY_BOUNDARY_HOUR') ?? '4');
 const DASHBOARD_TARGETS = {
   calories: { unit: 'kcal', value: 2200, decimals: 0 },
   protein_g: { unit: 'g', value: 130, decimals: 1 },
@@ -137,6 +138,14 @@ const FOOD_CATALOGUE = [
 ] as const;
 
 const toMealPeriodLabel = (period: string | null | undefined) => (period ? period.toLowerCase() : null);
+
+function normalizeDayBoundaryHour(rawValue: string | number | undefined | null): number {
+  const parsed = typeof rawValue === 'number' ? rawValue : Number(rawValue ?? 4);
+  if (!Number.isFinite(parsed)) {
+    return 4;
+  }
+  return Math.max(0, Math.min(23, Math.trunc(parsed)));
+}
 
 function parseRolloutPercent(rawValue: string | undefined, fallback: number): number {
   const parsed = Number(rawValue ?? fallback);
@@ -196,6 +205,40 @@ async function resolveRequestTimezoneForUser(
   return resolveRequestTimezone(request, { ...options, fallback });
 }
 
+function getLogicalNow(timezone: string, boundaryHour: number = MEAL_DAY_BOUNDARY_HOUR) {
+  const zone = normalizeTimezone(timezone);
+  return DateTime.now().setZone(zone).minus({ hours: boundaryHour });
+}
+
+function resolveLogicalDayStartFromDate(
+  dateIso: string,
+  timezone: string,
+  boundaryHour: number = MEAL_DAY_BOUNDARY_HOUR,
+) {
+  const zone = normalizeTimezone(timezone);
+  const logicalDate = DateTime.fromISO(dateIso, { zone }).startOf('day');
+  if (!logicalDate.isValid) {
+    return logicalDate;
+  }
+  return logicalDate.plus({ hours: boundaryHour });
+}
+
+function resolveLogicalDateKey(
+  timestamp: Date | string | null | undefined,
+  timezone: string,
+  boundaryHour: number = MEAL_DAY_BOUNDARY_HOUR,
+) {
+  if (!timestamp) {
+    return null;
+  }
+  const zone = normalizeTimezone(timezone);
+  const source = timestamp instanceof Date ? timestamp : new Date(String(timestamp));
+  if (!(source instanceof Date) || Number.isNaN(source.getTime())) {
+    return null;
+  }
+  return DateTime.fromJSDate(source, { zone }).minus({ hours: boundaryHour }).startOf('day').toISODate();
+}
+
 type LogsRangeKey = 'today' | 'week' | 'twoWeeks' | 'threeWeeks' | 'month' | 'threeMonths';
 
 interface LogsRange {
@@ -211,15 +254,16 @@ function resolveLogsRange(
 ): LogsRange | null {
   const normalizedKey = (key as LogsRangeKey | undefined) ?? 'week';
   const zone = normalizeTimezone(timezone);
-  const now = DateTime.now().setZone(zone).startOf('day');
+  const logicalDayStart = getLogicalNow(zone).startOf('day').plus({ hours: MEAL_DAY_BOUNDARY_HOUR });
+  const logicalDayEnd = logicalDayStart.plus({ days: 1 });
   const allowThreeMonths = options.allowThreeMonths ?? false;
 
   switch (normalizedKey) {
     case 'today':
       return {
         key: 'today',
-        from: now.toUTC().toJSDate(),
-        to: now.plus({ days: 1 }).toUTC().toJSDate(),
+        from: logicalDayStart.toUTC().toJSDate(),
+        to: logicalDayEnd.toUTC().toJSDate(),
       };
     case 'week':
     case 'twoWeeks':
@@ -235,22 +279,20 @@ function resolveLogsRange(
       if (!days) {
         return null;
       }
-      const from = now.minus({ days: days - 1 });
       return {
         key: normalizedKey,
-        from: from.toUTC().toJSDate(),
-        to: now.plus({ days: 1 }).toUTC().toJSDate(),
+        from: logicalDayStart.minus({ days: days - 1 }).toUTC().toJSDate(),
+        to: logicalDayEnd.toUTC().toJSDate(),
       };
     }
     case 'threeMonths': {
       if (!allowThreeMonths) {
         return null;
       }
-      const from = now.minus({ days: 89 });
       return {
         key: 'threeMonths',
-        from: from.toUTC().toJSDate(),
-        to: now.plus({ days: 1 }).toUTC().toJSDate(),
+        from: logicalDayStart.minus({ days: 89 }).toUTC().toJSDate(),
+        to: logicalDayEnd.toUTC().toJSDate(),
       };
     }
     default:
@@ -1233,11 +1275,12 @@ app.get('/api/reports/calendar', requireAuth, async (c) => {
     queryField: 'timezone',
     fallback: DASHBOARD_TIMEZONE,
   });
-  const fromDate = DateTime.fromISO(parsed.data.from, { zone: timezone }).startOf('day');
-  const toDate = DateTime.fromISO(parsed.data.to, { zone: timezone }).startOf('day').plus({ days: 1 });
-  if (!fromDate.isValid || !toDate.isValid) {
+  const fromDate = resolveLogicalDayStartFromDate(parsed.data.from, timezone);
+  const toDateStart = resolveLogicalDayStartFromDate(parsed.data.to, timezone);
+  if (!fromDate.isValid || !toDateStart.isValid) {
     throw new HttpError('日付形式が正しくありません', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
   }
+  const toDate = toDateStart.plus({ days: 1 });
   if (toDate <= fromDate) {
     throw new HttpError('終了日は開始日より後の日付にしてください', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
   }
@@ -1257,7 +1300,7 @@ app.get('/api/reports/calendar', requireAuth, async (c) => {
 
   const counts = new Map<string, number>();
   for (const log of logs ?? []) {
-    const key = DateTime.fromJSDate(new Date(log.createdAt), { zone: timezone }).startOf('day').toISODate();
+    const key = resolveLogicalDateKey(log.createdAt, timezone);
     if (!key) continue;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
@@ -3815,15 +3858,16 @@ async function getDashboardSummary(params: {
       mealPeriod: row.mealPeriod,
     })) ?? [];
 
-  const today = DateTime.now().setZone(resolvedTimezone).startOf('day');
-  const includesToday = range.fromDate <= today && range.toDate > today;
+  const logicalTodayKey = getLogicalNow(resolvedTimezone).toISODate();
+  const logicalTodayStart = getLogicalNow(resolvedTimezone).startOf('day').plus({ hours: MEAL_DAY_BOUNDARY_HOUR });
+  const includesToday = range.fromDate <= logicalTodayStart && range.toDate > logicalTodayStart;
 
   const todayTotalsPromise = includesToday
     ? Promise.resolve(
         logs.reduce(
           (acc, log) => {
-            const dayKey = DateTime.fromJSDate(log.createdAt, { zone: resolvedTimezone }).startOf('day').toISODate();
-            if (dayKey !== today.toISODate()) {
+            const dayKey = resolveLogicalDateKey(log.createdAt, resolvedTimezone);
+            if (!logicalTodayKey || dayKey !== logicalTodayKey) {
               return acc;
             }
             return {
@@ -3923,11 +3967,12 @@ function resolveRangeWithCustom(period: string, timezone: string, from?: string,
       return { range: resolveWeekRange(period, timezone) };
     case 'custom': {
       if (!from || !to) throw new HttpError('カスタム期間にはfrom/toが必要です', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
-      const fromDate = DateTime.fromISO(from, { zone: timezone }).startOf('day');
-      const toDate = DateTime.fromISO(to, { zone: timezone }).plus({ days: 1 }).startOf('day');
-      if (!fromDate.isValid || !toDate.isValid) {
+      const fromDate = resolveLogicalDayStartFromDate(from, timezone);
+      const toDateStart = resolveLogicalDayStartFromDate(to, timezone);
+      if (!fromDate.isValid || !toDateStart.isValid) {
         throw new HttpError('日付形式が正しくありません', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
       }
+      const toDate = toDateStart.plus({ days: 1 });
       if (toDate <= fromDate) {
         throw new HttpError('終了日は開始日より後の日付にしてください', { status: HTTP_STATUS.BAD_REQUEST, expose: true });
       }
@@ -3942,19 +3987,21 @@ function resolveRangeWithCustom(period: string, timezone: string, from?: string,
 }
 
 function resolveSingleDayRange(period: string, timezone: string) {
-  const now = DateTime.now().setZone(timezone);
+  const now = getLogicalNow(timezone);
   const base = period === 'today' ? now : now.minus({ days: 1 });
+  const fromDate = base.startOf('day').plus({ hours: MEAL_DAY_BOUNDARY_HOUR });
   return {
-    fromDate: base.startOf('day'),
-    toDate: base.plus({ days: 1 }).startOf('day'),
+    fromDate,
+    toDate: fromDate.plus({ days: 1 }),
     period,
   };
 }
 
 function resolveWeekRange(period: string, timezone: string) {
-  const now = DateTime.now().setZone(timezone);
+  const now = getLogicalNow(timezone);
   const startOfThisWeek = now.startOf('week');
-  const fromDate = period === 'thisWeek' ? startOfThisWeek : startOfThisWeek.minus({ weeks: 1 });
+  const fromLogicalDate = period === 'thisWeek' ? startOfThisWeek : startOfThisWeek.minus({ weeks: 1 });
+  const fromDate = fromLogicalDate.plus({ hours: MEAL_DAY_BOUNDARY_HOUR });
   const toDate = fromDate.plus({ weeks: 1 });
   return {
     fromDate,
@@ -3966,6 +4013,7 @@ function resolveWeekRange(period: string, timezone: string) {
 function resolveReportSummaryParams(
   period: AiReportPeriod,
   range?: { from: string; to: string },
+  timezone: string = DASHBOARD_TIMEZONE,
 ) {
   if (range?.from && range?.to) {
     return { period: 'custom' as const, from: range.from, to: range.to };
@@ -3976,7 +4024,7 @@ function resolveReportSummaryParams(
   if (period === 'weekly') {
     return { period: 'thisWeek' as const };
   }
-  const now = DateTime.now().setZone(DASHBOARD_TIMEZONE).startOf('day');
+  const now = getLogicalNow(timezone).startOf('day');
   const from = now.minus({ days: 29 }).toISODate() ?? now.minus({ days: 29 }).toFormat('yyyy-MM-dd');
   const to = now.toISODate() ?? now.toFormat('yyyy-MM-dd');
   return { period: 'custom' as const, from, to };
@@ -3997,7 +4045,7 @@ function resolveReportRange(
     };
   }
 
-  const params = resolveReportSummaryParams(period);
+  const params = resolveReportSummaryParams(period, range, timezone);
   const { range: resolved } = resolveRangeWithCustom(params.period, timezone, params.from, params.to);
   return {
     from: resolved.fromDate.toISODate() ?? DateTime.fromJSDate(resolved.fromDate.toJSDate()).toISODate() ?? '',
@@ -4595,8 +4643,7 @@ function buildDashboardSummary({
   const totals = { calories: 0, protein_g: 0, fat_g: 0, carbs_g: 0 };
 
   for (const log of logs) {
-    const dt = DateTime.fromJSDate(log.createdAt, { zone: timezone });
-    const key = dt.setZone(timezone).startOf('day').toISODate();
+    const key = resolveLogicalDateKey(log.createdAt, timezone);
     if (!key) continue;
     const bucket = byDate.get(key) ?? createEmptyDailyBucket();
     bucket.total += log.calories;
@@ -4615,7 +4662,9 @@ function buildDashboardSummary({
   }
 
   const dailyEntries = days.map((day) => {
-    const key = day.setZone(timezone).startOf('day').toISODate() ?? day.toFormat('yyyy-MM-dd');
+    const key =
+      day.minus({ hours: MEAL_DAY_BOUNDARY_HOUR }).startOf('day').toISODate() ??
+      day.minus({ hours: MEAL_DAY_BOUNDARY_HOUR }).toFormat('yyyy-MM-dd');
     const bucket = byDate.get(key) ?? createEmptyDailyBucket();
     return {
       date: key,
@@ -4768,7 +4817,7 @@ function createEmptyDailyBucket() {
 
 async function buildCalorieTrend(params: { userId: number; mode: 'daily' | 'weekly' | 'monthly'; locale?: string }) {
   const timezone = DASHBOARD_TIMEZONE;
-  const now = DateTime.now().setZone(timezone);
+  const now = getLogicalNow(timezone);
   const { startInclusive, endExclusive } = resolveTrendRange(now, params.mode);
 
   const { data: rows, error } = await supabaseAdmin
@@ -4786,9 +4835,7 @@ async function buildCalorieTrend(params: { userId: number; mode: 'daily' | 'week
 
   const bucket = new Map<string, number>();
   for (const log of rows ?? []) {
-    const dt = DateTime.fromISO(String(log.createdAt), { zone: timezone });
-    if (!dt.isValid) continue;
-    const key = dt.startOf('day').toISODate();
+    const key = resolveLogicalDateKey(log.createdAt, timezone);
     if (!key) continue;
     bucket.set(key, (bucket.get(key) ?? 0) + (log.calories ?? 0));
   }
@@ -4797,7 +4844,9 @@ async function buildCalorieTrend(params: { userId: number; mode: 'daily' | 'week
   const totalDays = Math.max(1, Math.round(endExclusive.diff(startInclusive, 'days').days));
   for (let offset = 0; offset < totalDays; offset += 1) {
     const current = startInclusive.plus({ days: offset });
-    const key = current.toISODate() ?? current.toFormat('yyyy-MM-dd');
+    const key =
+      current.minus({ hours: MEAL_DAY_BOUNDARY_HOUR }).startOf('day').toISODate() ??
+      current.minus({ hours: MEAL_DAY_BOUNDARY_HOUR }).toFormat('yyyy-MM-dd');
     const value = Math.round(bucket.get(key) ?? 0);
     points.push({
       date: key,
@@ -4814,23 +4863,29 @@ async function buildCalorieTrend(params: { userId: number; mode: 'daily' | 'week
 }
 
 function resolveTrendRange(now: DateTime, mode: 'daily' | 'weekly' | 'monthly') {
-  const base = now;
+  const base = now.startOf('day');
   switch (mode) {
     case 'daily': {
       const daysFromSunday = base.weekday % 7;
-      const startInclusive = base.minus({ days: daysFromSunday }).startOf('day');
-      const endExclusive = startInclusive.plus({ days: 7 });
+      const logicalStart = base.minus({ days: daysFromSunday });
+      const logicalEnd = logicalStart.plus({ days: 7 });
+      const startInclusive = logicalStart.plus({ hours: MEAL_DAY_BOUNDARY_HOUR });
+      const endExclusive = logicalEnd.plus({ hours: MEAL_DAY_BOUNDARY_HOUR });
       return { startInclusive, endExclusive };
     }
     case 'weekly': {
-      const endExclusive = base.plus({ days: 1 }).startOf('day');
-      const startInclusive = endExclusive.minus({ days: 7 });
+      const logicalEnd = base.plus({ days: 1 });
+      const logicalStart = logicalEnd.minus({ days: 7 });
+      const startInclusive = logicalStart.plus({ hours: MEAL_DAY_BOUNDARY_HOUR });
+      const endExclusive = logicalEnd.plus({ hours: MEAL_DAY_BOUNDARY_HOUR });
       return { startInclusive, endExclusive };
     }
     case 'monthly':
     default: {
-      const startInclusive = base.startOf('month');
-      const endExclusive = startInclusive.plus({ months: 1 });
+      const logicalStart = base.startOf('month');
+      const logicalEnd = logicalStart.plus({ months: 1 });
+      const startInclusive = logicalStart.plus({ hours: MEAL_DAY_BOUNDARY_HOUR });
+      const endExclusive = logicalEnd.plus({ hours: MEAL_DAY_BOUNDARY_HOUR });
       return { startInclusive, endExclusive };
     }
   }
@@ -4868,10 +4923,12 @@ async function getUserStreak(userId: number, timezoneInput?: string) {
   const uniqueDays: DateTime[] = [];
   let lastKey: string | null = null;
   for (const log of rows) {
-    const day = DateTime.fromISO(String(log.createdAt), { zone: 'utc' }).setZone(timezone).startOf('day');
-    const key = day.toISODate();
+    const key = resolveLogicalDateKey(log.createdAt, timezone);
+    if (!key) {
+      continue;
+    }
     if (key !== lastKey) {
-      uniqueDays.push(day);
+      uniqueDays.push(DateTime.fromISO(key, { zone: timezone }).startOf('day'));
       lastKey = key;
     }
   }
@@ -4910,7 +4967,7 @@ function calculateLongestStreak(days: DateTime[]) {
 }
 
 function calculateCurrentStreak(days: DateTime[], timezone: string) {
-  const now = DateTime.now().setZone(timezone).startOf('day');
+  const now = getLogicalNow(timezone).startOf('day');
   let expected = now;
   let streak = 0;
 

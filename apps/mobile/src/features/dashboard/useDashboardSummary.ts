@@ -6,6 +6,7 @@ import { DateTime } from 'luxon';
 import type { DashboardPeriod } from '@meal-log/shared';
 import { getDashboardSummary, getDashboardTargets } from '@/services/api';
 import { useTranslation } from '@/i18n';
+import { resolveLogicalDay } from '@/utils/dayBoundary';
 import { DashboardViewModel, buildViewModel } from './summaryShared';
 
 const CACHE_PREFIX = 'dashboard:summary:';
@@ -13,7 +14,8 @@ const CACHE_PREFIX = 'dashboard:summary:';
 type SummaryRange = { from: string; to: string };
 
 function getTodayKey() {
-  return DateTime.now().toISODate();
+  const logicalDay = resolveLogicalDay(DateTime.now());
+  return logicalDay.toISODate() ?? logicalDay.toFormat('yyyy-MM-dd');
 }
 
 export function useDashboardSummary(
