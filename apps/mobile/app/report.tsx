@@ -156,6 +156,18 @@ function formatHistoryDate(value: string, locale: string) {
   return parsed.toFormat(locale.startsWith('ja') ? 'yyyy/MM/dd' : 'MMM dd');
 }
 
+function formatGeneratedDate(value: string, locale: string, timezone?: string) {
+  const parsed = DateTime.fromISO(value);
+  if (!parsed.isValid) {
+    return null;
+  }
+  const zoned = timezone ? parsed.setZone(timezone) : parsed;
+  if (!zoned.isValid) {
+    return null;
+  }
+  return zoned.toFormat(locale.startsWith('ja') ? 'yyyy/MM/dd' : 'MMM dd, yyyy');
+}
+
 function weekKeyForDate(dateIso: string, locale: string) {
   return toISODateSafe(DateTime.fromISO(dateIso).setLocale(locale).startOf('week'));
 }
@@ -479,8 +491,11 @@ export default function ReportScreen() {
         requestId: request.id,
         status: request.status,
         score: request.status === 'done' ? Math.round(request.report?.summary.score ?? 0) : undefined,
-        voiceMode: request.report?.preference?.voiceMode ?? 'balanced',
+        voiceMode: request.report?.meta?.voiceModeApplied ?? request.report?.preference?.voiceMode ?? 'balanced',
+        voiceModeApplied: request.report?.meta?.voiceModeApplied ?? undefined,
         model: request.report?.meta?.model ?? undefined,
+        generationPath: request.report?.meta?.generationPath ?? undefined,
+        fallbackReason: request.report?.meta?.fallbackReason ?? undefined,
         fallbackModelUsed: request.report?.meta?.fallback_model_used ?? undefined,
         latencyMs: request.report?.meta?.latencyMs ?? undefined,
         errorCode: request.errorCode ?? undefined,
@@ -1136,6 +1151,14 @@ export default function ReportScreen() {
     }
     return t('report.rangePlaceholder');
   }, [locale, report, selectedRange, t]);
+  const reportGeneratedAt = useMemo(
+    () => (reportKey ? reportHistory.find((item) => item.key === reportKey)?.createdAt ?? null : null),
+    [reportHistory, reportKey],
+  );
+  const reportGeneratedDateLabel = useMemo(
+    () => (reportGeneratedAt ? formatGeneratedDate(reportGeneratedAt, locale, report?.range.timezone) : null),
+    [locale, report?.range.timezone, reportGeneratedAt],
+  );
   const shareFontFamily = useMemo(() => {
     if (!locale.startsWith('ja')) {
       return undefined;
@@ -1517,6 +1540,11 @@ export default function ReportScreen() {
                   pointerEvents="none"
                 />
                 <Text style={styles.cardTitle}>✨ {t('report.section.summary')}</Text>
+                {reportGeneratedDateLabel ? (
+                  <Text style={styles.summaryGeneratedDate}>
+                    {t('report.summary.generatedDate')}: {reportGeneratedDateLabel}
+                  </Text>
+                ) : null}
                 <View style={styles.summaryHero}>
                   <ScoreRing
                     score={Math.round(report.summary.score)}
@@ -2873,6 +2901,13 @@ const styles = StyleSheet.create({
   },
   summaryHeadline: {
     ...textStyles.titleMedium,
+  },
+  summaryGeneratedDate: {
+    ...textStyles.caption,
+    marginTop: -spacing.xs,
+    marginBottom: spacing.sm,
+    color: colors.textMuted,
+    fontWeight: '600',
   },
   scoreRing: {
     alignItems: 'center',

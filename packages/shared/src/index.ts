@@ -358,6 +358,9 @@ export const AiReportResponseSchema = AiReportContentSchema.extend({
       fallback_model_used: z.boolean().optional(),
       attempt: z.number().optional(),
       latencyMs: z.number().optional(),
+      voiceModeApplied: AiReportVoiceModeSchema.optional(),
+      generationPath: z.enum(['ai', 'mock-fallback']).optional(),
+      fallbackReason: z.string().optional(),
       attemptReports: z.array(HedgeAttemptReportSchema).optional(),
     })
     .optional(),
