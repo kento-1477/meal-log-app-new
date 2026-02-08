@@ -350,8 +350,59 @@ Deno.test('getDashboardSummary buckets daily totals by timezone', async () => {
 
       assert.equal(tokyoByDate['2024-12-31'], 0);
       assert.equal(tokyoByDate['2025-01-01'], 300);
-      assert.equal(laByDate['2024-12-31'], 100);
-      assert.equal(laByDate['2025-01-01'], 200);
+      assert.equal(laByDate['2024-12-31'], 300);
+      assert.equal(laByDate['2025-01-01'], 0);
+    });
+  });
+});
+
+Deno.test('getDashboardSummary assigns 2am log to previous logical day', async () => {
+  const state: MockState = {
+    mealLogs: [
+      {
+        userId: 8,
+        createdAt: '2025-01-07T17:00:00.000Z', // 2025-01-08 02:00 JST
+        deletedAt: null,
+        calories: 180,
+        proteinG: 12,
+        fatG: 6,
+        carbsG: 20,
+        mealPeriod: 'snack',
+      },
+      {
+        userId: 8,
+        createdAt: '2025-01-07T20:00:00.000Z', // 2025-01-08 05:00 JST
+        deletedAt: null,
+        calories: 220,
+        proteinG: 18,
+        fatG: 7,
+        carbsG: 24,
+        mealPeriod: 'breakfast',
+      },
+    ],
+    userProfile: {
+      targetCalories: 2200,
+      targetProteinG: 130,
+      targetFatG: 70,
+      targetCarbsG: 260,
+    },
+    preferenceRow: null,
+    capturedUpsert: null,
+  };
+
+  await withFixedNow('2025-01-07T18:00:00.000Z', async () => {
+    await withMockSupabase(state, async () => {
+      const summary = await getDashboardSummary({
+        userId: 8,
+        period: 'custom',
+        from: '2025-01-07',
+        to: '2025-01-07',
+        timezone: 'Asia/Tokyo',
+      });
+
+      const byDate = Object.fromEntries(summary.calories.daily.map((entry: { date: string; total: number }) => [entry.date, entry.total]));
+      assert.equal(byDate['2025-01-07'], 180);
+      assert.equal(byDate['2025-01-08'], undefined);
     });
   });
 });
