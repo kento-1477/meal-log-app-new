@@ -4131,19 +4131,24 @@ function normalizeReportPreference(value: unknown, options: { userId?: number } 
     typeof options.userId === 'number'
       ? isFeatureEnabledForUser(REPORT_VOICE_MODE_ENABLED, REPORT_VOICE_MODE_ROLLOUT_PERCENT, options.userId)
       : REPORT_VOICE_MODE_ENABLED;
-  const resolveVoiceMode = (mode: AiReportVoiceMode | undefined): AiReportVoiceMode =>
-    voiceModeEnabled ? mode ?? 'balanced' : 'balanced';
+  const resolveVoiceMode = (mode: AiReportVoiceMode | undefined, explicit: boolean): AiReportVoiceMode => {
+    // Keep user-selected mode even when rollout is partially disabled.
+    if (explicit && mode) {
+      return mode;
+    }
+    return voiceModeEnabled ? mode ?? 'balanced' : 'balanced';
+  };
 
   const parsed = AiReportPreferenceInputSchema.safeParse(value);
   if (parsed.success) {
     return {
       ...parsed.data,
-      voiceMode: resolveVoiceMode(parsed.data.voiceMode),
+      voiceMode: resolveVoiceMode(parsed.data.voiceMode, typeof parsed.data.voiceMode === 'string'),
     };
   }
   return {
     ...DEFAULT_REPORT_PREFERENCE,
-    voiceMode: resolveVoiceMode(DEFAULT_REPORT_PREFERENCE.voiceMode),
+    voiceMode: resolveVoiceMode(DEFAULT_REPORT_PREFERENCE.voiceMode, false),
   };
 }
 
@@ -4489,26 +4494,38 @@ function normalizeReportTone(
       positiveLead: string;
       encouragementPrefix: string;
       sharpLead: string;
+      sharpHeadlineLead: string;
       fallbackHighlight: string;
+      fallbackAdvice: string;
     }
   > = {
     gentle: {
       positiveLead: preferJapanese ? 'ここまで続けられているのは大きな強みです。' : 'You have built solid momentum already.',
       encouragementPrefix: preferJapanese ? 'まず良い点として、' : 'First, credit where it is due,',
       sharpLead: preferJapanese ? '次の一歩:' : 'Next step:',
+      sharpHeadlineLead: preferJapanese ? '要点:' : 'Key point:',
       fallbackHighlight: preferJapanese ? '記録を続けるほど提案があなた向けになります。' : 'The more consistently you log, the more personal this gets.',
+      fallbackAdvice: preferJapanese ? '次の一歩: 今日の食事を1件だけでも記録してください。' : 'Next step: log at least one meal today.',
     },
     balanced: {
       positiveLead: preferJapanese ? '継続できている点がしっかりあります。' : 'You are making steady progress.',
       encouragementPrefix: preferJapanese ? 'よく取り組めています。' : 'You are doing well.',
       sharpLead: preferJapanese ? '優先アクション:' : 'Priority action:',
+      sharpHeadlineLead: preferJapanese ? '要点:' : 'Key point:',
       fallbackHighlight: preferJapanese ? '記録を続けることで精度が上がります。' : 'Consistency will improve accuracy.',
+      fallbackAdvice: preferJapanese ? '優先アクション: 今日の記録を1件追加しましょう。' : 'Priority action: add one meal log today.',
     },
     sharp: {
-      positiveLead: preferJapanese ? '結論からいきます。' : 'Straight to the point.',
+      positiveLead: '',
       encouragementPrefix: '',
       sharpLead: preferJapanese ? '最優先で修正:' : 'Top fix:',
-      fallbackHighlight: preferJapanese ? '次回は同じ時間帯の食事を1件追加して傾向を確定させましょう。' : 'Log one more meal in the same time slot to lock in the trend.',
+      sharpHeadlineLead: preferJapanese ? '最優先課題:' : 'Top issue:',
+      fallbackHighlight: preferJapanese
+        ? '最優先課題は記録密度不足。今日から1日1件を固定してください。'
+        : 'Top issue: logging density is too low. Lock in one meal log per day from today.',
+      fallbackAdvice: preferJapanese
+        ? '最優先で修正: 今日から24時間以内に最低1件を必ず記録してください。'
+        : 'Top fix: log at least one meal every 24 hours starting today.',
     },
   };
   const tone = toneByMode[voiceMode];
@@ -4529,25 +4546,25 @@ function normalizeReportTone(
         ? [...positives.slice(0, 2), ...negatives.slice(0, 1)]
         : [...positives.slice(0, 1), ...negatives.slice(0, 2)];
   const headlineNeedsBoost = !/(順調|良|でき|great|good|solid|well|point|結論)/i.test(sanitizedHeadline);
+  const fallbackHeadline = voiceMode === 'sharp'
+    ? tone.sharpHeadlineLead
+    : tone.positiveLead;
 
   const advice = report.advice.map((item, index) => {
-    const detail = sanitize(item.detail);
+    const detail = sanitize(item.detail) || tone.fallbackAdvice;
     const title = sanitize(item.title);
     if (voiceMode === 'sharp') {
-      if (index > 0 || detail.startsWith(tone.sharpLead)) {
-        return {
-          ...item,
-          title,
-          detail,
-        };
-      }
+      const normalizedDetail = index === 0 && !detail.startsWith(tone.sharpLead)
+        ? sanitize(`${tone.sharpLead} ${detail}`)
+        : detail;
       return {
         ...item,
+        priority: index === 0 ? 'high' : item.priority,
         title,
-        detail: sanitize(`${tone.sharpLead} ${detail}`),
+        detail: normalizedDetail,
       };
     }
-    if (index > 0 || item.detail.startsWith(tone.encouragementPrefix)) {
+    if (index > 0 || detail.startsWith(tone.encouragementPrefix)) {
       return {
         ...item,
         title,
@@ -4565,7 +4582,14 @@ function normalizeReportTone(
     ...report,
     summary: {
       ...report.summary,
-      headline: headlineNeedsBoost ? sanitize(`${tone.positiveLead} ${sanitizedHeadline}`) : sanitizedHeadline,
+      headline:
+        voiceMode === 'sharp'
+          ? (sanitizedHeadline.startsWith(tone.sharpHeadlineLead)
+              ? sanitizedHeadline
+              : sanitize(`${tone.sharpHeadlineLead} ${sanitizedHeadline || fallbackHeadline}`))
+          : (headlineNeedsBoost
+              ? sanitize(`${tone.positiveLead} ${sanitizedHeadline || fallbackHeadline}`)
+              : (sanitizedHeadline || fallbackHeadline)),
       highlights:
         normalizedHighlights.length > 0
           ? normalizedHighlights
@@ -5040,22 +5064,32 @@ function buildReportPrompt(context: ReturnType<typeof buildReportContext>, local
     ? 'Use Japanese for all text fields.'
     : 'Use English (United States) for all text fields.';
   const voiceMode = context.preference.voiceMode ?? 'balanced';
+  const sharpHeadlineLead = preferJapanese ? '最優先課題:' : 'Top issue:';
+  const sharpAdviceLead = preferJapanese ? '最優先で修正:' : 'Top fix:';
   const voiceInstruction =
     voiceMode === 'gentle'
       ? `Voice mode: gentle.
 - Be warm and supportive.
 - Keep corrections soft and practical.
-- Emphasize progress before risks.`
+- Emphasize progress before risks.
+- Keep communication ratio around 7:3 (encouragement:correction).
+- First sentence should acknowledge effort before giving any correction.`
       : voiceMode === 'sharp'
         ? `Voice mode: sharp.
-- Start with the highest-priority issue.
 - Be direct, concrete, and brief.
-- Name one top action clearly.
+- Do not prepend encouragement before correction.
+- summary.headline must start with "${sharpHeadlineLead}".
+- Start with the highest-priority issue, then state one clear top action.
+- highlights must be problem-first and include at least one concrete numeric evidence from JSON input (days, macros.delta, or comparison metrics).
+- advice[0] must be priority "high" and detail must start with "${sharpAdviceLead}".
+- Use command-style short sentences.
 - Never insult, shame, or attack the user's personality. Critique behaviors only.`
         : `Voice mode: balanced.
 - Be factual and constructive.
 - Balance encouragement with correction.
-- Keep recommendations specific and actionable.`;
+- Keep recommendations specific and actionable.
+- Keep communication ratio around 6:4 (encouragement:correction).
+- First sentence should briefly acknowledge effort before correction.`;
   return `You are a nutrition coach. Summarize the user's eating patterns based on the JSON data.
 Return ONLY valid JSON that matches this TypeScript type:
 {
@@ -5068,8 +5102,6 @@ Rules:
 - highlights: 1-3 short bullets.
 - metrics: 3-5 items, values should include units where applicable.
 - advice: 1-3 items, each with a concrete action and brief reason.
-- Keep communication ratio around 7:3 (encouragement:correction).
-- First sentence should acknowledge effort before giving any correction.
 - ingredients: pick about 3 ingredients (not dishes). Use macros.delta to decide focus:
   - If fat is over target, prioritize low-fat ingredients.
   - If protein is under target, prioritize high-protein ingredients.
@@ -5164,11 +5196,30 @@ function buildIngredientSuggestions(
 function buildReportMock(context: ReturnType<typeof buildReportContext>, locale: Locale): AiReportContent {
   const preferJapanese = locale.toLowerCase().startsWith('ja');
   const voiceMode = context.preference.voiceMode ?? 'balanced';
+  const signed = (value: number, digits = 0) => {
+    const rounded = digits > 0 ? round(value, digits) : Math.round(value);
+    const prefix = rounded > 0 ? '+' : '';
+    return `${prefix}${rounded}`;
+  };
+  const loggedDaysLabel = preferJapanese
+    ? `${context.days.logged} / ${context.days.total} 日`
+    : `${context.days.logged} / ${context.days.total}`;
+  const lowData = context.days.logged < Math.max(1, context.days.total);
+  const macroDeltaLine = preferJapanese
+    ? `差分 P ${signed(context.macros.delta.protein_g, 1)}g / F ${signed(context.macros.delta.fat_g, 1)}g / C ${signed(context.macros.delta.carbs_g, 1)}g`
+    : `Delta P ${signed(context.macros.delta.protein_g, 1)}g / F ${signed(context.macros.delta.fat_g, 1)}g / C ${signed(context.macros.delta.carbs_g, 1)}g`;
+  const sharpDataLine = preferJapanese
+    ? (lowData
+        ? `記録日数 ${loggedDaysLabel}。データ不足で分析精度が落ちています。`
+        : `記録日数 ${loggedDaysLabel}。データは確保できています。次は差分を優先修正してください。`)
+    : (lowData
+        ? `Logged days ${loggedDaysLabel}. Data density is too low for reliable trends.`
+        : `Logged days ${loggedDaysLabel}. Data is sufficient, so fix the macro deltas first.`);
   const headline =
     voiceMode === 'sharp'
       ? preferJapanese
-        ? '最優先の改善点があります'
-        : 'There is one priority fix'
+        ? '最優先課題: 記録密度を引き上げる'
+        : 'Top issue: increase logging density'
       : voiceMode === 'gentle'
         ? preferJapanese
           ? 'ここまでの頑張りを要約します'
@@ -5176,13 +5227,26 @@ function buildReportMock(context: ReturnType<typeof buildReportContext>, locale:
         : preferJapanese
           ? '記録の要約'
           : 'Summary of your logs';
-  const highlights = preferJapanese
-    ? ['記録日数が少ないため傾向は控えめに評価']
-    : ['Limited logs, trends are shown cautiously'];
+  const highlights =
+    voiceMode === 'sharp'
+      ? (preferJapanese
+          ? [
+              sharpDataLine,
+              macroDeltaLine,
+              '最優先で修正: 今日から毎日1件、同じ時間帯で記録を固定してください。',
+            ]
+          : [
+              sharpDataLine,
+              macroDeltaLine,
+              'Top fix: lock in one meal log daily in the same time slot.',
+            ])
+      : (preferJapanese
+          ? ['記録日数が少ないため傾向は控えめに評価', `記録日数 ${loggedDaysLabel}`]
+          : ['Limited logs, trends are shown cautiously', `Logged days: ${loggedDaysLabel}`]);
   const metrics = preferJapanese
     ? [
         { label: '平均カロリー', value: `${context.calories.average} kcal` },
-        { label: '記録日数', value: `${context.days.logged} / ${context.days.total} 日` },
+        { label: '記録日数', value: loggedDaysLabel },
         {
           label: 'P/F/C',
           value: `${Math.round(context.macros.total.protein_g)} / ${Math.round(context.macros.total.fat_g)} / ${Math.round(
@@ -5192,7 +5256,7 @@ function buildReportMock(context: ReturnType<typeof buildReportContext>, locale:
       ]
     : [
         { label: 'Avg calories', value: `${context.calories.average} kcal` },
-        { label: 'Logged days', value: `${context.days.logged} / ${context.days.total}` },
+        { label: 'Logged days', value: loggedDaysLabel },
         {
           label: 'P/F/C',
           value: `${Math.round(context.macros.total.protein_g)} / ${Math.round(context.macros.total.fat_g)} / ${Math.round(
@@ -5208,9 +5272,16 @@ function buildReportMock(context: ReturnType<typeof buildReportContext>, locale:
           title: voiceMode === 'sharp' ? 'まず記録頻度を上げる' : '記録の継続を優先',
           detail:
             voiceMode === 'sharp'
-              ? '最優先で、毎日1件の記録を固定してください。データ不足が改善されると分析精度が上がります。'
+              ? '最優先で修正: 今日から24時間以内に最低1件を必ず記録してください。'
               : 'まずは1日1回の記録でデータを増やすと、より精度の高い傾向が出せます。',
         },
+        ...(voiceMode === 'sharp'
+          ? [{
+              priority: 'high' as const,
+              title: '栄養差分を即日補正',
+              detail: `最優先で修正: ${macroDeltaLine} を目安に、次の食事で不足栄養を補正してください。`,
+            }]
+          : []),
       ]
     : [
         {
@@ -5218,9 +5289,16 @@ function buildReportMock(context: ReturnType<typeof buildReportContext>, locale:
           title: voiceMode === 'sharp' ? 'Increase logging frequency first' : 'Keep logging consistently',
           detail:
             voiceMode === 'sharp'
-              ? 'Top fix: lock in at least one meal log every day. More data is required for reliable analysis.'
+              ? 'Top fix: log at least one meal every 24 hours starting today.'
               : 'Log at least one meal per day to improve trend accuracy.',
         },
+        ...(voiceMode === 'sharp'
+          ? [{
+              priority: 'high' as const,
+              title: 'Correct macro gaps immediately',
+              detail: `Top fix: use ${macroDeltaLine} to correct your next meal composition.`,
+            }]
+          : []),
       ];
 
   return {
@@ -5237,17 +5315,34 @@ async function analyzeReportWithGemini(params: {
 }): Promise<{
   report: AiReportContent;
   attemptReports: HedgeAttemptReport[];
-  meta: { model: string; attempt: number; latencyMs: number; fallback_model_used?: boolean };
+  meta: {
+    model: string;
+    attempt: number;
+    latencyMs: number;
+    fallback_model_used?: boolean;
+    voiceModeApplied: AiReportVoiceMode;
+    generationPath: 'ai' | 'mock-fallback';
+    fallbackReason?: string;
+  };
 }> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   const prompt = buildReportPrompt(params.context, params.locale);
+  const voiceModeApplied = params.context.preference.voiceMode ?? 'balanced';
 
   if (!apiKey) {
     const mock = buildReportMock(params.context, params.locale);
     return {
       report: mock,
       attemptReports: [{ model: 'mock', ok: true, latencyMs: 10, attempt: 1 }],
-      meta: { model: 'mock', attempt: 1, latencyMs: 10 },
+      meta: {
+        model: 'mock',
+        attempt: 1,
+        latencyMs: 10,
+        fallback_model_used: true,
+        voiceModeApplied,
+        generationPath: 'mock-fallback',
+        fallbackReason: 'MISSING_API_KEY',
+      },
     };
   }
 
@@ -5372,7 +5467,6 @@ async function analyzeReportWithGemini(params: {
   const attempt = async (model: string, attemptNumber: number) => {
     const url = new URL(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent`);
     url.searchParams.set('key', apiKey);
-    const voiceMode = params.context.preference.voiceMode ?? 'balanced';
     const temperatureByMode: Record<AiReportVoiceMode, number> = {
       gentle: 0.24,
       balanced: 0.2,
@@ -5387,7 +5481,7 @@ async function analyzeReportWithGemini(params: {
         },
       ],
       generationConfig: {
-        temperature: temperatureByMode[voiceMode],
+        temperature: temperatureByMode[voiceModeApplied],
         topK: 32,
         topP: 0.8,
         responseMimeType: 'application/json',
@@ -5459,6 +5553,8 @@ async function analyzeReportWithGemini(params: {
           attempt: attemptNumber,
           latencyMs: result.meta.latencyMs,
           fallback_model_used: attemptNumber > 1,
+          voiceModeApplied,
+          generationPath: 'ai',
         },
       };
     } catch (error) {
@@ -5534,6 +5630,7 @@ async function analyzeReportWithRetry(params: { context: ReturnType<typeof build
   let lastError: unknown = null;
   const buildFallbackResult = (error: unknown, failure: ReportFailure) => {
     const fallback = buildReportMock(params.context, params.locale);
+    const voiceModeApplied = params.context.preference.voiceMode ?? 'balanced';
     const err = error as Error & { report?: HedgeAttemptReport; attemptReports?: HedgeAttemptReport[] };
     const fallbackAttempts = Array.isArray(err.attemptReports)
       ? err.attemptReports
@@ -5552,6 +5649,9 @@ async function analyzeReportWithRetry(params: { context: ReturnType<typeof build
         attempt: Math.max(1, fallbackAttempts.length),
         latencyMs: 0,
         fallback_model_used: true,
+        voiceModeApplied,
+        generationPath: 'mock-fallback' as const,
+        fallbackReason: failure.errorCode,
       },
     };
   };
@@ -5750,6 +5850,7 @@ async function processReportRequest(request: {
       normalizeLocale(request.locale ?? DEFAULT_LOCALE),
       preference.voiceMode ?? 'balanced',
     );
+    const appliedVoiceMode = preference.voiceMode ?? 'balanced';
     const comparisonWithScore =
       comparison && previousScore != null
         ? {
@@ -5775,7 +5876,11 @@ async function processReportRequest(request: {
       metrics: normalizedReport.metrics,
       advice: normalizedReport.advice,
       ingredients: normalizedReport.ingredients,
-      meta: { ...analysis.meta, attemptReports: analysis.attemptReports },
+      meta: {
+        ...analysis.meta,
+        voiceModeApplied: appliedVoiceMode,
+        attemptReports: analysis.attemptReports,
+      },
     };
 
     const { data: currentStatus, error: statusError } = await supabaseAdmin
@@ -6303,6 +6408,9 @@ export const __testables = {
   normalizeReportPreference,
   buildReportPrompt,
   normalizeReportTone,
+  buildReportMock,
+  buildReportContext,
+  analyzeReportWithRetry,
   resolveReportRange,
   getDashboardSummary,
   normalizeStoredReport,

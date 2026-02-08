@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 Deno.env.set('SUPABASE_URL', Deno.env.get('SUPABASE_URL') ?? 'http://localhost:54321');
 Deno.env.set('SERVICE_ROLE_KEY', Deno.env.get('SERVICE_ROLE_KEY') ?? 'service-role-test-key');
 Deno.env.set('REPORT_VOICE_MODE_ENABLED', 'true');
+Deno.env.set('REPORT_VOICE_MODE_ROLLOUT_PERCENT', '0');
 Deno.env.set('REPORT_REQUEST_TIMEZONE_ENABLED', 'true');
 
 const { supabaseAdmin } = await import('../_shared/supabase.ts');
@@ -183,6 +184,9 @@ const {
   normalizeReportPreference,
   buildReportPrompt,
   normalizeReportTone,
+  buildReportMock,
+  buildReportContext,
+  analyzeReportWithRetry,
   resolveReportRange,
   getDashboardSummary,
   normalizeStoredReport,
@@ -251,8 +255,13 @@ Deno.test('buildReportPrompt reflects selected voice mode', () => {
   );
 
   assert.match(sharpPrompt, /Voice mode: sharp/);
+  assert.match(sharpPrompt, /summary\.headline must start/);
+  assert.match(sharpPrompt, /advice\[0\] must be priority "high"/);
+  assert.doesNotMatch(sharpPrompt, /7:3/);
+  assert.doesNotMatch(sharpPrompt, /First sentence should acknowledge effort before giving any correction/);
   assert.match(sharpPrompt, /Never insult, shame, or attack/);
   assert.match(gentlePrompt, /Voice mode: gentle/);
+  assert.match(gentlePrompt, /7:3/);
   assert.match(gentlePrompt, /Be warm and supportive/);
 });
 
@@ -274,12 +283,114 @@ Deno.test('normalizeReportTone applies mode-specific adjustment and keeps metric
   const sharp = normalizeReportTone(report, 'ja', 'sharp');
   const gentle = normalizeReportTone(report, 'ja', 'gentle');
 
+  assert.match(sharp.summary.headline, /^最優先課題:/);
+  assert.equal(sharp.advice[0].priority, 'high');
   assert.match(sharp.advice[0].detail, /^最優先で修正:/);
   assert.match(gentle.advice[0].detail, /^まず良い点として、/);
   assert.equal(sharp.summary.score, report.summary.score);
   assert.equal(gentle.summary.score, report.summary.score);
   assert.deepEqual(sharp.metrics, report.metrics);
   assert.deepEqual(gentle.metrics, report.metrics);
+});
+
+Deno.test('buildReportMock sharp keeps direct and issue-first wording', () => {
+  const context = buildReportContext({
+    period: 'weekly',
+    summary: {
+      range: { from: '2025-01-01', to: '2025-01-07', timezone: 'Asia/Tokyo' },
+      calories: {
+        daily: [
+          {
+            date: '2025-01-01',
+            total: 1600,
+            target: 2000,
+            perMealPeriod: { breakfast: 300, lunch: 600, dinner: 500, snack: 200, unknown: 0 },
+          },
+          {
+            date: '2025-01-02',
+            total: 0,
+            target: 2000,
+            perMealPeriod: { breakfast: 0, lunch: 0, dinner: 0, snack: 0, unknown: 0 },
+          },
+        ],
+      },
+      macros: {
+        total: { calories: 1600, protein_g: 70, fat_g: 65, carbs_g: 180 },
+        targets: { calories: 2000, protein_g: 120, fat_g: 55, carbs_g: 220 },
+        delta: { calories: -400, protein_g: -50, fat_g: 10, carbs_g: -40 },
+      },
+    } as any,
+    preference: { goal: 'cut', focusAreas: ['weight'], adviceStyle: 'concrete', voiceMode: 'sharp' },
+    comparison: null,
+  });
+
+  const mock = buildReportMock(context, 'ja');
+  assert.match(mock.summary.headline, /^最優先課題:/);
+  assert.match(mock.summary.highlights[0], /データ不足|最優先課題/);
+  assert.match(mock.advice[0].detail, /^最優先で修正:/);
+  assert.ok(mock.advice.some((item: { detail: string }) => item.detail.includes('差分 P')));
+});
+
+Deno.test('analyzeReportWithRetry keeps sharp mode meta on fallback', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalApiKey = Deno.env.get('GEMINI_API_KEY');
+  const originalPrimaryModel = Deno.env.get('GEMINI_PRIMARY_MODEL');
+
+  Deno.env.set('GEMINI_API_KEY', 'test-key');
+  Deno.env.set('GEMINI_PRIMARY_MODEL', 'models/test-model');
+  globalThis.fetch = ((_: RequestInfo | URL, __?: RequestInit) =>
+    Promise.resolve(
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: 'not-json-response' }] } }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )) as typeof fetch;
+
+  const context = buildReportContext({
+    period: 'daily',
+    summary: {
+      range: { from: '2025-01-01', to: '2025-01-01', timezone: 'Asia/Tokyo' },
+      calories: {
+        daily: [
+          {
+            date: '2025-01-01',
+            total: 1200,
+            target: 2000,
+            perMealPeriod: { breakfast: 200, lunch: 500, dinner: 400, snack: 100, unknown: 0 },
+          },
+        ],
+      },
+      macros: {
+        total: { calories: 1200, protein_g: 60, fat_g: 45, carbs_g: 120 },
+        targets: { calories: 2000, protein_g: 120, fat_g: 55, carbs_g: 220 },
+        delta: { calories: -800, protein_g: -60, fat_g: -10, carbs_g: -100 },
+      },
+    } as any,
+    preference: { goal: 'cut', focusAreas: ['weight'], adviceStyle: 'concrete', voiceMode: 'sharp' },
+    comparison: null,
+  });
+
+  try {
+    const analysis = await analyzeReportWithRetry({ context, locale: 'ja' });
+    assert.equal(analysis.meta.generationPath, 'mock-fallback');
+    assert.equal(analysis.meta.voiceModeApplied, 'sharp');
+    assert.ok(typeof analysis.meta.fallbackReason === 'string' && analysis.meta.fallbackReason.length > 0);
+    assert.match(analysis.report.summary.headline, /^最優先課題:/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalApiKey == null) {
+      Deno.env.delete('GEMINI_API_KEY');
+    } else {
+      Deno.env.set('GEMINI_API_KEY', originalApiKey);
+    }
+    if (originalPrimaryModel == null) {
+      Deno.env.delete('GEMINI_PRIMARY_MODEL');
+    } else {
+      Deno.env.set('GEMINI_PRIMARY_MODEL', originalPrimaryModel);
+    }
+  }
 });
 
 Deno.test('resolveReportRange keeps timezone on DST boundary', () => {
@@ -461,5 +572,35 @@ Deno.test('GET/PUT report preference remains compatible without voiceMode', asyn
 
     assert.equal((state.capturedUpsert as { voiceMode?: string } | null)?.voiceMode, 'balanced');
     assert.equal(saved.preference.voiceMode, 'balanced');
+  });
+});
+
+Deno.test('GET/PUT report preference preserves explicitly selected voiceMode even when rollout bucket is off', async () => {
+  const state: MockState = {
+    mealLogs: [],
+    userProfile: null,
+    preferenceRow: {
+      goal: 'maintain',
+      focusAreas: ['habit'],
+      adviceStyle: 'simple',
+      updatedAt: '2026-02-07T00:00:00.000Z',
+      voiceMode: 'sharp',
+    },
+    capturedUpsert: null,
+  };
+
+  await withMockSupabase(state, async () => {
+    const fetched = await getUserReportPreference(1);
+    assert.equal(fetched.preference.voiceMode, 'sharp');
+
+    const saved = await upsertUserReportPreference(1, {
+      goal: 'cut',
+      focusAreas: ['weight'],
+      adviceStyle: 'concrete',
+      voiceMode: 'gentle',
+    });
+
+    assert.equal((state.capturedUpsert as { voiceMode?: string } | null)?.voiceMode, 'gentle');
+    assert.equal(saved.preference.voiceMode, 'gentle');
   });
 });
