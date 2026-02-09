@@ -12,6 +12,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
   type LayoutChangeEvent,
 } from 'react-native';
@@ -26,6 +27,7 @@ import type {
   AiReportPeriod,
   AiReportResponse,
   AiReportRequestStatus,
+  AiReportVoiceMode,
   DashboardPeriod,
   ReportCalendarResponse,
 } from '@meal-log/shared';
@@ -38,6 +40,14 @@ import { AuroraBackground } from '@/components/AuroraBackground';
 import { GlassCard } from '@/components/GlassCard';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { useDashboardSummary, type ChartPoint, type MealPeriodBreakdown, type MacroStat } from '@/features/dashboard/useDashboardSummary';
+import { ReportSummaryV2, SectionShellV2 } from '@/features/report/report-summary-v2';
+import {
+  buildReportIdentityLevel,
+  buildSummaryEvidenceCards,
+  formatGeneratedDate,
+  getReportIdentityLabelKey,
+} from '@/features/report/report-view-model';
+import { resolveReportUiVariant, type ReportUiVariant } from '@/features/report/ui-variant';
 import {
   createAiReport,
   getAiReportPreference,
@@ -48,6 +58,7 @@ import {
   updateAiReportPreference,
   type ApiError,
 } from '@/services/api';
+import { REPORT_UI_V2_ENABLED, REPORT_UI_V2_ROLLOUT_PERCENT } from '@/services/config';
 import { useTranslation } from '@/i18n';
 import { useSessionStore } from '@/store/session';
 import { trackEvent } from '@/analytics/track';
@@ -154,18 +165,6 @@ function formatHistoryDate(value: string, locale: string) {
     return value;
   }
   return parsed.toFormat(locale.startsWith('ja') ? 'yyyy/MM/dd' : 'MMM dd');
-}
-
-function formatGeneratedDate(value: string, locale: string, timezone?: string) {
-  const parsed = DateTime.fromISO(value);
-  if (!parsed.isValid) {
-    return null;
-  }
-  const zoned = timezone ? parsed.setZone(timezone) : parsed;
-  if (!zoned.isValid) {
-    return null;
-  }
-  return zoned.toFormat(locale.startsWith('ja') ? 'yyyy/MM/dd' : 'MMM dd, yyyy');
 }
 
 function weekKeyForDate(dateIso: string, locale: string) {
@@ -305,8 +304,50 @@ function highlightTint(index: number) {
   return HIGHLIGHT_TONES[index % HIGHLIGHT_TONES.length];
 }
 
+function resolveQuickStatForSection(args: {
+  key: 'comparison' | 'trend' | 'macros' | 'mealTiming' | 'metrics' | 'ingredients' | 'advice';
+  t: (key: string, values?: Record<string, unknown>) => string;
+  report: AiReportResponse;
+  summaryStats: {
+    averageCalories: number;
+    loggedDays: number;
+    totalDays: number;
+    achievement: number;
+  } | null;
+  dashboardLoaded: boolean;
+  totalCalories: number | null;
+}) {
+  const { key, t, report, summaryStats, dashboardLoaded, totalCalories } = args;
+  if (key === 'comparison') {
+    if (typeof report.comparison?.scoreDelta === 'number') {
+      const value = report.comparison.scoreDelta > 0 ? `+${report.comparison.scoreDelta}` : `${report.comparison.scoreDelta}`;
+      return t('report.section.quick.scoreDelta', { value });
+    }
+    return t('report.section.quick.noBaseline');
+  }
+  if (key === 'trend') {
+    return summaryStats ? t('report.section.quick.avgKcal', { value: summaryStats.averageCalories }) : t('report.section.quick.loading');
+  }
+  if (key === 'macros') {
+    return dashboardLoaded && typeof totalCalories === 'number'
+      ? t('report.section.quick.totalKcal', { value: Math.round(totalCalories) })
+      : t('report.section.quick.loading');
+  }
+  if (key === 'mealTiming') {
+    return summaryStats ? t('report.section.quick.loggedDaysShort', { value: summaryStats.loggedDays }) : t('report.section.quick.loading');
+  }
+  if (key === 'metrics') {
+    return t('report.section.quick.metricCount', { value: report.metrics.length });
+  }
+  if (key === 'ingredients') {
+    return t('report.section.quick.itemCount', { value: report.ingredients.length });
+  }
+  return t('report.section.quick.itemCount', { value: report.advice.length });
+}
+
 export default function ReportScreen() {
   const { t, locale } = useTranslation();
+  const { width: viewportWidth } = useWindowDimensions();
   const setUsage = useSessionStore((state) => state.setUsage);
   const userId = useSessionStore((state) => state.user?.id ?? null);
   const queryClient = useQueryClient();
@@ -334,6 +375,7 @@ export default function ReportScreen() {
   const scoreEffectOpacity = useRef(new Animated.Value(0)).current;
   const playedEffectReportKeyRef = useRef<string | null>(null);
   const trackedReportCompletionRef = useRef<Set<string>>(new Set());
+  const trackedVariantExposureRef = useRef<Set<string>>(new Set());
   const pendingGenerateRef = useRef<{ period: AiReportPeriod; range: ReportRange } | null>(null);
   const shareSvgRef = useRef<React.ComponentRef<typeof Svg> | null>(null);
   const historyStorageKey = useMemo(
@@ -490,6 +532,7 @@ export default function ReportScreen() {
       trackEvent('report.generate_completed', {
         requestId: request.id,
         status: request.status,
+        uiVariant,
         score: request.status === 'done' ? Math.round(request.report?.summary.score ?? 0) : undefined,
         voiceMode: request.report?.meta?.voiceModeApplied ?? request.report?.preference?.voiceMode ?? 'balanced',
         voiceModeApplied: request.report?.meta?.voiceModeApplied ?? undefined,
@@ -501,7 +544,7 @@ export default function ReportScreen() {
         errorCode: request.errorCode ?? undefined,
       });
     },
-    [],
+    [uiVariant],
   );
 
   useQuery({
@@ -938,6 +981,21 @@ export default function ReportScreen() {
     };
   }, [dashboard]);
   const streakDays = report?.uiMeta?.streakDays ?? streakQuery.data?.streak.current ?? 0;
+  const sectionQuickStats = useMemo(() => {
+    if (!report) {
+      return null;
+    }
+    const totalCalories = dashboard ? dashboard.summary.macros.total.calories : null;
+    return {
+      comparison: resolveQuickStatForSection({ key: 'comparison', t, report, summaryStats, dashboardLoaded: Boolean(dashboard), totalCalories }),
+      trend: resolveQuickStatForSection({ key: 'trend', t, report, summaryStats, dashboardLoaded: Boolean(dashboard), totalCalories }),
+      macros: resolveQuickStatForSection({ key: 'macros', t, report, summaryStats, dashboardLoaded: Boolean(dashboard), totalCalories }),
+      mealTiming: resolveQuickStatForSection({ key: 'mealTiming', t, report, summaryStats, dashboardLoaded: Boolean(dashboard), totalCalories }),
+      metrics: resolveQuickStatForSection({ key: 'metrics', t, report, summaryStats, dashboardLoaded: Boolean(dashboard), totalCalories }),
+      ingredients: resolveQuickStatForSection({ key: 'ingredients', t, report, summaryStats, dashboardLoaded: Boolean(dashboard), totalCalories }),
+      advice: resolveQuickStatForSection({ key: 'advice', t, report, summaryStats, dashboardLoaded: Boolean(dashboard), totalCalories }),
+    };
+  }, [dashboard, report, summaryStats, t]);
   const showWeeklyPrompt = period === 'daily' && streakDays >= 7;
 
   useEffect(() => {
@@ -1026,6 +1084,32 @@ export default function ReportScreen() {
   const activePreference = preferenceQuery.data?.preference ?? draftPreference;
   const voiceModeOptions: ReportVoiceModeOption[] = ['gentle', 'balanced', 'sharp'];
   const activeVoiceMode = activePreference.voiceMode ?? 'balanced';
+  const uiVariantResult = useMemo(
+    () =>
+      resolveReportUiVariant({
+        userId,
+        enabled: REPORT_UI_V2_ENABLED,
+        rolloutPercent: REPORT_UI_V2_ROLLOUT_PERCENT,
+      }),
+    [userId],
+  );
+  const uiVariant: ReportUiVariant = uiVariantResult.variant;
+  const isSmartPro = uiVariant === 'v2-smart-pro';
+  const compactLayout = viewportWidth < 375;
+  useEffect(() => {
+    const exposureKey = `${uiVariant}:${period}:${activeVoiceMode}`;
+    if (trackedVariantExposureRef.current.has(exposureKey)) {
+      return;
+    }
+    trackedVariantExposureRef.current.add(exposureKey);
+    trackEvent('report.ui_variant_exposed', {
+      variant: uiVariant,
+      userBucket: uiVariantResult.userBucket ?? undefined,
+      voiceMode: activeVoiceMode,
+      period,
+    });
+  }, [activeVoiceMode, period, uiVariant, uiVariantResult.userBucket]);
+
   const updatePreferenceMutation = useMutation({
     mutationFn: (payload: AiReportPreferenceInput) => updateAiReportPreference(payload),
     onSuccess: (response) => {
@@ -1171,18 +1255,20 @@ export default function ReportScreen() {
     () => (report ? wrapShareLines(sanitizeShareText(report.summary.headline), 24, 3) : []),
     [report],
   );
-  const shareHighlights = useMemo(
-    () =>
-      report
-        ? report.summary.highlights
-            .slice(0, 3)
-            .map((item) => wrapShareLines(sanitizeShareText(item), 30, 1).join(''))
-        : [],
+  const shareEvidenceCards = useMemo(
+    () => (report ? buildSummaryEvidenceCards(report).slice(0, 3) : []),
     [report],
   );
-  const shareComparisonMetrics = useMemo(
-    () => (report?.comparison?.metrics ?? []).slice(0, 3),
-    [report],
+  const shareIdentityLabel = useMemo(() => {
+    if (!report) {
+      return '';
+    }
+    const level = buildReportIdentityLevel(Math.round(report.summary.score), streakDays);
+    return t(getReportIdentityLabelKey(level));
+  }, [report, streakDays, t]);
+  const shareVoiceModeLabel = useMemo(
+    () => t(`report.preference.voiceMode.${report?.preference?.voiceMode ?? activeVoiceMode}`),
+    [activeVoiceMode, report?.preference?.voiceMode, t],
   );
   const isGenerating =
     createReportMutation.isLoading ||
@@ -1197,9 +1283,10 @@ export default function ReportScreen() {
       period,
       reportKey,
       voiceMode: activeVoiceMode,
+      uiVariant,
     });
     setDetailsExpanded(true);
-  }, [activeVoiceMode, period, reportKey]);
+  }, [activeVoiceMode, period, reportKey, uiVariant]);
   const handleSubmitFeedback = useCallback(
     (keyword: ReportFeedbackKey) => {
       if (submittedFeedback[keyword]) {
@@ -1271,6 +1358,7 @@ export default function ReportScreen() {
       to: selectedRange.to,
       timezone: selectedTimezone,
       voiceMode: activeVoiceMode,
+      uiVariant,
     });
     createReportMutation.mutate({
       period,
@@ -1320,6 +1408,7 @@ export default function ReportScreen() {
           period: report.period,
           voiceMode: report.preference?.voiceMode ?? activeVoiceMode,
           score: Math.round(report.summary.score),
+          uiVariant,
         });
       } finally {
         await deleteAsync(fileUri, { idempotent: true });
@@ -1531,99 +1620,146 @@ export default function ReportScreen() {
           )}
 
           {report ? (
-            <GlassCard style={styles.card} contentStyle={styles.summaryCardContent}>
-                <ExpoLinearGradient
-                  colors={['rgba(245,178,37,0.2)', 'rgba(116,210,194,0.1)', 'rgba(255,255,255,0.0)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.summaryCardGradient}
-                  pointerEvents="none"
-                />
-                <Text style={styles.cardTitle}>✨ {t('report.section.summary')}</Text>
-                {reportGeneratedDateLabel ? (
-                  <Text style={styles.summaryGeneratedDate}>
-                    {t('report.summary.generatedDate')}: {reportGeneratedDateLabel}
-                  </Text>
-                ) : null}
-                <View style={styles.summaryHero}>
-                  <ScoreRing
-                    score={Math.round(report.summary.score)}
-                    label={t('report.scoreLabel')}
-                    emoji={scoreEmoji(report.summary.score)}
-                    size={130}
+            isSmartPro ? (
+              <ReportSummaryV2
+                report={report}
+                period={period}
+                voiceMode={activeVoiceMode as AiReportVoiceMode}
+                generatedDateLabel={reportGeneratedDateLabel}
+                summaryStats={summaryStats}
+                streakDays={streakDays}
+                detailsExpanded={detailsExpanded}
+                onToggleDetails={() => {
+                  if (detailsExpanded) {
+                    setDetailsExpanded(false);
+                    return;
+                  }
+                  handleExpandDetails();
+                }}
+                onShare={handleShareReport}
+                t={t}
+              />
+            ) : (
+              <GlassCard style={styles.card} contentStyle={styles.summaryCardContent}>
+                  <ExpoLinearGradient
+                    colors={['rgba(245,178,37,0.2)', 'rgba(116,210,194,0.1)', 'rgba(255,255,255,0.0)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.summaryCardGradient}
+                    pointerEvents="none"
                   />
-                  <View style={styles.heroStats}>
-                    <View style={styles.heroAchievement}>
-                      <Text style={styles.heroAchievementLabel}>🎯 {t('report.stat.achievement')}</Text>
-                      <Text style={styles.heroAchievementValue}>
-                        {summaryStats ? `${summaryStats.achievement}%` : '--'}
-                      </Text>
-                    </View>
-                    <View style={styles.heroStat}>
-                      <Text style={styles.heroStatLabel}>🔥 {t('report.stat.averageCalories')}</Text>
-                      <Text style={styles.heroStatValue}>{summaryStats ? `${summaryStats.averageCalories} kcal` : '--'}</Text>
-                    </View>
-                    <View style={styles.heroStat}>
-                      <Text style={styles.heroStatLabel}>🗓️ {t('report.stat.loggedDays')}</Text>
-                      <Text style={styles.heroStatValue}>{summaryStats ? `${summaryStats.loggedDays} / ${summaryStats.totalDays}` : '--'}</Text>
-                    </View>
-                    <View style={styles.heroStat}>
-                      <Text style={styles.heroStatLabel}>🔥 {t('report.streakLabel')}</Text>
-                      <Text style={styles.heroStatValue}>{streakDays}</Text>
-                    </View>
-                  </View>
-                </View>
-                <Text style={styles.summaryHeadline}>{report.summary.headline}</Text>
-                <View style={styles.highlightRow}>
-                  {report.summary.highlights.map((highlight, index) => (
-                    <View
-                      key={`${highlight}-${index}`}
-                      style={[styles.highlightChip, { backgroundColor: `${highlightTint(index)}33` }]}
-                    >
-                      <Text style={styles.highlightText}>{highlight}</Text>
-                    </View>
-                  ))}
-                </View>
-                <View style={styles.summaryActionRow}>
-                  {detailsExpanded ? (
-                    <TouchableOpacity
-                      style={styles.summaryCollapseButton}
-                      onPress={() => setDetailsExpanded(false)}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('report.hideDetails')}
-                    >
-                      <Text style={styles.summaryCollapseText}>⌃</Text>
-                    </TouchableOpacity>
+                  <Text style={styles.cardTitle}>✨ {t('report.section.summary')}</Text>
+                  {reportGeneratedDateLabel ? (
+                    <Text style={styles.summaryGeneratedDate}>
+                      {t('report.summary.generatedDate')}: {reportGeneratedDateLabel}
+                    </Text>
                   ) : null}
-                  <TouchableOpacity
-                    style={[styles.summaryActionButton, styles.summaryActionButtonPrimary]}
-                    onPress={handleShareReport}
-                  >
-                    <Text style={[styles.summaryActionText, styles.summaryActionTextStrong]}>{t('report.shareButton')}</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.feedbackSection}>
-                  <Text style={styles.feedbackTitle}>{t('report.feedback.title')}</Text>
-                  <View style={styles.feedbackChipRow}>
-                    {REPORT_FEEDBACK_OPTIONS.map((option) => {
-                      const selected = submittedFeedback[option.key];
-                      return (
-                        <TouchableOpacity
-                          key={option.key}
-                          style={[styles.feedbackChip, selected && styles.feedbackChipSelected]}
-                          onPress={() => handleSubmitFeedback(option.key)}
-                          disabled={selected}
-                        >
-                          <Text style={[styles.feedbackChipText, selected && styles.feedbackChipTextSelected]}>
-                            {selected ? `✓ ${t(option.labelKey)}` : t(option.labelKey)}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                  <View style={styles.summaryHero}>
+                    <ScoreRing
+                      score={Math.round(report.summary.score)}
+                      label={t('report.scoreLabel')}
+                      emoji={scoreEmoji(report.summary.score)}
+                      size={130}
+                    />
+                    <View style={styles.heroStats}>
+                      <View style={styles.heroAchievement}>
+                        <Text style={styles.heroAchievementLabel}>🎯 {t('report.stat.achievement')}</Text>
+                        <Text style={styles.heroAchievementValue}>
+                          {summaryStats ? `${summaryStats.achievement}%` : '--'}
+                        </Text>
+                      </View>
+                      <View style={styles.heroStat}>
+                        <Text style={styles.heroStatLabel}>🔥 {t('report.stat.averageCalories')}</Text>
+                        <Text style={styles.heroStatValue}>{summaryStats ? `${summaryStats.averageCalories} kcal` : '--'}</Text>
+                      </View>
+                      <View style={styles.heroStat}>
+                        <Text style={styles.heroStatLabel}>🗓️ {t('report.stat.loggedDays')}</Text>
+                        <Text style={styles.heroStatValue}>{summaryStats ? `${summaryStats.loggedDays} / ${summaryStats.totalDays}` : '--'}</Text>
+                      </View>
+                      <View style={styles.heroStat}>
+                        <Text style={styles.heroStatLabel}>🔥 {t('report.streakLabel')}</Text>
+                        <Text style={styles.heroStatValue}>{streakDays}</Text>
+                      </View>
+                    </View>
                   </View>
-                  <Text style={styles.feedbackHint}>{t('report.feedback.subtitle')}</Text>
+                  <Text style={styles.summaryHeadline}>{report.summary.headline}</Text>
+                  <View style={styles.highlightRow}>
+                    {report.summary.highlights.map((highlight, index) => (
+                      <View
+                        key={`${highlight}-${index}`}
+                        style={[styles.highlightChip, { backgroundColor: `${highlightTint(index)}33` }]}
+                      >
+                        <Text style={styles.highlightText}>{highlight}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  <View style={styles.summaryActionRow}>
+                    {detailsExpanded ? (
+                      <TouchableOpacity
+                        style={styles.summaryCollapseButton}
+                        onPress={() => setDetailsExpanded(false)}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('report.hideDetails')}
+                      >
+                        <Text style={styles.summaryCollapseText}>⌃</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      style={[styles.summaryActionButton, styles.summaryActionButtonPrimary]}
+                      onPress={handleShareReport}
+                    >
+                      <Text style={[styles.summaryActionText, styles.summaryActionTextStrong]}>{t('report.shareButton')}</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.feedbackSection}>
+                    <Text style={styles.feedbackTitle}>{t('report.feedback.title')}</Text>
+                    <View style={styles.feedbackChipRow}>
+                      {REPORT_FEEDBACK_OPTIONS.map((option) => {
+                        const selected = submittedFeedback[option.key];
+                        return (
+                          <TouchableOpacity
+                            key={option.key}
+                            style={[styles.feedbackChip, selected && styles.feedbackChipSelected]}
+                            onPress={() => handleSubmitFeedback(option.key)}
+                            disabled={selected}
+                          >
+                            <Text style={[styles.feedbackChipText, selected && styles.feedbackChipTextSelected]}>
+                              {selected ? `✓ ${t(option.labelKey)}` : t(option.labelKey)}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                    <Text style={styles.feedbackHint}>{t('report.feedback.subtitle')}</Text>
+                  </View>
+              </GlassCard>
+            )
+          ) : null}
+
+          {report && isSmartPro ? (
+            <SectionShellV2 icon="🗳️" title={t('report.section.afterAction')} quickStat={t('report.section.quick.feedback')}>
+              <View style={styles.feedbackSection}>
+                <Text style={styles.feedbackTitle}>{t('report.feedback.title')}</Text>
+                <View style={styles.feedbackChipRow}>
+                  {REPORT_FEEDBACK_OPTIONS.map((option) => {
+                    const selected = submittedFeedback[option.key];
+                    return (
+                      <TouchableOpacity
+                        key={option.key}
+                        style={[styles.feedbackChip, selected && styles.feedbackChipSelected]}
+                        onPress={() => handleSubmitFeedback(option.key)}
+                        disabled={selected}
+                      >
+                        <Text style={[styles.feedbackChipText, selected && styles.feedbackChipTextSelected]}>
+                          {selected ? `✓ ${t(option.labelKey)}` : t(option.labelKey)}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-            </GlassCard>
+                <Text style={styles.feedbackHint}>{t('report.feedback.subtitle')}</Text>
+              </View>
+            </SectionShellV2>
           ) : null}
 
           {!report ? (
@@ -1661,185 +1797,384 @@ export default function ReportScreen() {
           ) : (
             <>
               {showWeeklyPrompt ? (
-                <GlassCard style={styles.card}>
-                  <Text style={styles.cardTitle}>🧭 {t('report.weeklyPrompt.title')}</Text>
-                  <Text style={styles.emptyBody}>{t('report.weeklyPrompt.body', { days: streakDays })}</Text>
-                  <TouchableOpacity style={styles.summaryActionButton} onPress={() => setPeriod('weekly')}>
-                    <Text style={styles.summaryActionText}>{t('report.weeklyPrompt.cta')}</Text>
-                  </TouchableOpacity>
-                </GlassCard>
+                isSmartPro ? (
+                  <SectionShellV2
+                    icon="🧭"
+                    title={t('report.weeklyPrompt.title')}
+                    quickStat={t('report.section.quick.streakDays', { value: streakDays })}
+                  >
+                    <Text style={styles.emptyBody}>{t('report.weeklyPrompt.body', { days: streakDays })}</Text>
+                    <TouchableOpacity style={[styles.summaryActionButton, styles.smartProActionSecondary]} onPress={() => setPeriod('weekly')}>
+                      <Text style={styles.summaryActionText}>{t('report.weeklyPrompt.cta')}</Text>
+                    </TouchableOpacity>
+                  </SectionShellV2>
+                ) : (
+                  <GlassCard style={styles.card}>
+                    <Text style={styles.cardTitle}>🧭 {t('report.weeklyPrompt.title')}</Text>
+                    <Text style={styles.emptyBody}>{t('report.weeklyPrompt.body', { days: streakDays })}</Text>
+                    <TouchableOpacity style={styles.summaryActionButton} onPress={() => setPeriod('weekly')}>
+                      <Text style={styles.summaryActionText}>{t('report.weeklyPrompt.cta')}</Text>
+                    </TouchableOpacity>
+                  </GlassCard>
+                )
               ) : null}
 
               {!detailsExpanded ? (
-                <GlassCard style={styles.card}>
-                  <Text style={styles.emptyBody}>{t('report.detailsCollapsed')}</Text>
-                  <TouchableOpacity
-                    style={[styles.summaryActionButton, styles.detailsPromptButton, styles.summaryActionButtonPrimary]}
-                    onPress={handleExpandDetails}
-                  >
-                    <Text style={[styles.summaryActionText, styles.summaryActionTextStrong]}>{t('report.showDetails')}</Text>
-                  </TouchableOpacity>
-                </GlassCard>
+                isSmartPro ? null : (
+                  <GlassCard style={styles.card}>
+                    <Text style={styles.emptyBody}>{t('report.detailsCollapsed')}</Text>
+                    <TouchableOpacity
+                      style={[styles.summaryActionButton, styles.detailsPromptButton, styles.summaryActionButtonPrimary]}
+                      onPress={handleExpandDetails}
+                    >
+                      <Text style={[styles.summaryActionText, styles.summaryActionTextStrong]}>{t('report.showDetails')}</Text>
+                    </TouchableOpacity>
+                  </GlassCard>
+                )
               ) : (
                 <>
                   {report.comparison?.metrics?.length ? (
-                    <GlassCard style={styles.card}>
-                      <Text style={styles.cardTitle}>📊 {t('report.section.comparison')}</Text>
-                      {typeof report.comparison.scoreDelta === 'number' ? (
-                        <Text style={styles.comparisonScoreDelta}>
-                          {t('report.comparison.scoreDelta', {
-                            value:
-                              report.comparison.scoreDelta > 0
-                                ? `+${report.comparison.scoreDelta}`
-                                : `${report.comparison.scoreDelta}`,
-                          })}
-                        </Text>
-                      ) : null}
-                      <View style={styles.comparisonList}>
-                        {report.comparison.metrics.map((metric) => {
-                          const improved = isMetricImproved(metric);
-                          return (
-                            <View key={metric.key} style={styles.comparisonItem}>
-                              <View style={styles.comparisonItemTop}>
-                                <Text style={styles.comparisonLabel}>{metric.label}</Text>
-                                <Text style={styles.comparisonValue}>{formatComparisonValue(metric)}</Text>
-                              </View>
-                              <Text
-                                style={[
-                                  styles.comparisonDelta,
-                                  improved ? styles.comparisonDeltaGood : styles.comparisonDeltaBad,
-                                ]}
-                              >
-                                {formatDeltaValue(metric)}
-                              </Text>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    </GlassCard>
-                  ) : null}
-
-                  <GlassCard style={styles.card}>
-                    <Text style={styles.cardTitle}>📈 {t('report.section.trend')}</Text>
-                    {dashboardSummary.isLoading && !dashboard ? (
-                      <ActivityIndicator color={colors.accent} />
-                    ) : dashboard?.calories.points.length ? (
-                      <TrendLineChart
-                        points={dashboard.calories.points}
-                        target={dashboard.calories.targetLine}
-                        targetLabel={t('dashboard.chart.targetLabel', { value: Math.round(dashboard.calories.targetLine) })}
-                        axisLabelY={t('dashboard.chart.axisY')}
-                        axisLabelX={t('dashboard.chart.axisX')}
-                      />
-                    ) : (
-                      <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
-                    )}
-                    {dashboard?.calories.targetLine ? (
-                      <Text style={styles.trendNote}>
-                        {t('dashboard.chart.targetLabel', { value: Math.round(dashboard.calories.targetLine) })}
-                      </Text>
-                    ) : null}
-                  </GlassCard>
-
-                  <GlassCard style={styles.card}>
-                    <Text style={styles.cardTitle}>🥗 {t('report.section.macros')}</Text>
-                    {dashboard ? (
-                      <View style={styles.macroWrap}>
-                        <MacroDonut macros={dashboard.macros} totalCalories={dashboard.summary.macros.total.calories} />
-                        <View style={styles.macroLegend}>
-                          {dashboard.macros.map((macro) => {
-                            const macroColor = MACRO_META[macro.key].color;
-                            const progress = Math.max(
-                              0,
-                              Math.min(100, Math.round((macro.actual / Math.max(1, macro.target)) * 100)),
-                            );
-                            const remain = Math.max(0, Math.round(macro.target - macro.actual));
-
+                    isSmartPro ? (
+                      <SectionShellV2
+                        icon="📊"
+                        title={t('report.section.comparison')}
+                        quickStat={sectionQuickStats?.comparison}
+                      >
+                        {typeof report.comparison.scoreDelta === 'number' ? (
+                          <Text style={styles.comparisonScoreDelta}>
+                            {t('report.comparison.scoreDelta', {
+                              value:
+                                report.comparison.scoreDelta > 0
+                                  ? `+${report.comparison.scoreDelta}`
+                                  : `${report.comparison.scoreDelta}`,
+                            })}
+                          </Text>
+                        ) : null}
+                        <View style={styles.comparisonList}>
+                          {report.comparison.metrics.map((metric) => {
+                            const improved = isMetricImproved(metric);
                             return (
-                              <View key={macro.key} style={styles.macroLegendItem}>
-                                <View style={styles.macroLegendRow}>
-                                  <View style={[styles.macroDot, { backgroundColor: macroColor }]} />
-                                  <Text style={styles.macroLegendText}>
-                                    {MACRO_META[macro.key].emoji} {macro.label}
-                                  </Text>
-                                  <Text style={styles.macroLegendValue}>
-                                    {Math.round(macro.actual)} / {Math.round(macro.target)}g
-                                  </Text>
+                              <View key={metric.key} style={styles.comparisonItem}>
+                                <View style={styles.comparisonItemTop}>
+                                  <Text style={styles.comparisonLabel}>{metric.label}</Text>
+                                  <Text style={styles.comparisonValue}>{formatComparisonValue(metric)}</Text>
                                 </View>
-                                <View style={styles.macroProgressTrack}>
-                                  <View
-                                    style={[
-                                      styles.macroProgressFill,
-                                      {
-                                        backgroundColor: macroColor,
-                                        width: `${progress}%`,
-                                      },
-                                    ]}
-                                  />
-                                </View>
-                                <Text style={[styles.macroRemainText, { color: macroColor }]}>
-                                  {locale.startsWith('ja') ? `残り ${remain}g` : `${remain}g left`}
+                                <Text
+                                  style={[
+                                    styles.comparisonDelta,
+                                    improved ? styles.comparisonDeltaGood : styles.comparisonDeltaBad,
+                                  ]}
+                                >
+                                  {formatDeltaValue(metric)}
                                 </Text>
                               </View>
                             );
                           })}
                         </View>
-                      </View>
+                      </SectionShellV2>
                     ) : (
-                      <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
-                    )}
-                  </GlassCard>
-
-                  <GlassCard style={styles.card}>
-                    <Text style={styles.cardTitle}>🍽️ {t('report.section.mealTiming')}</Text>
-                    {dashboard ? (
-                      <MealTimingStack entries={dashboard.calories.mealPeriodBreakdown} />
-                    ) : (
-                      <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
-                    )}
-                  </GlassCard>
-
-                  <GlassCard style={styles.card}>
-                    <Text style={styles.cardTitle}>📌 {t('report.section.metrics')}</Text>
-                    <View style={styles.metricGrid}>
-                      {report.metrics.map((metric, index) => (
-                        <View key={`${metric.label}-${index}`} style={styles.metricItem}>
-                          <Text style={styles.metricLabel}>{metric.label}</Text>
-                          <Text style={styles.metricValue}>{metric.value}</Text>
-                          {metric.note ? <Text style={styles.metricNote}>{metric.note}</Text> : null}
+                      <GlassCard style={styles.card}>
+                        <Text style={styles.cardTitle}>📊 {t('report.section.comparison')}</Text>
+                        {typeof report.comparison.scoreDelta === 'number' ? (
+                          <Text style={styles.comparisonScoreDelta}>
+                            {t('report.comparison.scoreDelta', {
+                              value:
+                                report.comparison.scoreDelta > 0
+                                  ? `+${report.comparison.scoreDelta}`
+                                  : `${report.comparison.scoreDelta}`,
+                            })}
+                          </Text>
+                        ) : null}
+                        <View style={styles.comparisonList}>
+                          {report.comparison.metrics.map((metric) => {
+                            const improved = isMetricImproved(metric);
+                            return (
+                              <View key={metric.key} style={styles.comparisonItem}>
+                                <View style={styles.comparisonItemTop}>
+                                  <Text style={styles.comparisonLabel}>{metric.label}</Text>
+                                  <Text style={styles.comparisonValue}>{formatComparisonValue(metric)}</Text>
+                                </View>
+                                <Text
+                                  style={[
+                                    styles.comparisonDelta,
+                                    improved ? styles.comparisonDeltaGood : styles.comparisonDeltaBad,
+                                  ]}
+                                >
+                                  {formatDeltaValue(metric)}
+                                </Text>
+                              </View>
+                            );
+                          })}
                         </View>
-                      ))}
-                    </View>
-                  </GlassCard>
+                      </GlassCard>
+                    )
+                  ) : null}
 
-                  <GlassCard style={styles.card}>
-                    <Text style={styles.cardTitle}>🥦 {t('report.section.ingredients')}</Text>
-                    <View style={styles.ingredientList}>
-                      {report.ingredients.map((ingredient, index) => (
-                        <View key={`${ingredient.name}-${index}`} style={styles.ingredientItem}>
-                          <Text style={styles.ingredientName}>{ingredient.name}</Text>
-                          <Text style={styles.ingredientReason}>{ingredient.reason}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </GlassCard>
+                  {isSmartPro ? (
+                    <SectionShellV2
+                      icon="📈"
+                      title={t('report.section.trend')}
+                      quickStat={sectionQuickStats?.trend}
+                    >
+                      {dashboardSummary.isLoading && !dashboard ? (
+                        <ActivityIndicator color={colors.accent} />
+                      ) : dashboard?.calories.points.length ? (
+                        <TrendLineChart
+                          points={dashboard.calories.points}
+                          target={dashboard.calories.targetLine}
+                          targetLabel={t('dashboard.chart.targetLabel', { value: Math.round(dashboard.calories.targetLine) })}
+                          axisLabelY={t('dashboard.chart.axisY')}
+                          axisLabelX={t('dashboard.chart.axisX')}
+                        />
+                      ) : (
+                        <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
+                      )}
+                      {dashboard?.calories.targetLine ? (
+                        <Text style={styles.trendNote}>
+                          {t('dashboard.chart.targetLabel', { value: Math.round(dashboard.calories.targetLine) })}
+                        </Text>
+                      ) : null}
+                    </SectionShellV2>
+                  ) : (
+                    <GlassCard style={styles.card}>
+                      <Text style={styles.cardTitle}>📈 {t('report.section.trend')}</Text>
+                      {dashboardSummary.isLoading && !dashboard ? (
+                        <ActivityIndicator color={colors.accent} />
+                      ) : dashboard?.calories.points.length ? (
+                        <TrendLineChart
+                          points={dashboard.calories.points}
+                          target={dashboard.calories.targetLine}
+                          targetLabel={t('dashboard.chart.targetLabel', { value: Math.round(dashboard.calories.targetLine) })}
+                          axisLabelY={t('dashboard.chart.axisY')}
+                          axisLabelX={t('dashboard.chart.axisX')}
+                        />
+                      ) : (
+                        <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
+                      )}
+                      {dashboard?.calories.targetLine ? (
+                        <Text style={styles.trendNote}>
+                          {t('dashboard.chart.targetLabel', { value: Math.round(dashboard.calories.targetLine) })}
+                        </Text>
+                      ) : null}
+                    </GlassCard>
+                  )}
 
-                  <GlassCard style={styles.card}>
-                    <Text style={styles.cardTitle}>💡 {t('report.section.advice')}</Text>
-                    <View style={styles.adviceList}>
-                      {report.advice.map((advice, index) => (
-                        <View key={`${advice.title}-${index}`} style={styles.adviceItem}>
-                          <View style={styles.adviceHeader}>
-                            <View style={[styles.priorityBadge, priorityBadgeStyle(advice.priority)]}>
-                              <Text style={[styles.priorityText, priorityTextStyle(advice.priority)]}>{formatPriority(advice.priority)}</Text>
-                            </View>
-                            <Text style={styles.adviceTitle}>{advice.title}</Text>
+                  {isSmartPro ? (
+                    <SectionShellV2
+                      icon="🥗"
+                      title={t('report.section.macros')}
+                      quickStat={sectionQuickStats?.macros}
+                    >
+                      {dashboard ? (
+                        <View style={[styles.macroWrap, compactLayout && styles.macroWrapCompact]}>
+                          <MacroDonut macros={dashboard.macros} totalCalories={dashboard.summary.macros.total.calories} />
+                          <View style={styles.macroLegend}>
+                            {dashboard.macros.map((macro) => {
+                              const macroColor = MACRO_META[macro.key].color;
+                              const progress = Math.max(
+                                0,
+                                Math.min(100, Math.round((macro.actual / Math.max(1, macro.target)) * 100)),
+                              );
+                              const remain = Math.max(0, Math.round(macro.target - macro.actual));
+
+                              return (
+                                <View key={macro.key} style={styles.macroLegendItem}>
+                                  <View style={styles.macroLegendRow}>
+                                    <View style={[styles.macroDot, { backgroundColor: macroColor }]} />
+                                    <Text style={styles.macroLegendText}>
+                                      {MACRO_META[macro.key].emoji} {macro.label}
+                                    </Text>
+                                    <Text style={styles.macroLegendValue}>
+                                      {Math.round(macro.actual)} / {Math.round(macro.target)}g
+                                    </Text>
+                                  </View>
+                                  <View style={styles.macroProgressTrack}>
+                                    <View
+                                      style={[
+                                        styles.macroProgressFill,
+                                        {
+                                          backgroundColor: macroColor,
+                                          width: `${progress}%`,
+                                        },
+                                      ]}
+                                    />
+                                  </View>
+                                  <Text style={[styles.macroRemainText, { color: macroColor }]}>
+                                    {locale.startsWith('ja') ? `残り ${remain}g` : `${remain}g left`}
+                                  </Text>
+                                </View>
+                              );
+                            })}
                           </View>
-                          <Text style={styles.adviceDetail}>{renderAdviceDetail(advice.detail)}</Text>
                         </View>
-                      ))}
-                    </View>
-                  </GlassCard>
+                      ) : (
+                        <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
+                      )}
+                    </SectionShellV2>
+                  ) : (
+                    <GlassCard style={styles.card}>
+                      <Text style={styles.cardTitle}>🥗 {t('report.section.macros')}</Text>
+                      {dashboard ? (
+                        <View style={styles.macroWrap}>
+                          <MacroDonut macros={dashboard.macros} totalCalories={dashboard.summary.macros.total.calories} />
+                          <View style={styles.macroLegend}>
+                            {dashboard.macros.map((macro) => {
+                              const macroColor = MACRO_META[macro.key].color;
+                              const progress = Math.max(
+                                0,
+                                Math.min(100, Math.round((macro.actual / Math.max(1, macro.target)) * 100)),
+                              );
+                              const remain = Math.max(0, Math.round(macro.target - macro.actual));
+
+                              return (
+                                <View key={macro.key} style={styles.macroLegendItem}>
+                                  <View style={styles.macroLegendRow}>
+                                    <View style={[styles.macroDot, { backgroundColor: macroColor }]} />
+                                    <Text style={styles.macroLegendText}>
+                                      {MACRO_META[macro.key].emoji} {macro.label}
+                                    </Text>
+                                    <Text style={styles.macroLegendValue}>
+                                      {Math.round(macro.actual)} / {Math.round(macro.target)}g
+                                    </Text>
+                                  </View>
+                                  <View style={styles.macroProgressTrack}>
+                                    <View
+                                      style={[
+                                        styles.macroProgressFill,
+                                        {
+                                          backgroundColor: macroColor,
+                                          width: `${progress}%`,
+                                        },
+                                      ]}
+                                    />
+                                  </View>
+                                  <Text style={[styles.macroRemainText, { color: macroColor }]}>
+                                    {locale.startsWith('ja') ? `残り ${remain}g` : `${remain}g left`}
+                                  </Text>
+                                </View>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      ) : (
+                        <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
+                      )}
+                    </GlassCard>
+                  )}
+
+                  {isSmartPro ? (
+                    <SectionShellV2
+                      icon="🍽️"
+                      title={t('report.section.mealTiming')}
+                      quickStat={sectionQuickStats?.mealTiming}
+                    >
+                      {dashboard ? (
+                        <MealTimingStack entries={dashboard.calories.mealPeriodBreakdown} />
+                      ) : (
+                        <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
+                      )}
+                    </SectionShellV2>
+                  ) : (
+                    <GlassCard style={styles.card}>
+                      <Text style={styles.cardTitle}>🍽️ {t('report.section.mealTiming')}</Text>
+                      {dashboard ? (
+                        <MealTimingStack entries={dashboard.calories.mealPeriodBreakdown} />
+                      ) : (
+                        <Text style={styles.emptyBody}>{t('dashboard.chart.empty')}</Text>
+                      )}
+                    </GlassCard>
+                  )}
+
+                  {isSmartPro ? (
+                    <SectionShellV2 icon="📌" title={t('report.section.metrics')} quickStat={sectionQuickStats?.metrics}>
+                      <View style={styles.metricGrid}>
+                        {report.metrics.map((metric, index) => (
+                          <View key={`${metric.label}-${index}`} style={[styles.metricItem, compactLayout && styles.metricItemCompact]}>
+                            <Text style={styles.metricLabel}>{metric.label}</Text>
+                            <Text style={styles.metricValue}>{metric.value}</Text>
+                            {metric.note ? <Text style={styles.metricNote}>{metric.note}</Text> : null}
+                          </View>
+                        ))}
+                      </View>
+                    </SectionShellV2>
+                  ) : (
+                    <GlassCard style={styles.card}>
+                      <Text style={styles.cardTitle}>📌 {t('report.section.metrics')}</Text>
+                      <View style={styles.metricGrid}>
+                        {report.metrics.map((metric, index) => (
+                          <View key={`${metric.label}-${index}`} style={styles.metricItem}>
+                            <Text style={styles.metricLabel}>{metric.label}</Text>
+                            <Text style={styles.metricValue}>{metric.value}</Text>
+                            {metric.note ? <Text style={styles.metricNote}>{metric.note}</Text> : null}
+                          </View>
+                        ))}
+                      </View>
+                    </GlassCard>
+                  )}
+
+                  {isSmartPro ? (
+                    <SectionShellV2
+                      icon="🥦"
+                      title={t('report.section.ingredients')}
+                      quickStat={sectionQuickStats?.ingredients}
+                    >
+                      <View style={styles.ingredientList}>
+                        {report.ingredients.map((ingredient, index) => (
+                          <View key={`${ingredient.name}-${index}`} style={styles.ingredientItem}>
+                            <Text style={styles.ingredientName}>{ingredient.name}</Text>
+                            <Text style={styles.ingredientReason}>{ingredient.reason}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </SectionShellV2>
+                  ) : (
+                    <GlassCard style={styles.card}>
+                      <Text style={styles.cardTitle}>🥦 {t('report.section.ingredients')}</Text>
+                      <View style={styles.ingredientList}>
+                        {report.ingredients.map((ingredient, index) => (
+                          <View key={`${ingredient.name}-${index}`} style={styles.ingredientItem}>
+                            <Text style={styles.ingredientName}>{ingredient.name}</Text>
+                            <Text style={styles.ingredientReason}>{ingredient.reason}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </GlassCard>
+                  )}
+
+                  {isSmartPro ? (
+                    <SectionShellV2 icon="💡" title={t('report.section.advice')} quickStat={sectionQuickStats?.advice}>
+                      <View style={styles.adviceList}>
+                        {report.advice.map((advice, index) => (
+                          <View key={`${advice.title}-${index}`} style={styles.adviceItem}>
+                            <View style={styles.adviceHeader}>
+                              <View style={[styles.priorityBadge, priorityBadgeStyle(advice.priority)]}>
+                                <Text style={[styles.priorityText, priorityTextStyle(advice.priority)]}>{formatPriority(advice.priority)}</Text>
+                              </View>
+                              <Text style={styles.adviceTitle}>{advice.title}</Text>
+                            </View>
+                            <Text style={styles.adviceDetail}>{renderAdviceDetail(advice.detail)}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </SectionShellV2>
+                  ) : (
+                    <GlassCard style={styles.card}>
+                      <Text style={styles.cardTitle}>💡 {t('report.section.advice')}</Text>
+                      <View style={styles.adviceList}>
+                        {report.advice.map((advice, index) => (
+                          <View key={`${advice.title}-${index}`} style={styles.adviceItem}>
+                            <View style={styles.adviceHeader}>
+                              <View style={[styles.priorityBadge, priorityBadgeStyle(advice.priority)]}>
+                                <Text style={[styles.priorityText, priorityTextStyle(advice.priority)]}>{formatPriority(advice.priority)}</Text>
+                              </View>
+                              <Text style={styles.adviceTitle}>{advice.title}</Text>
+                            </View>
+                            <Text style={styles.adviceDetail}>{renderAdviceDetail(advice.detail)}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </GlassCard>
+                  )}
                 </>
               )}
             </>
@@ -1850,90 +2185,61 @@ export default function ReportScreen() {
             <Svg ref={shareSvgRef} width={SHARE_IMAGE_WIDTH} height={SHARE_IMAGE_HEIGHT}>
               <Defs>
                 <LinearGradient id="shareBg" x1="0" y1="0" x2="1" y2="1">
-                  <Stop offset="0" stopColor="#FFF4DE" />
-                  <Stop offset="0.5" stopColor="#EFF8FF" />
-                  <Stop offset="1" stopColor="#EFFFF2" />
+                  <Stop offset="0" stopColor={colors.smartProBgStart} />
+                  <Stop offset="1" stopColor={colors.smartProBgEnd} />
+                </LinearGradient>
+                <LinearGradient id="shareCard" x1="0" y1="0" x2="1" y2="1">
+                  <Stop offset="0" stopColor={colors.smartProCard} />
+                  <Stop offset="1" stopColor="#EEF3FF" />
                 </LinearGradient>
               </Defs>
               <Rect x={0} y={0} width={SHARE_IMAGE_WIDTH} height={SHARE_IMAGE_HEIGHT} fill="url(#shareBg)" />
-              <Rect
-                x={56}
-                y={56}
-                width={SHARE_IMAGE_WIDTH - 112}
-                height={SHARE_IMAGE_HEIGHT - 112}
-                rx={42}
-                fill="rgba(255,255,255,0.95)"
-                stroke="rgba(31,36,44,0.08)"
-                strokeWidth={2}
-              />
+              <Rect x={56} y={56} width={SHARE_IMAGE_WIDTH - 112} height={SHARE_IMAGE_HEIGHT - 112} rx={42} fill="url(#shareCard)" />
 
-              <SvgText
-                x={96}
-                y={128}
-                fill={colors.textPrimary}
-                fontSize={52}
-                fontWeight={shareHeadlineWeight}
-                fontFamily={shareFontFamily}
-              >
+              <SvgText x={96} y={128} fill="#101723" fontSize={52} fontWeight={shareHeadlineWeight} fontFamily={shareFontFamily}>
                 {t('report.header')}
               </SvgText>
-              <SvgText x={96} y={178} fill={colors.textMuted} fontSize={30} fontFamily={shareFontFamily}>
+              <SvgText x={96} y={178} fill="#5D6678" fontSize={28} fontFamily={shareFontFamily}>
                 {rangeLabel}
               </SvgText>
+              <SvgText x={96} y={214} fill="#5D6678" fontSize={24} fontFamily={shareFontFamily}>
+                {`${t('report.summary.generatedDate')}: ${reportGeneratedDateLabel ?? '-'}`}
+              </SvgText>
 
-              <SvgText x={96} y={300} fill={colors.accent} fontSize={140} fontWeight="800">
+              <Rect x={96} y={246} width={306} height={70} rx={35} fill="#131A28" />
+              <SvgText x={118} y={289} fill="#F7F9FF" fontSize={28} fontWeight="800" fontFamily={shareFontFamily}>
+                {shareIdentityLabel}
+              </SvgText>
+              <Rect x={420} y={246} width={264} height={70} rx={35} fill="#EAF2FF" />
+              <SvgText x={444} y={289} fill="#2A3346" fontSize={26} fontWeight="700" fontFamily={shareFontFamily}>
+                {shareVoiceModeLabel}
+              </SvgText>
+              <Rect x={704} y={246} width={280} height={70} rx={35} fill="#F8EDCF" />
+              <SvgText x={730} y={289} fill="#5B4522" fontSize={26} fontWeight="700" fontFamily={shareFontFamily}>
+                {t(`report.period.${report.period}`)}
+              </SvgText>
+
+              <SvgText x={96} y={434} fill="#101723" fontSize={172} fontWeight="800">
                 {Math.round(report.summary.score)}
               </SvgText>
-              <SvgText
-                x={292}
-                y={285}
-                fill={colors.textSecondary}
-                fontSize={34}
-                fontWeight={shareBodyWeight}
-                fontFamily={shareFontFamily}
-              >
+              <SvgText x={352} y={398} fill="#5D6678" fontSize={36} fontWeight={shareBodyWeight} fontFamily={shareFontFamily}>
                 {t('report.scoreLabel')}
               </SvgText>
-
-              <Rect x={96} y={336} width={280} height={112} rx={24} fill="rgba(245,178,37,0.15)" />
-              <Rect x={400} y={336} width={280} height={112} rx={24} fill="rgba(116,210,194,0.16)" />
-              <Rect x={704} y={336} width={280} height={112} rx={24} fill="rgba(156,124,255,0.14)" />
-              <SvgText x={124} y={378} fill={colors.textMuted} fontSize={22} fontFamily={shareFontFamily}>
-                {t('report.stat.averageCalories')}
-              </SvgText>
-              <SvgText x={124} y={422} fill={colors.textPrimary} fontSize={34} fontWeight="700">
-                {summaryStats ? `${summaryStats.averageCalories} kcal` : '--'}
-              </SvgText>
-              <SvgText x={428} y={378} fill={colors.textMuted} fontSize={22} fontFamily={shareFontFamily}>
-                {t('report.stat.loggedDays')}
-              </SvgText>
-              <SvgText x={428} y={422} fill={colors.textPrimary} fontSize={34} fontWeight="700">
-                {summaryStats ? `${summaryStats.loggedDays}/${summaryStats.totalDays}` : '--'}
-              </SvgText>
-              <SvgText x={732} y={378} fill={colors.textMuted} fontSize={22} fontFamily={shareFontFamily}>
-                {t('report.streakLabel')}
-              </SvgText>
-              <SvgText x={732} y={422} fill={colors.textPrimary} fontSize={34} fontWeight="700">
-                {`${streakDays}`}
+              <SvgText x={352} y={444} fill="#5D6678" fontSize={28} fontWeight={shareBodyWeight} fontFamily={shareFontFamily}>
+                {scoreEmoji(report.summary.score)}
               </SvgText>
 
-              <SvgText
-                x={96}
-                y={510}
-                fill={colors.textSecondary}
-                fontSize={24}
-                fontWeight={shareHeadlineWeight}
-                fontFamily={shareFontFamily}
-              >
-                {t('report.section.summary')}
+              <Rect x={96} y={488} width={888} height={170} rx={24} fill="rgba(20,30,48,0.06)" />
+              <SvgText x={126} y={536} fill="#556177" fontSize={24} fontWeight={shareBodyWeight} fontFamily={shareFontFamily}>
+                {t('report.summaryV2.topMission')}
               </SvgText>
               {shareHeadlineLines.map((lineText, index) => (
                 <SvgText
                   key={`share-headline-${index}`}
-                  x={96}
-                  y={566 + index * 50}
-                  fill={colors.textPrimary}
-                  fontSize={44}
+                  x={126}
+                  y={588 + index * 44}
+                  fill="#121A29"
+                  fontSize={42}
                   fontWeight={shareHeadlineWeight}
                   fontFamily={shareFontFamily}
                 >
@@ -1941,64 +2247,29 @@ export default function ReportScreen() {
                 </SvgText>
               ))}
 
-              <SvgText
-                x={96}
-                y={740}
-                fill={colors.textSecondary}
-                fontSize={24}
-                fontWeight={shareHeadlineWeight}
-                fontFamily={shareFontFamily}
-              >
-                Highlights
+              <SvgText x={96} y={732} fill="#556177" fontSize={24} fontWeight={shareHeadlineWeight} fontFamily={shareFontFamily}>
+                {t('report.summaryV2.evidence')}
               </SvgText>
-              {shareHighlights.map((item, index) => (
-                <G key={`share-highlight-${index}`}>
-                  <Circle cx={108} cy={790 + index * 62} r={7} fill={highlightTint(index)} />
-                  <SvgText
-                    x={132}
-                    y={798 + index * 62}
-                    fill={colors.textPrimary}
-                    fontSize={30}
-                    fontWeight={shareBodyWeight}
-                    fontFamily={shareFontFamily}
-                  >
-                    {item}
-                  </SvgText>
-                </G>
-              ))}
-
-              {shareComparisonMetrics.length ? (
-                <>
-                  <Line x1={96} y1={992} x2={984} y2={992} stroke="rgba(31,36,44,0.12)" strokeWidth={2} />
-                  <SvgText
-                    x={96}
-                    y={1042}
-                    fill={colors.textSecondary}
-                    fontSize={24}
-                    fontWeight={shareHeadlineWeight}
-                    fontFamily={shareFontFamily}
-                  >
-                    {t('report.section.comparison')}
-                  </SvgText>
-                  {shareComparisonMetrics.map((metric, index) => (
-                    <G key={`share-comparison-${metric.key}`}>
-                      <SvgText x={96} y={1102 + index * 58} fill={colors.textPrimary} fontSize={28} fontFamily={shareFontFamily}>
-                        {wrapShareLines(sanitizeShareText(metric.label), 26, 1).join('')}
+              {shareEvidenceCards.map((item, index) => {
+                const y = 764 + index * 122;
+                const bg = item.tone === 'amber' ? '#F8F0DA' : item.tone === 'mint' ? '#E6F5F2' : '#ECE8F8';
+                return (
+                  <G key={item.id}>
+                    <Rect x={96} y={y} width={888} height={100} rx={20} fill={bg} />
+                    <SvgText x={126} y={y + 39} fill="#121A29" fontSize={24} fontWeight="700" fontFamily={shareFontFamily}>
+                      {item.icon}
+                    </SvgText>
+                    <SvgText x={164} y={y + 39} fill="#121A29" fontSize={26} fontWeight={shareBodyWeight} fontFamily={shareFontFamily}>
+                      {wrapShareLines(sanitizeShareText(item.text), 42, 1).join('')}
+                    </SvgText>
+                    {item.emphasis ? (
+                      <SvgText x={164} y={y + 74} fill="#2A3346" fontSize={24} fontWeight="800" fontFamily={shareFontFamily}>
+                        {item.emphasis}
                       </SvgText>
-                      <SvgText
-                        x={984}
-                        y={1102 + index * 58}
-                        fill={isMetricImproved(metric) ? colors.success : colors.error}
-                        fontSize={28}
-                        fontWeight="700"
-                        textAnchor="end"
-                      >
-                        {formatDeltaValue(metric)}
-                      </SvgText>
-                    </G>
-                  ))}
-                </>
-              ) : null}
+                    ) : null}
+                  </G>
+                );
+              })}
             </Svg>
           </View>
         ) : null}
@@ -2983,6 +3254,9 @@ const styles = StyleSheet.create({
   summaryActionTextStrong: {
     color: colors.accentInk,
   },
+  smartProActionSecondary: {
+    minHeight: 44,
+  },
   detailsPromptButton: {
     marginTop: spacing.sm,
   },
@@ -3230,6 +3504,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexWrap: 'wrap',
   },
+  macroWrapCompact: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+  },
   macroDonut: {
     width: 140,
     height: 140,
@@ -3349,6 +3627,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     gap: 4,
+  },
+  metricItemCompact: {
+    flexBasis: '100%',
   },
   metricLabel: {
     ...textStyles.caption,

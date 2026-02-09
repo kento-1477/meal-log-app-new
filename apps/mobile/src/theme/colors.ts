@@ -26,4 +26,11 @@ export const colors = {
   ringFat: '#FF7B7B',
   ringKcal: '#F5B225',
   ringInactive: '#D5DAE6',
+  smartProBgStart: '#0F1626',
+  smartProBgEnd: '#1F2B3D',
+  smartProCard: '#F7F9FF',
+  smartProInk: '#121A29',
+  smartProMuted: '#5D6678',
+  smartProPrimary: '#131A28',
+  smartProPrimaryText: '#F7F9FF',
 };
