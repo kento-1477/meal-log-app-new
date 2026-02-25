@@ -90,7 +90,7 @@ export function RecentLogsList({ logs, range = 'today', onRangeChange, onToggleF
         <Text style={styles.heading}>{t('recentLogs.heading')}</Text>
         <View style={styles.headerActions}>
           <TouchableOpacity onPress={() => setExportVisible(true)}>
-            <Text style={styles.secondaryCta}>CSV / PDF</Text>
+            <Text style={styles.secondaryCta}>{t('recentLogs.export')}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/(tabs)/chat')}>
             <Text style={styles.secondaryCta}>{t('recentLogs.addMore')}</Text>

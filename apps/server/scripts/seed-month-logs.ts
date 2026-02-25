@@ -2,8 +2,17 @@ import { PrismaClient, MealPeriod } from '@prisma/client';
 import { DateTime } from 'luxon';
 
 const prisma = new PrismaClient();
-const TARGET_EMAIL = 'demo@example.com';
-const DAYS = 30;
+const [, , emailArg, daysArg] = process.argv;
+const TARGET_EMAIL = emailArg || process.env.TARGET_EMAIL || 'demo@example.com';
+const DAYS = Number(daysArg || process.env.SEED_DAYS || 30);
+
+if (!TARGET_EMAIL) {
+  throw new Error('TARGET_EMAIL is required. Pass as arg or env (e.g., TARGET_EMAIL=you@example.com).');
+}
+
+if (!Number.isFinite(DAYS) || DAYS <= 0) {
+  throw new Error('SEED_DAYS must be a positive number.');
+}
 
 const meals = [
   { period: MealPeriod.BREAKFAST, name: 'ヨーグルトとフルーツ', kcal: 420, protein: 20, fat: 12, carbs: 55, hour: 8 },

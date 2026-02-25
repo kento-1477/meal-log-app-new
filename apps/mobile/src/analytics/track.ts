@@ -26,6 +26,7 @@ export type AnalyticsEventName =
   | 'report.generate_requested'
   | 'report.generate_completed'
   | 'report.voice_mode_switched'
+  | 'report.ui_variant_exposed'
   | 'report.details_expanded'
   | 'report.shared'
   | 'report.feedback_submitted'
@@ -45,6 +46,7 @@ const REPORT_EVENTS = new Set<AnalyticsEventName>([
   'report.generate_requested',
   'report.generate_completed',
   'report.voice_mode_switched',
+  'report.ui_variant_exposed',
   'report.details_expanded',
   'report.shared',
   'report.feedback_submitted',

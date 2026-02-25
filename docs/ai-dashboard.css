@@ -1,0 +1,263 @@
+:root {
+  --bg-color-1: #0f172a;
+  --bg-color-2: #111c40;
+  --primary: #61dafb;
+  --secondary: #a855f7;
+  --accent: #fb7185;
+  --text: #f8fbff;
+  --text-muted: rgba(248, 251, 255, 0.7);
+  --border: rgba(248, 251, 255, 0.15);
+  --card: rgba(17, 24, 39, 0.9);
+  --shadow: 0 30px 60px rgba(15, 23, 42, 0.45);
+  font-family: 'Space Grotesk', 'Zen Kaku Gothic New', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at top right, rgba(97, 218, 251, 0.25), transparent 50%),
+    radial-gradient(circle at 20% 20%, rgba(248, 113, 133, 0.25), transparent 45%),
+    linear-gradient(145deg, var(--bg-color-1), var(--bg-color-2));
+  min-height: 100vh;
+  color: var(--text);
+  font-family: inherit;
+}
+
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 24px;
+}
+
+.sidebar {
+  position: sticky;
+  top: 24px;
+  max-height: calc(100vh - 48px);
+  padding: 24px;
+  border-radius: 20px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.side-title {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.side-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(140deg, var(--primary), var(--secondary));
+}
+
+.side-name {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.side-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.side-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.side-group {
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(248, 251, 255, 0.08);
+}
+
+.side-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+}
+
+.side-link {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  display: block;
+  text-decoration: none;
+  color: var(--text);
+  background: rgba(248, 251, 255, 0.04);
+  border: 1px solid transparent;
+  font-weight: 600;
+}
+
+.side-link.active {
+  border-color: var(--primary);
+  background: rgba(97, 218, 251, 0.15);
+}
+
+.side-link.sub {
+  font-size: 0.82rem;
+  padding-left: 20px;
+  color: var(--text-muted);
+}
+
+main {
+  color: var(--text);
+}
+
+.card {
+  background: var(--card);
+  border-radius: 24px;
+  padding: 26px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.page-tag {
+  font-size: 0.7rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.panel {
+  margin-top: 32px;
+  padding: 20px 24px 24px;
+  border-radius: 24px;
+  border: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.85);
+  box-shadow: var(--shadow);
+}
+
+.section-head h2 {
+  margin: 8px 0 4px;
+  font-size: clamp(1.6rem, 2vw, 2rem);
+}
+
+.section-head p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.map-grid,
+.calc-grid,
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.calc-card,
+.tile-card,
+.map-card {
+  border-radius: 18px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.9);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.35);
+}
+
+.calc-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.calc-id {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 251, 255, 0.2);
+}
+
+.calc-body {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.calc-block {
+  border-radius: 14px;
+  padding: 10px;
+  border: 1px solid rgba(248, 251, 255, 0.1);
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.calc-block ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.tile-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.tile-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), transparent 60%);
+  pointer-events: none;
+}
+
+.tile-title {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.tile-desc {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.map-card strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: relative;
+  }
+}
+
+@media (max-width: 600px) {
+  .page {
+    padding: 24px 16px 60px;
+  }
+
+  .panel {
+    padding: 18px 16px 20px;
+  }
+}

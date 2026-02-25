@@ -24,3 +24,31 @@ if (!baseUrl) {
 }
 
 export const API_BASE_URL = baseUrl;
+
+function parseBooleanEnv(value: string | undefined, defaultValue: boolean) {
+  if (typeof value !== 'string') {
+    return defaultValue;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+  return defaultValue;
+}
+
+function parseRolloutPercent(value: string | undefined, defaultValue: number) {
+  if (typeof value !== 'string') {
+    return defaultValue;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return defaultValue;
+  }
+  return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
+export const REPORT_UI_V2_ENABLED = parseBooleanEnv(process.env.EXPO_PUBLIC_REPORT_UI_V2_ENABLED, false);
+export const REPORT_UI_V2_ROLLOUT_PERCENT = parseRolloutPercent(process.env.EXPO_PUBLIC_REPORT_UI_V2_ROLLOUT_PERCENT, 0);
