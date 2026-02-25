@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI分析とオンボーディング計算｜全体像</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Space+Grotesk:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./ai-dashboard.css" />
+  </head>
+  <body>
+    <div class="background"></div>
+
+    <div class="page">
+      <div class="shell">
+        <aside class="sidebar">
+          <div class="side-title">
+            <div class="side-mark"></div>
+            <div>
+              <div class="side-name">Logic Navigator</div>
+              <div class="side-sub">Meal Log</div>
+            </div>
+          </div>
+          <nav class="side-nav">
+            <div class="side-group overview">
+              <div class="side-label rule"><span class="label-dot"></span>Overview</div>
+              <a class="side-link active" href="./ai-onboarding-dashboard.html">全体像</a>
+              <a class="side-link" href="./references.html">参照ポイント</a>
+            </div>
+            <div class="side-group ai">
+              <div class="side-label ai"><span class="label-dot"></span>AI</div>
+              <a class="side-link" href="./ai-analysis.html">AI分析</a>
+              <a class="side-link sub" href="./ai-analysis.html#calc-a1"><span class="dot ai"></span>A1 入力</a>
+              <a class="side-link sub" href="./ai-analysis.html#calc-a2"><span class="dot ai"></span>A2 利用回数</a>
+              <a class="side-link sub" href="./ai-analysis.html#calc-a3"><span class="dot ai"></span>A3 Gemini推測</a>
+              <a class="side-link sub" href="./ai-analysis.html#calc-a4"><span class="dot ai"></span>A4 形チェック</a>
+              <a class="side-link sub" href="./ai-analysis.html#calc-a5"><span class="dot ai"></span>A5 翻訳/保存</a>
+              <a class="side-link sub" href="./ai-analysis.html#calc-a6"><span class="dot ai"></span>A6 反映</a>
+              <a class="side-link" href="./ai-rules.html">AIルール</a>
+              <a class="side-link" href="./ai-report.html">AIレポート</a>
+              <a class="side-link sub" href="./ai-report.html#calc-r1"><span class="dot ai"></span>R1 期間</a>
+              <a class="side-link sub" href="./ai-report.html#calc-r2"><span class="dot ai"></span>R2 まとめ</a>
+              <a class="side-link sub" href="./ai-report.html#calc-r3"><span class="dot ai"></span>R3 ルール</a>
+              <a class="side-link sub" href="./ai-report.html#calc-r4"><span class="dot ai"></span>R4 食材ロジック</a>
+              <a class="side-link" href="./ai-usage.html">利用/クレジット</a>
+              <a class="side-link sub" href="./ai-usage.html#calc-u1"><span class="dot rule"></span>U1 判定</a>
+              <a class="side-link sub" href="./ai-usage.html#calc-u2"><span class="dot rule"></span>U2 カウント/消費</a>
+            </div>
+            <div class="side-group onb">
+              <div class="side-label onb"><span class="label-dot"></span>Onboarding</div>
+              <a class="side-link" href="./onboarding-energy.html">エネルギー計算</a>
+              <a class="side-link sub" href="./onboarding-energy.html#calc-o1"><span class="dot onb"></span>O1 入力チェック</a>
+              <a class="side-link sub" href="./onboarding-energy.html#calc-o2"><span class="dot onb"></span>O2 ゴール判定</a>
+              <a class="side-link sub" href="./onboarding-energy.html#calc-o3"><span class="dot onb"></span>O3 BMI</a>
+              <a class="side-link sub" href="./onboarding-energy.html#calc-o4"><span class="dot onb"></span>O4 BMR</a>
+              <a class="side-link sub" href="./onboarding-energy.html#calc-o5"><span class="dot onb"></span>O5 維持カロリー</a>
+              <a class="side-link sub" href="./onboarding-energy.html#calc-o6"><span class="dot onb"></span>O6 目標カロリー</a>
+              <a class="side-link sub" href="./onboarding-energy.html#calc-o6b"><span class="dot onb"></span>O6b 上限/下限</a>
+              <a class="side-link" href="./onboarding-macros.html">PFC計算</a>
+              <a class="side-link sub" href="./onboarding-macros.html#calc-o7p"><span class="dot onb"></span>O7-P タンパク質</a>
+              <a class="side-link sub" href="./onboarding-macros.html#calc-o7f"><span class="dot onb"></span>O7-F 脂質</a>
+              <a class="side-link sub" href="./onboarding-macros.html#calc-o7c"><span class="dot onb"></span>O7-C 炭水化物</a>
+              <a class="side-link" href="./onboarding-pace.html">ペース/目標日</a>
+              <a class="side-link sub" href="./onboarding-pace.html#calc-o8"><span class="dot onb"></span>O8 目標日</a>
+            </div>
+            <div class="side-group dash">
+              <div class="side-label dash"><span class="label-dot"></span>Dashboard</div>
+              <a class="side-link" href="./dashboard-summary.html">サマリー</a>
+              <a class="side-link sub" href="./dashboard-summary.html#calc-d1"><span class="dot dash"></span>D1 期間</a>
+              <a class="side-link sub" href="./dashboard-summary.html#calc-d2"><span class="dot dash"></span>D2 日別/合計</a>
+              <a class="side-link sub" href="./dashboard-summary.html#calc-d3"><span class="dot dash"></span>D3 目標/残り</a>
+              <a class="side-link sub" href="./dashboard-summary.html#calc-d4"><span class="dot dash"></span>D4 表示モデル</a>
+              <a class="side-link" href="./dashboard-trend.html">トレンド</a>
+              <a class="side-link sub" href="./dashboard-trend.html#calc-t1"><span class="dot dash"></span>T1 期間</a>
+              <a class="side-link sub" href="./dashboard-trend.html#calc-t2"><span class="dot dash"></span>T2 日別ポイント</a>
+              <a class="side-link" href="./monthly-deficit.html">月間マイナス</a>
+              <a class="side-link sub" href="./monthly-deficit.html#calc-md1"><span class="dot dash"></span>MD1 集計</a>
+              <a class="side-link sub" href="./monthly-deficit.html#calc-md2"><span class="dot dash"></span>MD2 kg換算</a>
+              <a class="side-link" href="./streak.html">ストリーク</a>
+              <a class="side-link sub" href="./streak.html#calc-s1"><span class="dot dash"></span>S1 日付抽出</a>
+              <a class="side-link sub" href="./streak.html#calc-s2"><span class="dot dash"></span>S2 最長</a>
+              <a class="side-link sub" href="./streak.html#calc-s3"><span class="dot dash"></span>S3 現在</a>
+            </div>
+          </nav>
+        </aside>
+
+        <main class="content">
+          <header class="hero" id="top">
+            <div class="card hero-copy">
+              <span class="hero-tag">AI TECH MAP</span>
+              <h1>AI分析とオンボーディング計算の全体像</h1>
+              <p>
+                計算ロジックは「AI」「オンボーディング」「ダッシュボード」の3系統。
+                まず全体像で位置関係をつかんでから、個別ページで詳しく見られます。
+              </p>
+            </div>
+            <div class="card">
+              <h3>色の意味</h3>
+              <div class="legend">
+                <div class="legend-item">
+                  <span class="legend-dot ai"></span>
+                  AI分析の計算
+                </div>
+                <div class="legend-item">
+                  <span class="legend-dot dash"></span>
+                  ダッシュボード/分析
+                </div>
+                <div class="legend-item">
+                  <span class="legend-dot onb"></span>
+                  オンボーディングの計算
+                </div>
+                <div class="legend-item">
+                  <span class="legend-dot rule"></span>
+                  ルール / 制限
+                </div>
+              </div>
+              <p style="margin-top: 12px">
+                サイドバーの見出し色とカード左の色が対応しています。
+              </p>
+            </div>
+          </header>
+
+          <section id="map" class="panel">
+            <div class="section-head">
+              <span class="label">MAP</span>
+              <h2>全体マップ</h2>
+              <p>計算がどこにあるかを俯瞰するゾーン。</p>
+            </div>
+            <div class="lane-grid">
+              <div class="lane ai">
+                <div class="lane-head ai">AI分析レーン</div>
+                <div class="lane-body">
+                  <div class="node">
+                    <span class="node-id ai">A1</span>
+                    <h4>入力</h4>
+                    <p>写真/文章を送る</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id ai">A2</span>
+                    <h4>利用回数</h4>
+                    <p>1日の上限チェック</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id ai">A3</span>
+                    <h4>Gemini推測</h4>
+                    <p>カロリーとPFCを推測</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id ai">A4</span>
+                    <h4>形チェック</h4>
+                    <p>JSONの形を確認</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id ai">A5</span>
+                    <h4>翻訳</h4>
+                    <p>料理名と食材名のみ</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id ai">A6</span>
+                    <h4>保存/反映</h4>
+                    <p>aiRawに保存して表示</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="lane onb">
+                <div class="lane-head onb">オンボーディングレーン</div>
+                <div class="lane-body">
+                  <div class="node">
+                    <span class="node-id onb">O1</span>
+                    <h4>入力チェック</h4>
+                    <p>足りない情報を確認</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id onb">O2</span>
+                    <h4>ゴール判定</h4>
+                    <p>減量/増量/維持</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id onb">O3</span>
+                    <h4>BMI</h4>
+                    <p>適正体重の目安</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id onb">O4</span>
+                    <h4>BMR</h4>
+                    <p>基礎代謝を計算</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id onb">O5</span>
+                    <h4>維持カロリー</h4>
+                    <p>活動量をかける</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id onb">O6</span>
+                    <h4>目標カロリー</h4>
+                    <p>増減の調整</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id onb">O7</span>
+                    <h4>PFC</h4>
+                    <p>タンパク質/脂質/炭水化物</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id onb">O8</span>
+                    <h4>目標日</h4>
+                    <p>目標体重までの予定</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="lane dash">
+                <div class="lane-head dash">ダッシュボード/インサイト</div>
+                <div class="lane-body">
+                  <div class="node">
+                    <span class="node-id dash">D1</span>
+                    <h4>サマリー集計</h4>
+                    <p>期間ごとの合計</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id dash">D2</span>
+                    <h4>目標/残り</h4>
+                    <p>目標との差を計算</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id dash">D3</span>
+                    <h4>トレンド</h4>
+                    <p>日/週/月の推移</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id dash">D4</span>
+                    <h4>月間マイナス</h4>
+                    <p>脂肪燃焼の目安</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id dash">D5</span>
+                    <h4>ストリーク</h4>
+                    <p>連続日数の計算</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="lane ai">
+                <div class="lane-head ai">AIレポート/利用</div>
+                <div class="lane-body">
+                  <div class="node">
+                    <span class="node-id ai">R1</span>
+                    <h4>レポート期間</h4>
+                    <p>日/週/月の範囲</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id ai">R2</span>
+                    <h4>レポート要約</h4>
+                    <p>まとめデータ作成</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id ai">R3</span>
+                    <h4>AIアドバイス</h4>
+                    <p>Geminiで生成</p>
+                  </div>
+                  <div class="node">
+                    <span class="node-id rule">U1</span>
+                    <h4>利用/クレジット</h4>
+                    <p>回数と残りの管理</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="pages" class="panel">
+            <div class="section-head">
+              <span class="label rule">PAGES</span>
+              <h2>計算ロジックのページ一覧</h2>
+              <p>それぞれのページで詳細な計算カードを確認できます。</p>
+            </div>
+            <div class="tile-grid">
+              <a class="tile-card ai" href="./ai-analysis.html">
+                <div class="tile-title">AI分析</div>
+                <div class="tile-desc">入力から保存までの推測フロー</div>
+              </a>
+              <a class="tile-card rule" href="./ai-rules.html">
+                <div class="tile-title">AIルール</div>
+                <div class="tile-desc">時間制限と利用上限の枠</div>
+              </a>
+              <a class="tile-card onb" href="./onboarding-energy.html">
+                <div class="tile-title">オンボーディング: エネルギー</div>
+                <div class="tile-desc">BMR/維持/目標カロリー</div>
+              </a>
+              <a class="tile-card onb" href="./onboarding-macros.html">
+                <div class="tile-title">オンボーディング: PFC</div>
+                <div class="tile-desc">P/F/Cの分配ロジック</div>
+              </a>
+              <a class="tile-card onb" href="./onboarding-pace.html">
+                <div class="tile-title">オンボーディング: ペース</div>
+                <div class="tile-desc">週あたり変化と目標日</div>
+              </a>
+              <a class="tile-card dash" href="./dashboard-summary.html">
+                <div class="tile-title">ダッシュボード: サマリー</div>
+                <div class="tile-desc">期間合計と目標差分</div>
+              </a>
+              <a class="tile-card dash" href="./dashboard-trend.html">
+                <div class="tile-title">ダッシュボード: トレンド</div>
+                <div class="tile-desc">日/週/月の推移作成</div>
+              </a>
+              <a class="tile-card dash" href="./monthly-deficit.html">
+                <div class="tile-title">月間マイナス</div>
+                <div class="tile-desc">目標との差を積み上げ</div>
+              </a>
+              <a class="tile-card dash" href="./streak.html">
+                <div class="tile-title">ストリーク</div>
+                <div class="tile-desc">連続記録の算出</div>
+              </a>
+              <a class="tile-card ai" href="./ai-report.html">
+                <div class="tile-title">AIレポート</div>
+                <div class="tile-desc">サマリーとAIアドバイス</div>
+              </a>
+              <a class="tile-card rule" href="./ai-usage.html">
+                <div class="tile-title">利用/クレジット</div>
+                <div class="tile-desc">AI使用回数の管理</div>
+              </a>
+              <a class="tile-card rule" href="./references.html">
+                <div class="tile-title">参照ポイント</div>
+                <div class="tile-desc">関連する実装ファイル一覧</div>
+              </a>
+            </div>
+          </section>
+
+        </main>
+      </div>
+    </div>
+  </body>
+</html>

@@ -6,6 +6,7 @@ import { spacing } from '@/theme/spacing';
 import { textStyles } from '@/theme/typography';
 import { useSessionStore } from '@/store/session';
 import { describeLocale } from '@/utils/locale';
+import { savePreferredLocale } from '@/services/locale-storage';
 
 export default function LanguageScreen() {
   const { t } = useTranslation();
@@ -15,6 +16,7 @@ export default function LanguageScreen() {
   const handleChange = (locale: Locale) => {
     if (locale === currentLocale) return;
     setLocale(locale);
+    void savePreferredLocale(locale);
   };
 
   return (

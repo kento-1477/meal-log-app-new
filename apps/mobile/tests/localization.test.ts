@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { describeLocale } from '@/utils/locale';
-import { getLocale, setLocale } from '@/i18n';
+import { getLocale, setLocale, translateKey } from '@/i18n';
 
 const originalLocale = getLocale();
 
@@ -30,6 +30,31 @@ test('describeLocale falls back to raw locale for others', () => {
   setLocale('en-US');
   try {
     assert.equal(describeLocale('fr-FR'), 'fr-FR');
+  } finally {
+    setLocale(originalLocale);
+  }
+});
+
+test('common.edit key is available in both locales', () => {
+  setLocale('ja-JP');
+  try {
+    assert.equal(translateKey('common.edit'), '編集');
+  } finally {
+    setLocale(originalLocale);
+  }
+
+  setLocale('en-US');
+  try {
+    assert.equal(translateKey('common.edit'), 'Edit');
+  } finally {
+    setLocale(originalLocale);
+  }
+});
+
+test('settings.menu.history is localized for English UI', () => {
+  setLocale('en-US');
+  try {
+    assert.equal(translateKey('settings.menu.history'), 'View history');
   } finally {
     setLocale(originalLocale);
   }

@@ -25,7 +25,7 @@ const SHEEN_GRADIENT = ['rgba(255,255,255,0)', 'rgba(255,208,164,0.5)', 'rgba(25
 const SHEEN_GRADIENT_SOFT = ['rgba(255,255,255,0)', 'rgba(255,255,255,0.3)', 'rgba(255,255,255,0)'];
 
 export default function ReferralStatusScreen() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { status, isLoading, error, refresh } = useReferralStatus();
   const [isCopyingCode, setIsCopyingCode] = useState(false);
   const [isCopyingLink, setIsCopyingLink] = useState(false);
@@ -358,8 +358,8 @@ export default function ReferralStatusScreen() {
                     EXPIRED: t('referral.status.status.expired'),
                   } as const;
                   const statusLabel = statusLabelMap[item.status];
-                  const createdAt = formatDate(item.createdAt);
-                  const completedAt = item.completedAt ? formatDate(item.completedAt) : null;
+                  const createdAt = formatDate(item.createdAt, locale);
+                  const completedAt = item.completedAt ? formatDate(item.completedAt, locale) : null;
                   const badgeStyle =
                     item.status === 'COMPLETED'
                       ? styles.statusBadgeCOMPLETED
@@ -394,9 +394,9 @@ export default function ReferralStatusScreen() {
   );
 }
 
-function formatDate(iso: string) {
+function formatDate(iso: string, locale: string) {
   const date = new Date(iso);
-  const formatter = new Intl.DateTimeFormat(undefined, {
+  const formatter = new Intl.DateTimeFormat(locale, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

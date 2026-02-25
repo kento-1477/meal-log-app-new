@@ -6,6 +6,7 @@ import {
   buildSummaryEvidenceCards,
   formatGeneratedDate,
 } from '../src/features/report/report-view-model.ts';
+import { resolveReportWeatherTheme } from '../src/features/report/score-weather-theme.ts';
 import { resolveReportUiVariant } from '../src/features/report/ui-variant.ts';
 
 function createReport(highlights: string[]): AiReportResponse {
@@ -74,4 +75,20 @@ test('formatGeneratedDate respects timezone conversion', () => {
   const en = formatGeneratedDate(utcIso, 'en-US', 'America/Los_Angeles');
   assert.equal(ja, '2026/02/09');
   assert.equal(en, 'Feb 08, 2026');
+});
+
+test('resolveReportWeatherTheme maps score boundaries to expected weather themes', () => {
+  assert.equal(resolveReportWeatherTheme(49).theme, 'rain');
+  assert.equal(resolveReportWeatherTheme(50).theme, 'cloudy');
+  assert.equal(resolveReportWeatherTheme(64).theme, 'cloudy');
+  assert.equal(resolveReportWeatherTheme(65).theme, 'partlySunny');
+  assert.equal(resolveReportWeatherTheme(79).theme, 'partlySunny');
+  assert.equal(resolveReportWeatherTheme(80).theme, 'sunny');
+});
+
+test('resolveReportWeatherTheme returns stable scoreBand and localization keys', () => {
+  const theme = resolveReportWeatherTheme(74);
+  assert.equal(theme.scoreBand, '65to79');
+  assert.equal(theme.labelKey, 'report.weather.partlySunny');
+  assert.equal(theme.decisionStateKey, 'report.summaryV2.decisionState.partlySunny');
 });

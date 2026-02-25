@@ -47,6 +47,7 @@ import {
   formatGeneratedDate,
   getReportIdentityLabelKey,
 } from '@/features/report/report-view-model';
+import { resolveReportWeatherTheme } from '@/features/report/score-weather-theme';
 import { resolveReportUiVariant, type ReportUiVariant } from '@/features/report/ui-variant';
 import {
   createAiReport,
@@ -529,6 +530,7 @@ export default function ReportScreen() {
         return;
       }
       trackedReportCompletionRef.current.add(completionKey);
+      const weatherTheme = request.status === 'done' && request.report ? resolveReportWeatherTheme(request.report.summary.score) : null;
       trackEvent('report.generate_completed', {
         requestId: request.id,
         status: request.status,
@@ -542,6 +544,8 @@ export default function ReportScreen() {
         fallbackModelUsed: request.report?.meta?.fallback_model_used ?? undefined,
         latencyMs: request.report?.meta?.latencyMs ?? undefined,
         errorCode: request.errorCode ?? undefined,
+        weatherTheme: weatherTheme?.theme,
+        scoreBand: weatherTheme?.scoreBand,
       });
     },
     [uiVariant],
@@ -1243,6 +1247,10 @@ export default function ReportScreen() {
     () => (reportGeneratedAt ? formatGeneratedDate(reportGeneratedAt, locale, report?.range.timezone) : null),
     [locale, report?.range.timezone, reportGeneratedAt],
   );
+  const reportWeatherTheme = useMemo(
+    () => (report ? resolveReportWeatherTheme(report.summary.score) : null),
+    [report],
+  );
   const shareFontFamily = useMemo(() => {
     if (!locale.startsWith('ja')) {
       return undefined;
@@ -1268,7 +1276,11 @@ export default function ReportScreen() {
   }, [report, streakDays, t]);
   const shareVoiceModeLabel = useMemo(
     () => t(`report.preference.voiceMode.${report?.preference?.voiceMode ?? activeVoiceMode}`),
-    [activeVoiceMode, report?.preference?.voiceMode, t],
+    [activeVoiceMode, report, t],
+  );
+  const shareWeatherLabel = useMemo(
+    () => (reportWeatherTheme ? t(reportWeatherTheme.labelKey) : ''),
+    [reportWeatherTheme, t],
   );
   const isGenerating =
     createReportMutation.isLoading ||
@@ -1279,14 +1291,17 @@ export default function ReportScreen() {
     (period === 'daily' ? dailyEligible : period === 'weekly' ? weeklyEligible : monthlyEligible);
   const hasHistory = reportHistory.length > 0;
   const handleExpandDetails = useCallback(() => {
+    const weatherTheme = report ? resolveReportWeatherTheme(report.summary.score) : null;
     trackEvent('report.details_expanded', {
       period,
       reportKey,
       voiceMode: activeVoiceMode,
       uiVariant,
+      weatherTheme: weatherTheme?.theme,
+      scoreBand: weatherTheme?.scoreBand,
     });
     setDetailsExpanded(true);
-  }, [activeVoiceMode, period, reportKey, uiVariant]);
+  }, [activeVoiceMode, period, report, reportKey, uiVariant]);
   const handleSubmitFeedback = useCallback(
     (keyword: ReportFeedbackKey) => {
       if (submittedFeedback[keyword]) {
@@ -1409,6 +1424,8 @@ export default function ReportScreen() {
           voiceMode: report.preference?.voiceMode ?? activeVoiceMode,
           score: Math.round(report.summary.score),
           uiVariant,
+          weatherTheme: reportWeatherTheme?.theme,
+          scoreBand: reportWeatherTheme?.scoreBand,
         });
       } finally {
         await deleteAsync(fileUri, { idempotent: true });
@@ -2185,12 +2202,12 @@ export default function ReportScreen() {
             <Svg ref={shareSvgRef} width={SHARE_IMAGE_WIDTH} height={SHARE_IMAGE_HEIGHT}>
               <Defs>
                 <LinearGradient id="shareBg" x1="0" y1="0" x2="1" y2="1">
-                  <Stop offset="0" stopColor={colors.smartProBgStart} />
-                  <Stop offset="1" stopColor={colors.smartProBgEnd} />
+                  <Stop offset="0" stopColor={reportWeatherTheme?.shareBgStart ?? colors.smartProBgStart} />
+                  <Stop offset="1" stopColor={reportWeatherTheme?.shareBgEnd ?? colors.smartProBgEnd} />
                 </LinearGradient>
                 <LinearGradient id="shareCard" x1="0" y1="0" x2="1" y2="1">
-                  <Stop offset="0" stopColor={colors.smartProCard} />
-                  <Stop offset="1" stopColor="#EEF3FF" />
+                  <Stop offset="0" stopColor={reportWeatherTheme?.shareCardStart ?? colors.smartProCard} />
+                  <Stop offset="1" stopColor={reportWeatherTheme?.shareCardEnd ?? '#EEF3FF'} />
                 </LinearGradient>
               </Defs>
               <Rect x={0} y={0} width={SHARE_IMAGE_WIDTH} height={SHARE_IMAGE_HEIGHT} fill="url(#shareBg)" />
@@ -2217,6 +2234,17 @@ export default function ReportScreen() {
               <Rect x={704} y={246} width={280} height={70} rx={35} fill="#F8EDCF" />
               <SvgText x={730} y={289} fill="#5B4522" fontSize={26} fontWeight="700" fontFamily={shareFontFamily}>
                 {t(`report.period.${report.period}`)}
+              </SvgText>
+              <Rect
+                x={96}
+                y={332}
+                width={400}
+                height={62}
+                rx={31}
+                fill={reportWeatherTheme?.badgeBg ?? '#EAF2FF'}
+              />
+              <SvgText x={126} y={372} fill={reportWeatherTheme?.badgeText ?? '#2A3346'} fontSize={24} fontWeight="700" fontFamily={shareFontFamily}>
+                {shareWeatherLabel}
               </SvgText>
 
               <SvgText x={96} y={434} fill="#101723" fontSize={172} fontWeight="800">
