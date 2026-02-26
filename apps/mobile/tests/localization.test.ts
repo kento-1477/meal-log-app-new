@@ -59,3 +59,19 @@ test('settings.menu.history is localized for English UI', () => {
     setLocale(originalLocale);
   }
 });
+
+test('report.macro.remaining is localized in both locales', () => {
+  setLocale('ja-JP');
+  try {
+    assert.equal(translateKey('report.macro.remaining', { value: 12 }), '残り 12g');
+  } finally {
+    setLocale(originalLocale);
+  }
+
+  setLocale('en-US');
+  try {
+    assert.equal(translateKey('report.macro.remaining', { value: 12 }), '12g left');
+  } finally {
+    setLocale(originalLocale);
+  }
+});

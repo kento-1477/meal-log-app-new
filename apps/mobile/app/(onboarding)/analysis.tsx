@@ -35,6 +35,21 @@ export default function OnboardingAnalysisScreen() {
     });
   }, [draft.currentWeightKg, draft.targetWeightKg, plan]);
 
+  const targetDateLabel = useMemo(() => {
+    if (!targetDateIso) {
+      return null;
+    }
+    const parsed = new Date(targetDateIso);
+    if (Number.isNaN(parsed.getTime())) {
+      return targetDateIso;
+    }
+    return parsed.toLocaleDateString(locale, {
+      year: 'numeric',
+      month: locale.startsWith('ja') ? 'numeric' : 'short',
+      day: 'numeric',
+    });
+  }, [locale, targetDateIso]);
+
   const handleContinue = () => {
     router.replace('/(onboarding)/apple-connect');
   };
@@ -181,9 +196,9 @@ export default function OnboardingAnalysisScreen() {
               <Text style={styles.issueHint}>{t('onboarding.analysis.errorHint')}</Text>
             </View>
           )}
-          {targetDateIso ? (
+          {targetDateLabel ? (
             <Text style={styles.helperText}>
-              {t('onboarding.summary.etaLabel')}: {new Date(targetDateIso).toLocaleDateString()}
+              {t('onboarding.summary.etaLabel')}: {targetDateLabel}
             </Text>
           ) : null}
         </View>

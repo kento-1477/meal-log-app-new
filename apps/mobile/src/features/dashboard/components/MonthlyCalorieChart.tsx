@@ -54,7 +54,7 @@ export const MonthlyCalorieChart = memo(({ days, startDate, endDate, averageCalo
         <View>
           <Text style={styles.summaryLabel}>{t('dashboard.chart.averageLabel')}</Text>
           <Text style={styles.summaryValue}>
-            {averageCalories != null ? `${averageCalories.toLocaleString()} kcal` : '-- kcal'}
+            {averageCalories != null ? `${averageCalories.toLocaleString(intlLocale)} kcal` : '-- kcal'}
           </Text>
         </View>
         <Text style={styles.rangeText}>{rangeLabel}</Text>

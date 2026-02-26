@@ -2017,7 +2017,7 @@ export default function ReportScreen() {
                                     />
                                   </View>
                                   <Text style={[styles.macroRemainText, { color: macroColor }]}>
-                                    {locale.startsWith('ja') ? `残り ${remain}g` : `${remain}g left`}
+                                    {t('report.macro.remaining', { value: remain })}
                                   </Text>
                                 </View>
                               );
@@ -2066,7 +2066,7 @@ export default function ReportScreen() {
                                     />
                                   </View>
                                   <Text style={[styles.macroRemainText, { color: macroColor }]}>
-                                    {locale.startsWith('ja') ? `残り ${remain}g` : `${remain}g left`}
+                                    {t('report.macro.remaining', { value: remain })}
                                   </Text>
                                 </View>
                               );

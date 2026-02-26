@@ -27,3 +27,4 @@ apps/server/actions-runner/
 web-build
 /ios
 *.tar.gz
+.build-in-public/
