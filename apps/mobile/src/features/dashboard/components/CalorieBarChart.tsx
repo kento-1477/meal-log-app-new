@@ -88,7 +88,7 @@ export function CalorieBarChart({ points, target, mode, config, isLoading, isFet
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const mergedConfig = useMemo(() => mergeConfig(config), [config]);
   const today = useMemo(() => DateTime.now().startOf('day'), []);
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
 
   useEffect(() => {
     setActiveIndex(null);
@@ -283,13 +283,14 @@ export function CalorieBarChart({ points, target, mode, config, isLoading, isFet
               </Svg>
               {targetVisible ? (
                 <Text style={[styles.targetLabel, { top: Math.max(chartData.targetY - 26, 6), right: PADDING }]}>
-                  {t('dashboard.chart.targetLabel', { value: target.toLocaleString() })}
+                  {t('dashboard.chart.targetLabel', { value: target.toLocaleString(locale) })}
                 </Text>
               ) : null}
               {activeBar ? (
                 <Tooltip
                   point={points[activeBar.index]}
                   target={target}
+                  locale={locale}
                   layoutWidth={width}
                   x={activeBar.centerX}
                   y={activeBar.y}
@@ -381,12 +382,14 @@ function shouldShowMonthlyLabel(index: number, total: number) {
 function Tooltip({
   point,
   target,
+  locale,
   layoutWidth,
   x,
   y,
 }: {
   point: CalorieChartPoint;
   target: number;
+  locale: string;
   layoutWidth: number;
   x: number;
   y: number;
@@ -400,7 +403,7 @@ function Tooltip({
   return (
     <View style={[styles.tooltip, { left: clampedLeft, top }]}>
       <Text style={styles.tooltipLabel}>{point.label}</Text>
-      <Text style={styles.tooltipValue}>{point.value.toLocaleString()} kcal</Text>
+      <Text style={styles.tooltipValue}>{point.value.toLocaleString(locale)} kcal</Text>
       <Text style={[styles.tooltipDiff, { color: diffColor }]}>{diffText}</Text>
     </View>
   );
