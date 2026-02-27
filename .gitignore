@@ -22,6 +22,8 @@ supabase/.temp/
 tmp_write_test
 *.tar
 apps/server/actions-runner/
+.build-in-public/output/
+.build-in-public/logs/
 
 # Expo specific
 web-build

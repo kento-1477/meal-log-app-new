@@ -19,4 +19,19 @@ Required in PR description:
 Minimum checks before review:
 - npm run lint
 - npm run test -- report chat (if tests exist)
+- npm run test:edge (for Edge function changes)
 - For Edge function changes, run one local manual repro
+
+## Localization Change Gate
+
+Applies when touching any of:
+- apps/mobile/src/i18n/**
+- apps/mobile/tests/localization.test.ts
+- apps/mobile/app/settings/language.tsx
+- apps/mobile/src/hooks/useLocaleBootstrap.ts
+
+Required in PR description:
+1) `_docs/features/localization-qa-checklist.md` の実施有無と結果
+
+Minimum checks before review:
+- npm run test:localization --workspace apps/mobile
