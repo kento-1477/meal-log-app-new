@@ -3,7 +3,7 @@
     "name": "ミーチャ",
     "slug": "meal-log-app",
     "scheme": "meallog",
-    "version": "0.1.2",
+    "version": "1.0.2",
     "platforms": [
       "ios",
       "android"
@@ -23,7 +23,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.meallog.app",
       "appStoreId": 6754909859,
-      "buildNumber": "15",
+      "buildNumber": "116",
       "usesAppleSignIn": true,
       "associatedDomains": [
         "applinks:meal-log.app"
