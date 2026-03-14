@@ -16,6 +16,7 @@
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
     "migrate:reset": "npx -w apps/server prisma migrate reset --force --skip-generate --skip-seed",
+    "test:edge": "deno test --no-check --allow-env -c supabase/functions/deno.json supabase/functions/meal-log/report-release.test.ts",
     "test": "npm run scan:secrets && npm run test:workspaces",
     "test:workspaces": "npm run test --workspaces --if-present",
     "test:integration": "npm run migrate:deploy --workspace apps/server && node --loader ./apps/server/tests/ts-loader.mjs --test --test-concurrency=1 ./apps/server/tests/integration/*.test.ts",
